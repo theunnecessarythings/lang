@@ -1,4 +1,4 @@
-#include "../src/lexer.cpp"
+#include "../src/lexer.hpp"
 #include "../third-party/catch2/catch_amalgamated.hpp"
 #include <string>
 
@@ -18,7 +18,7 @@ void test_lexer(std::basic_string<char> source,
 TEST_CASE("keywords") {
   test_lexer("match is mut impl as and break const continue else "
              "enum fn for if import "
-             "in not or pub return struct var",
+             "in not or pub return struct var module",
              {TokenKind::KeywordMatch,    TokenKind::KeywordIs,
               TokenKind::KeywordMut,      TokenKind::KeywordImpl,
               TokenKind::KeywordAs,       TokenKind::KeywordAnd,
@@ -29,7 +29,8 @@ TEST_CASE("keywords") {
               TokenKind::KeywordImport,   TokenKind::KeywordIn,
               TokenKind::KeywordNot,      TokenKind::KeywordOr,
               TokenKind::KeywordPub,      TokenKind::KeywordReturn,
-              TokenKind::KeywordStruct,   TokenKind::KeywordVar});
+              TokenKind::KeywordStruct,   TokenKind::KeywordVar,
+              TokenKind::KeywordModule});
 }
 
 TEST_CASE("newline in string literal") {

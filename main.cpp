@@ -1,4 +1,4 @@
-#include "src/lexer.cpp"
+#include "src/lexer.hpp"
 #include <iostream>
 
 int main() {

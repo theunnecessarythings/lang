@@ -87,6 +87,7 @@ enum class TokenKind {
   KeywordReturn,
   KeywordStruct,
   KeywordVar,
+  KeywordModule,
 
   Eof,
   Invalid,
@@ -249,6 +250,8 @@ std::string lexeme(TokenKind kind) {
     return "struct";
   case TokenKind::KeywordVar:
     return "var";
+  case TokenKind::KeywordModule:
+    return "module";
   }
   return "invalid token";
 }
@@ -276,6 +279,7 @@ std::unordered_map<std::string, TokenKind> keywords = {
     {"return", TokenKind::KeywordReturn},
     {"struct", TokenKind::KeywordStruct},
     {"var", TokenKind::KeywordVar},
+    {"module", TokenKind::KeywordModule},
 };
 
 struct TokenSpan {
