@@ -1,0 +1,57 @@
+struct Point {
+    x: f64,
+    y: f64,
+}
+
+// Implementation block, all `Point` associated functions & methods go in here
+impl Point {
+    // This is an "associated function" because this function is associated with
+    // a particular type, that is, Point.
+    //
+    // Associated functions don't need to be called with an instance.
+    // These functions are generally used like constructors.
+    fn origin() Point {
+        return Point(0.0, 0.0);
+    }
+
+    fn init(mut self: Self, x: f64, y: f64) Self {
+        self.x = x;
+        self.y = y;
+        return self;
+    }
+
+}
+
+struct Rectangle {
+    p1: Point,
+    p2: Point,
+}
+
+impl Rectangle {
+    // This is a method
+    fn area(self: Self) f64 {
+        // `self` gives access to the struct fields via the dot operator
+        const  Point { x: x1, y: y1 } = self.p1;
+        const  Point { x: x2, y: y2 } = self.p2;
+
+        // `abs` is a `f64` method that returns the absolute value of the
+        // caller
+        return ((x1 - x2) * (y1 - y2)).abs();
+    }
+
+    fn perimeter(self: Self) f64 {
+        const  Point { x: x1, y: y1 } = self.p1;
+        const  Point { x: x2, y: y2 } = self.p2;
+
+        return 2.0 * ((x1 - x2).abs() + (y1 - y2).abs());
+    }
+
+    // This method requires the caller object to be mutable
+    fn translate(mut self: Self, x: f64, y: f64) void {
+        self.p1.x += x;
+        self.p2.x += x;
+
+        self.p1.y += y;
+        self.p2.y += y;
+    }
+}

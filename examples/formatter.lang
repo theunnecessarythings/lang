@@ -1,0 +1,20 @@
+
+struct Circle {
+    radius: i32
+}
+
+impl Circle: Formatter {
+    fn init(mut self: Self, radius: i32) Self {
+        self.radius = radius;
+        return self;
+    }
+
+    fn fmt(self: Self, mut writer: Formatter) void {
+        writer.write("Circle of radius {}", self.radius);
+    }
+}
+
+fn main() void {
+    const circle = Circle(6);
+    print(circle);
+}

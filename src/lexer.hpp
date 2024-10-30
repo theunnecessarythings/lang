@@ -1,3 +1,5 @@
+#pragma once
+
 #include <cassert>
 #include <csignal>
 #include <cstdint>
@@ -67,6 +69,8 @@ enum class TokenKind {
   // Keywords
   KeywordMut,
   KeywordImpl,
+  KeywordUnion,
+  KeywordTrait,
   KeywordMatch,
   KeywordIs,
   KeywordAs,
@@ -78,6 +82,7 @@ enum class TokenKind {
   KeywordEnum,
   KeywordFn,
   KeywordFor,
+  KeywordWhile,
   KeywordIf,
   KeywordImport,
   KeywordIn,
@@ -91,195 +96,6 @@ enum class TokenKind {
 
   Eof,
   Invalid,
-};
-
-std::string lexeme(TokenKind kind) {
-  switch (kind) {
-  case TokenKind::Dummy:
-    return "dummy";
-
-  case TokenKind::StringLiteral:
-    return "a string literal";
-  case TokenKind::CharLiteral:
-    return "a character literal";
-  case TokenKind::NumberLiteral:
-    return "a number literal";
-  case TokenKind::Identifier:
-    return "an identifier";
-  case TokenKind::Eof:
-    return "end of file";
-  case TokenKind::Invalid:
-    return "an invalid token";
-
-  case TokenKind::Bang:
-    return "!";
-  case TokenKind::BangEqual:
-    return "!=";
-  case TokenKind::Pipe:
-    return "|";
-  case TokenKind::PipePipe:
-    return "||";
-  case TokenKind::PipeEqual:
-    return "|=";
-  case TokenKind::Equal:
-    return "=";
-  case TokenKind::EqualEqual:
-    return "==";
-  case TokenKind::Caret:
-    return "^";
-  case TokenKind::CaretEqual:
-    return "^=";
-  case TokenKind::Plus:
-    return "+";
-  case TokenKind::PlusEqual:
-    return "+=";
-  case TokenKind::PlusPlus:
-    return "++";
-  case TokenKind::Minus:
-    return "-";
-  case TokenKind::MinusEqual:
-    return "-=";
-  case TokenKind::Star:
-    return "*";
-  case TokenKind::StarEqual:
-    return "*=";
-  case TokenKind::StarStar:
-    return "**";
-  case TokenKind::Percent:
-    return "%";
-  case TokenKind::PercentEqual:
-    return "%=";
-  case TokenKind::Slash:
-    return "/";
-  case TokenKind::SlashEqual:
-    return "/=";
-  case TokenKind::Ampersand:
-    return "&";
-  case TokenKind::AmpersandEqual:
-    return "&=";
-  case TokenKind::Tilde:
-    return "~";
-  case TokenKind::Less:
-    return "<";
-  case TokenKind::LessEqual:
-    return "<=";
-  case TokenKind::LessLess:
-    return "<<";
-  case TokenKind::LessLessEqual:
-    return "<<=";
-  case TokenKind::Greater:
-    return ">";
-  case TokenKind::GreaterEqual:
-    return ">=";
-  case TokenKind::GreaterGreater:
-    return ">>";
-  case TokenKind::GreaterGreaterEqual:
-    return ">>=";
-  case TokenKind::Question:
-    return "?";
-  case TokenKind::LParen:
-    return "(";
-  case TokenKind::RParen:
-    return ")";
-  case TokenKind::LBrace:
-    return "{";
-  case TokenKind::RBrace:
-    return "}";
-  case TokenKind::LBracket:
-    return "[";
-  case TokenKind::RBracket:
-    return "]";
-  case TokenKind::Comma:
-    return ",";
-  case TokenKind::Dot:
-    return ".";
-  case TokenKind::DotDot:
-    return "..";
-  case TokenKind::DotDotEqual:
-    return "..=";
-  case TokenKind::Colon:
-    return ":";
-  case TokenKind::Semicolon:
-    return ";";
-  case TokenKind::EqualGreater:
-    return "=>";
-
-  case TokenKind::MinusGreater:
-    return "->";
-  case TokenKind::KeywordMut:
-    return "mut";
-  case TokenKind::KeywordImpl:
-    return "impl";
-  case TokenKind::KeywordMatch:
-    return "match";
-  case TokenKind::KeywordIs:
-    return "is";
-  case TokenKind::KeywordAs:
-    return "as";
-  case TokenKind::KeywordAnd:
-    return "and";
-  case TokenKind::KeywordBreak:
-    return "break";
-  case TokenKind::KeywordConst:
-    return "const";
-  case TokenKind::KeywordContinue:
-    return "continue";
-  case TokenKind::KeywordElse:
-    return "else";
-  case TokenKind::KeywordEnum:
-    return "enum";
-  case TokenKind::KeywordFn:
-    return "fn";
-  case TokenKind::KeywordFor:
-    return "for";
-  case TokenKind::KeywordIf:
-    return "if";
-  case TokenKind::KeywordImport:
-    return "import";
-  case TokenKind::KeywordIn:
-    return "in";
-  case TokenKind::KeywordNot:
-    return "not";
-  case TokenKind::KeywordOr:
-    return "or";
-  case TokenKind::KeywordPub:
-    return "pub";
-  case TokenKind::KeywordReturn:
-    return "return";
-  case TokenKind::KeywordStruct:
-    return "struct";
-  case TokenKind::KeywordVar:
-    return "var";
-  case TokenKind::KeywordModule:
-    return "module";
-  }
-  return "invalid token";
-}
-
-std::unordered_map<std::string, TokenKind> keywords = {
-    {"mut", TokenKind::KeywordMut},
-    {"impl", TokenKind::KeywordImpl},
-    {"match", TokenKind::KeywordMatch},
-    {"is", TokenKind::KeywordIs},
-    {"as", TokenKind::KeywordAs},
-    {"and", TokenKind::KeywordAnd},
-    {"break", TokenKind::KeywordBreak},
-    {"const", TokenKind::KeywordConst},
-    {"continue", TokenKind::KeywordContinue},
-    {"else", TokenKind::KeywordElse},
-    {"enum", TokenKind::KeywordEnum},
-    {"fn", TokenKind::KeywordFn},
-    {"for", TokenKind::KeywordFor},
-    {"if", TokenKind::KeywordIf},
-    {"import", TokenKind::KeywordImport},
-    {"in", TokenKind::KeywordIn},
-    {"not", TokenKind::KeywordNot},
-    {"or", TokenKind::KeywordOr},
-    {"pub", TokenKind::KeywordPub},
-    {"return", TokenKind::KeywordReturn},
-    {"struct", TokenKind::KeywordStruct},
-    {"var", TokenKind::KeywordVar},
-    {"module", TokenKind::KeywordModule},
 };
 
 struct TokenSpan {
@@ -341,6 +157,35 @@ struct Lexer {
     DotDot,
   };
 
+  std::unordered_map<std::string, TokenKind> keywords = {
+      {"mut", TokenKind::KeywordMut},
+      {"impl", TokenKind::KeywordImpl},
+      {"match", TokenKind::KeywordMatch},
+      {"union", TokenKind::KeywordUnion},
+      {"trait", TokenKind::KeywordTrait},
+      {"is", TokenKind::KeywordIs},
+      {"as", TokenKind::KeywordAs},
+      {"and", TokenKind::KeywordAnd},
+      {"break", TokenKind::KeywordBreak},
+      {"const", TokenKind::KeywordConst},
+      {"continue", TokenKind::KeywordContinue},
+      {"else", TokenKind::KeywordElse},
+      {"enum", TokenKind::KeywordEnum},
+      {"fn", TokenKind::KeywordFn},
+      {"for", TokenKind::KeywordFor},
+      {"while", TokenKind::KeywordWhile},
+      {"if", TokenKind::KeywordIf},
+      {"import", TokenKind::KeywordImport},
+      {"in", TokenKind::KeywordIn},
+      {"not", TokenKind::KeywordNot},
+      {"or", TokenKind::KeywordOr},
+      {"pub", TokenKind::KeywordPub},
+      {"return", TokenKind::KeywordReturn},
+      {"struct", TokenKind::KeywordStruct},
+      {"var", TokenKind::KeywordVar},
+      {"module", TokenKind::KeywordModule},
+  };
+
   Lexer(std::basic_string<char> source, int file_id)
       : source(source), file_id(file_id), line_no(1), col_start(1) {
     if (source.size() >= 3 && source[0] == '\xEF' && source[1] == '\xBB' &&
@@ -352,6 +197,10 @@ struct Lexer {
   }
 
   int get_source_file_id() { return file_id; }
+
+  std::string token_to_string(Token token) {
+    return source.substr(token.span.start, token.span.end - token.span.start);
+  }
 
   Token next() {
     if (pending_invalid_token.has_value()) {
@@ -542,6 +391,7 @@ struct Lexer {
         case '*':
           result.kind = TokenKind::StarStar;
           index += 1;
+          loop_break = true;
           break;
         default:
           result.kind = TokenKind::Star;
@@ -1249,5 +1099,174 @@ struct Lexer {
     uint32_t codepoint = ((c0 & 0x07) << 18) | ((c1 & 0x3F) << 12) |
                          ((c2 & 0x3F) << 6) | (c3 & 0x3F);
     return codepoint;
+  }
+
+  static std::string lexeme(TokenKind kind) {
+    switch (kind) {
+    case TokenKind::Dummy:
+      return "dummy";
+
+    case TokenKind::StringLiteral:
+      return "a string literal";
+    case TokenKind::CharLiteral:
+      return "a character literal";
+    case TokenKind::NumberLiteral:
+      return "a number literal";
+    case TokenKind::Identifier:
+      return "an identifier";
+    case TokenKind::Eof:
+      return "end of file";
+    case TokenKind::Invalid:
+      return "an invalid token";
+
+    case TokenKind::Bang:
+      return "!";
+    case TokenKind::BangEqual:
+      return "!=";
+    case TokenKind::Pipe:
+      return "|";
+    case TokenKind::PipePipe:
+      return "||";
+    case TokenKind::PipeEqual:
+      return "|=";
+    case TokenKind::Equal:
+      return "=";
+    case TokenKind::EqualEqual:
+      return "==";
+    case TokenKind::Caret:
+      return "^";
+    case TokenKind::CaretEqual:
+      return "^=";
+    case TokenKind::Plus:
+      return "+";
+    case TokenKind::PlusEqual:
+      return "+=";
+    case TokenKind::PlusPlus:
+      return "++";
+    case TokenKind::Minus:
+      return "-";
+    case TokenKind::MinusEqual:
+      return "-=";
+    case TokenKind::Star:
+      return "*";
+    case TokenKind::StarEqual:
+      return "*=";
+    case TokenKind::StarStar:
+      return "**";
+    case TokenKind::Percent:
+      return "%";
+    case TokenKind::PercentEqual:
+      return "%=";
+    case TokenKind::Slash:
+      return "/";
+    case TokenKind::SlashEqual:
+      return "/=";
+    case TokenKind::Ampersand:
+      return "&";
+    case TokenKind::AmpersandEqual:
+      return "&=";
+    case TokenKind::Tilde:
+      return "~";
+    case TokenKind::Less:
+      return "<";
+    case TokenKind::LessEqual:
+      return "<=";
+    case TokenKind::LessLess:
+      return "<<";
+    case TokenKind::LessLessEqual:
+      return "<<=";
+    case TokenKind::Greater:
+      return ">";
+    case TokenKind::GreaterEqual:
+      return ">=";
+    case TokenKind::GreaterGreater:
+      return ">>";
+    case TokenKind::GreaterGreaterEqual:
+      return ">>=";
+    case TokenKind::Question:
+      return "?";
+    case TokenKind::LParen:
+      return "(";
+    case TokenKind::RParen:
+      return ")";
+    case TokenKind::LBrace:
+      return "{";
+    case TokenKind::RBrace:
+      return "}";
+    case TokenKind::LBracket:
+      return "[";
+    case TokenKind::RBracket:
+      return "]";
+    case TokenKind::Comma:
+      return ",";
+    case TokenKind::Dot:
+      return ".";
+    case TokenKind::DotDot:
+      return "..";
+    case TokenKind::DotDotEqual:
+      return "..=";
+    case TokenKind::Colon:
+      return ":";
+    case TokenKind::Semicolon:
+      return ";";
+    case TokenKind::EqualGreater:
+      return "=>";
+
+    case TokenKind::MinusGreater:
+      return "->";
+    case TokenKind::KeywordMut:
+      return "mut";
+    case TokenKind::KeywordImpl:
+      return "impl";
+    case TokenKind::KeywordUnion:
+      return "union";
+    case TokenKind::KeywordTrait:
+      return "trait";
+    case TokenKind::KeywordMatch:
+      return "match";
+    case TokenKind::KeywordIs:
+      return "is";
+    case TokenKind::KeywordAs:
+      return "as";
+    case TokenKind::KeywordAnd:
+      return "and";
+    case TokenKind::KeywordBreak:
+      return "break";
+    case TokenKind::KeywordConst:
+      return "const";
+    case TokenKind::KeywordContinue:
+      return "continue";
+    case TokenKind::KeywordElse:
+      return "else";
+    case TokenKind::KeywordEnum:
+      return "enum";
+    case TokenKind::KeywordFn:
+      return "fn";
+    case TokenKind::KeywordFor:
+      return "for";
+    case TokenKind::KeywordWhile:
+      return "while";
+    case TokenKind::KeywordIf:
+      return "if";
+    case TokenKind::KeywordImport:
+      return "import";
+    case TokenKind::KeywordIn:
+      return "in";
+    case TokenKind::KeywordNot:
+      return "not";
+    case TokenKind::KeywordOr:
+      return "or";
+    case TokenKind::KeywordPub:
+      return "pub";
+    case TokenKind::KeywordReturn:
+      return "return";
+    case TokenKind::KeywordStruct:
+      return "struct";
+    case TokenKind::KeywordVar:
+      return "var";
+    case TokenKind::KeywordModule:
+      return "module";
+    }
+    return "invalid token";
   }
 };

@@ -1,0 +1,29 @@
+fn main() void {
+    // `n` will take the values: 1, 2, ..., 100 in each iteration
+    for n in 1..101 {
+        if n % 15 == 0 {
+            print("fizzbuzz");
+        } else if n % 3 == 0 {
+            print("fizz");
+        } else if n % 5 == 0 {
+            print("buzz");
+        } else {
+            print("{}", n);
+        }
+    }
+}
+
+fn main() void {
+    // `n` will take the values: 1, 2, ..., 100 in each iteration
+    for n in 1..=100 {
+        if n % 15 == 0 {
+            print("fizzbuzz");
+        } else if n % 3 == 0 {
+            print("fizz");
+        } else if n % 5 == 0 {
+            print("buzz");
+        } else {
+            print("{}", n);
+        }
+    }
+}

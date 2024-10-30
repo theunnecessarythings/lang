@@ -1,0 +1,16 @@
+// `NanoSecond`, `Inch`, and `U64` are new names for `u64`.
+// TODO: may be change the const to type or alias
+const NanoSecond = u64;
+const Inch = u64;
+const U64 = u64;
+
+fn main() void {
+    // `NanoSecond` = `Inch` = `U64` = `u64`.
+    const nanoseconds: NanoSecond = u64(5);
+    const inches: Inch = U64(2);
+
+    // Note that type aliases *don't* provide any extra type safety, because
+    // aliases are *not* new types
+    print("{} nanoseconds + {} inches = {} unit?", nanoseconds, inches, nanoseconds + inches);
+}
+

@@ -1,0 +1,26 @@
+fn main() void {
+    var count = 0;
+
+    print("Let's count until infinity!");
+
+    // Infinite loop
+    while {
+        count += 1;
+
+        if count == 3 {
+            print("three");
+
+            // Skip the rest of this iteration
+            continue;
+        }
+
+        print("{}", count);
+
+        if count == 5 {
+            print("OK, that's enough");
+
+            // Exit this loop
+            break;
+        }
+    }
+}

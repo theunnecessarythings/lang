@@ -1,0 +1,31 @@
+// The following struct is for the activity.
+struct Matrix(f32, f32, f32, f32)
+
+fn main() void {
+    const long_tuple = (1, 2, 3, 4,
+                      -1, -2, -3, -4,
+                      0.1, 0.2,
+                      'a', true);
+
+    // Values can be extracted from the tuple using tuple indexing.
+
+    // Tuples can be tuple members.
+    const tuple_of_tuples = ((1, 2, 2), (4, -1), -2);
+
+    print("tuple of tuples: {}", tuple_of_tuples);
+
+    const pair = (1, true);
+    print("Pair is {}", pair);
+
+    // To create one element tuples, the comma is required to tell them apart
+    // from a literal surrounded by parentheses.
+    print("One element tuple: {}", (5,));
+    print("Just an integer: {}", (5));
+
+    // Tuples can be destructured to create bindings.
+    const tuple = (1, "hello", 4.5, true);
+
+
+    const matrix = Matrix(1.1, 1.2, 2.1, 2.2);
+    print("{}", matrix);
+}

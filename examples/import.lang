@@ -1,0 +1,4 @@
+import std.io;
+import std.math.rand as rand, std.io;
+import std.fs as fs, std.os;
+import std.builtin.array as array;

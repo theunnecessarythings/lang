@@ -1,0 +1,13 @@
+fn main() void {
+    const names = Vector(["Bob", "Frank", "Ferris"]);
+
+    for name in names {
+        // name is Reference(String)
+        match name {
+            is "Ferris" => print("There is a rustacean among us!"),
+            is _ => print("Hello {}", name),
+        }
+    }
+    
+    print("names: {}", names);
+}

@@ -1,3 +1,5 @@
+#pragma once
+
 #include "ast.hpp"
 #include "lexer.hpp"
 #include <memory>
@@ -18,7 +20,7 @@ struct SourceManager {
   int last_source_id = -1;
 
   std::optional<std::string> get_source_path(int id) {
-    if (id < 0 || id >= source_map.size()) {
+    if (id < 0 || static_cast<size_t>(id) >= source_map.size()) {
       return std::nullopt;
     }
     return source_map[id];
@@ -27,7 +29,7 @@ struct SourceManager {
   bool contains_path(const std::string &path) { return source_set.count(path); }
 
   std::optional<std::string> get_source(int id) {
-    if (id < 0 || id >= sources.size()) {
+    if (id < 0 || static_cast<size_t>(id) >= sources.size()) {
       return std::nullopt;
     }
     return sources[id];
@@ -50,7 +52,7 @@ struct SourceManager {
     int start = 0;
     int end = src.size();
     int current_line = 1;
-    for (int i = 0; i < src.size(); i++) {
+    for (int i = 0; i < (int)src.size(); i++) {
       if (current_line == line_no) {
         start = i;
         break;
@@ -59,7 +61,7 @@ struct SourceManager {
         current_line++;
       }
     }
-    for (int i = start; i < src.size(); i++) {
+    for (int i = start; i < (int)src.size(); i++) {
       if (src[i] == '\n') {
         end = i;
         break;
@@ -101,8 +103,9 @@ struct DiagnosticsManager {
     std::cout << Diagnostic::literal(level) << "\t: " << level_count(level)
               << " \t ├";
     for (int i = 0; i < 62; i++) {
-      std::cout << "🭻";
+      std::cout << "─";
     }
+    std::cout << "┤" << std::endl;
     if (diagnostics[static_cast<int>(level)].size() > 0) {
       for (auto &diagnostic : diagnostics[static_cast<int>(level)]) {
         report_diagnostic(diagnostic);
@@ -133,7 +136,7 @@ struct DiagnosticsManager {
 
     auto line_no_header = std::to_string(span.line_no) + " | ";
     std::cout << line_no_header << source_line.value_or("") << std::endl;
-    auto header_len = line_no_header.size();
+    int header_len = line_no_header.size();
     for (int i = 0; i < span.col_start + header_len - 1; i++) {
       std::cout << "🭻";
     }
@@ -141,14 +144,20 @@ struct DiagnosticsManager {
     std::cout << std::endl;
   }
 
-  void report_error(TokenSpan span, std::string message) {
+  void report_error(Token token, std::string message) {
+    if (token.kind == TokenKind::Eof) {
+      throw std::runtime_error("Unexpected EOF");
+    }
     diagnostics[static_cast<int>(Diagnostic::Level::Error)].push_back(
-        Diagnostic{span, message, Diagnostic::Level::Error});
+        Diagnostic{token.span, message, Diagnostic::Level::Error});
   }
 
-  void report_warning(TokenSpan span, std::string message) {
+  void report_warning(Token token, std::string message) {
+    if (token.kind == TokenKind::Eof) {
+      throw std::runtime_error("Unexpected EOF");
+    }
     diagnostics[static_cast<int>(Diagnostic::Level::Warning)].push_back(
-        Diagnostic{span, message, Diagnostic::Level::Warning});
+        Diagnostic{token.span, message, Diagnostic::Level::Warning});
   }
 };
 
@@ -202,7 +211,7 @@ struct SymbolTable {
         scopes.size() > 0
             ? std::make_optional(std::make_shared<Scope>(scopes.back()))
             : std::nullopt;
-    scopes.push_back(Scope{parent});
+    scopes.push_back(Scope{parent, {}});
   }
 
   void pop_scope() {

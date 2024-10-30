@@ -1,0 +1,1347 @@
+// Example of the syntax for the A language.
+
+// hello_world.ext
+// This is a simple program that prints "Hello, world!" to the console.
+/*
+* This is a multi-line comment.
+*/
+fn main() void {
+    print("Hello, world!");   
+}
+
+
+// primitives.ext
+fn main() void {
+    // Variables can be type annotated.
+    const logical: bool = true;
+
+    const a_float: f64 = 1.0;  // Regular annotation
+    const an_integer   = 5i32; // Suffix annotation
+
+    // Or a default will be used.
+    const default_float   = 3.0; // `f64`
+    const default_integer = 7;   // `isize`
+
+
+    // A mutable variable's value can be changed.
+    var mutable = 12; // Mutable `isize`
+    mutable = 21;
+
+    // Error! The type of a variable can't be changed.
+    mutable = true;
+}
+
+// literals.ext
+fn main() void {
+    // Integer addition
+    print("1 + 2 = {}", 1u32 + 2);
+
+    // Integer subtraction
+    print("1 - 2 = {}", 1i32 - 2);
+    // TODO ^ Try changing `1i32` to `1u32` to see why the type is important
+
+    // Scientific notation
+    print("1e4 is {}, -2.5e-3 is {}", 1e4, -2.5e-3);
+
+    // Short-circuiting boolean logic
+    print("true AND false is {}", true and false);
+    print("true OR false is {}", true or false);
+    print("NOT true is {}", not true);
+
+    // Bitwise operations
+    print("0011 AND 0101 is {:04b}", 0b0011u32 & 0b0101);
+    print("0011 OR 0101 is {:04b}", 0b0011u32 | 0b0101);
+    print("0011 XOR 0101 is {:04b}", 0b0011u32 ^ 0b0101);
+    print("1 << 5 is {}", 1u32 << 5);
+    print("0x80 >> 2 is 0x{:x}", 0x80u32 >> 2);
+
+    // Use underscores to improve readability!
+    print("One million is written as {}", 1_000_000u32);
+}
+
+// tuples.ext
+
+// Tuples can be used as function arguments and as return values.
+fn reverse(pair: (i32, bool)) (bool, i32) {
+    const (int_param, bool_param) = pair;
+
+    return (bool_param, int_param);
+}
+
+// The following struct is for the activity.
+struct Matrix(f32, f32, f32, f32);
+
+fn main() void {
+    // A tuple with a bunch of different types.
+    const long_tuple = (1u8, 2u16, 3u32, 4u64,
+                      -1i8, -2i16, -3i32, -4i64,
+                      0.1f32, 0.2f64,
+                      'a', true);
+
+    // Values can be extracted from the tuple using tuple indexing.
+    // print("Long tuple first value: {}", long_tuple.0);
+    // print("Long tuple second value: {}", long_tuple.1);
+
+    // Tuples can be tuple members.
+    const tuple_of_tuples = ((1u8, 2u16, 2u32), (4u64, -1i8), -2i16);
+
+    print("tuple of tuples: {}", tuple_of_tuples);
+
+    const pair = (1, true);
+    print("Pair is {}", pair);
+
+    // To create one element tuples, the comma is required to tell them apart
+    // from a literal surrounded by parentheses.
+    print("One element tuple: {}", (5u32,));
+    print("Just an integer: {}", (5u32));
+
+    // Tuples can be destructured to create bindings.
+    const tuple = (1, "hello", 4.5, true);
+
+    const tuple is (a, b, c, d);
+    print("{}, {}, {}, {}", a, b, c, d);
+
+    const matrix = Matrix(1.1, 1.2, 2.1, 2.2);
+    print("{}", matrix);
+}
+
+// arrays_and_slices.ext
+import std.mem;
+
+// This function borrows a slice.
+fn analyze_slice(slice: []i32) {
+    print("First element of the slice: {}", slice[0]);
+    print("The slice has {} elements", slice.len());
+}
+
+fn main() void {
+    // Fixed-size array (type signature is superfluous).
+    const xs: [5]i32 = [1, 2, 3, 4, 5];
+
+    // All elements can be initialized to the same value.
+    const ys: [500]i32 = [0] ** 500;
+
+    // Indexing starts at 0.
+    print("First element of the array: {}", xs[0]);
+    print("Second element of the array: {}", xs[1]);
+
+    // `len` returns the count of elements in the array.
+    print("Number of elements in array: {}", xs.len());
+
+    // Arrays are stack allocated.
+    print("Array occupies {} bytes", mem.size_of_val(xs));
+
+    // Arrays can be automatically borrowed as slices.
+    print("Borrow the whole array as a slice.");
+    analyze_slice(xs);
+
+    // Slices can point to a section of an array.
+    // They are of the form [starting_index..ending_index].
+    // `starting_index` is the first position in the slice.
+    // `ending_index` is one more than the last position in the slice.
+    print("Borrow a section of the array as a slice.");
+    analyze_slice(ys[1..4]);
+
+    // Example of empty slice `[]`:
+    const empty_array: [0]u32 = [];
+    assert_eq(empty_array, []);
+    assert_eq(empty_array, [][..]); // Same but more verbose
+
+    // Arrays can be safely accessed using `.get`, which returns an
+    // `Option`. This can be matched as shown below, or used with
+    // `.expect()` if you would like the program to exit with a nice
+    // message instead of happily continue.
+    for i in 0..=xs.len() { // Oops, one element too far!
+        match xs.get(i) {
+            is .Some(xval) => print("{}: {}", i, xval),
+            is .None => print("Slow down! {} is too far!", i),
+        }
+    }
+
+    // Out of bound indexing on array causes compile time error.
+    //print("{}", xs[5]);
+    // Out of bound indexing on slice causes runtime error.
+    //print("{}", xs[..][5]);
+}
+
+// structs.ext
+
+struct Person {
+    name: String,
+    age: u8,
+}
+
+impl Person {
+    fn init(mut self, name: String, age: u8) Self {
+        self.name = name;
+        self.age = age;
+        return self;
+    }
+}
+
+// A unit struct
+struct Unit{}
+
+// A tuple struct
+struct Pair(i32, f32);
+
+// A struct with two fields
+struct Point {
+    x: f32,
+    y: f32,
+}
+
+impl Point {
+    fn init(mut self, x: f32, y: f32) Self {
+        self.x = x;
+        self.y = y;
+        return self;
+    }
+}
+
+// Structs can be reused as fields of another struct
+struct Rectangle {
+    // A rectangle can be specified by where the top left and bottom right
+    // corners are in space.
+    top_left: Point,
+    bottom_right: Point,
+}
+
+impl Rectangle {
+    fn init(mut self, top_left: Point, bottom_right: Point) Self {
+        self.top_left = top_left;
+        self.bottom_right = bottom_right;
+        return self;
+    }
+}
+
+fn main() void {
+    // Create struct with field init shorthand
+    const name = String("Peter");
+    const age = 27;
+    const peter = Person(name, age);
+
+    // Print debug struct
+    print("{}", peter);
+
+    // Instantiate a `Point`
+    const point: Point = Point(10.3, 0.4);
+    const another_point: Point = Point(5.2, 0.2);
+
+    // Access the fields of the point
+    print("point coordinates: ({}, {})", point.x, point.y);
+
+    const bottom_right = Point(5.2, another_point.y);
+
+    print("second point: ({}, {})", bottom_right.x, bottom_right.y);
+
+    const _rectangle = Rectangle(top_left = Point(left_edge, top_edge),
+                                bottom_right = bottom_right);
+
+    // Instantiate a unit struct
+    const _unit = Unit();
+
+    // Instantiate a tuple struct
+    const pair = Pair(1, 0.1);
+
+    // Access the fields of a tuple struct
+    print("pair contains {} and {}", pair.0, pair.1);
+
+    // Destructure a tuple struct
+    const pair is (integer, decimal);
+
+    print("pair contains {} and {}", integer, decimal);
+}
+
+// enums.ext
+
+// Create an `enum` to classify a web event. Note how both
+// names and type information together specify the variant:
+// `PageLoad != PageUnload` and `KeyPress(char) != Paste(String)`.
+// Each is different and independent.
+enum WebEvent {
+    // An `enum` variant may either be `unit-like`,
+    PageLoad,
+    PageUnload,
+    // like tuple structs,
+    KeyPress(char),
+    Paste(String),
+    // or c-like structures.
+    Click { x: i64, y: i64 },
+}
+
+// A function which takes a `WebEvent` enum as an argument and
+// returns nothing.
+fn inspect(event: WebEvent) void {
+    match event {
+        is .PageLoad => print("page loaded"),
+        is .PageUnload => print("page unloaded"),
+        // Destructure `c` from inside the `enum` variant.
+        is .KeyPress(c) => print("pressed '{}'.", c),
+        is .Paste(s) =>  print("pasted \"{}\".", s),
+        // Destructure `Click` into `x` and `y`.
+        is .Click(x, y) => {
+            print("clicked at x={}, y={}.", x, y);
+        },
+    }
+}
+
+fn main() void {
+    const pressed = WebEvent.KeyPress('x');
+    const pasted  = WebEvent.Paste("my text");
+    const click   = WebEvent.Click({ x: 20, y: 80 });
+    const load    = WebEvent.PageLoad;
+    const unload  = WebEvent.PageUnload;
+
+    inspect(pressed);
+    inspect(pasted);
+    inspect(click);
+    inspect(load);
+    inspect(unload);
+}
+
+// c_like_enum.ext
+// enum with implicit discriminator (starts at 0)
+enum Number {
+    Zero,
+    One,
+    Two,
+}
+
+// enum with explicit discriminator
+enum Color {
+    Red = 0xff0000,
+    Green = 0x00ff00,
+    Blue = 0x0000ff,
+}
+
+fn main() void {
+    // `enums` can be cast as integers.
+    print("zero is {}", i32(Number.Zero));
+    print("one is {}", i32(Number.One));
+
+    print("roses are #{:06x}", i32(Color.Red));
+    print("violets are #{:06x}", i32(Color.Blue));
+}
+
+// variable_bindings.ext
+fn main() void {
+    const an_integer = 1u32;
+    const a_boolean = true;
+    // copy `an_integer` into `copied_integer`
+    const copied_integer = an_integer;
+
+    print("An integer: {}", copied_integer);
+    print("A boolean: {}", a_boolean);
+
+    const unused_variable = 3u32;
+    _ = unused_variable;
+}
+
+// mutability.ext
+fn main() void {
+    const _immutable_binding = 1;
+    var mutable_binding = 1;
+
+    print("Before mutation: {}", mutable_binding);
+
+    // Ok
+    mutable_binding += 1;
+
+    print("After mutation: {}", mutable_binding);
+
+    // Error! Cannot assign a new value to an immutable variable
+    _immutable_binding += 1;
+}
+
+// Scope.ext
+
+fn main() void {
+    // This binding lives in the main function
+    const long_lived_binding = 1;
+
+    // This is a block, and has a smaller scope than the main function
+    {
+        // This binding only exists in this block
+        const short_lived_binding = 2;
+
+        print("inner short: {}", short_lived_binding);
+    }
+    // End of the block
+
+    // Error! `short_lived_binding` doesn't exist in this scope
+    print("outer short: {}", short_lived_binding);
+    // FIXME ^ Comment out this line
+
+    print("outer long: {}", long_lived_binding);
+}
+
+// declare_first.ext
+fn main() void {
+    // Declare a variable binding
+    var a_binding = undefined;
+
+    {
+        var x = 2;
+
+        // Initialize the binding
+        a_binding = x * x;
+    }
+
+    print("a binding: {}", a_binding);
+
+    var another_binding = undefined;
+
+    // Error! Use of uninitialized binding
+    print("another binding: {}", another_binding);
+    // FIXME ^ Comment out this line
+
+    another_binding = 1;
+
+    print("another binding: {}", another_binding);
+}
+
+// casting.ext
+
+fn main() void {
+    const decimal = 65.4321_f32;
+
+    // Error! No implicit conversion
+    const integer: u8 = decimal;
+    // FIXME ^ Comment out this line
+
+    // Explicit conversion
+    const integer = u8(decimal);
+    const character = char(integer);
+
+    // Error! There are limitations in conversion rules.
+    // A float cannot be directly converted to a char.
+    const character = char(decimal);
+    // FIXME ^ Comment out this line
+
+    print("Casting: {} -> {} -> {}", decimal, integer, character);
+
+    // when casting any value to an unsigned type, T,
+    // T.MAX + 1 is added or subtracted until the value
+    // fits into the new type
+
+    // 1000 already fits in a u16
+    print("1000 as a u16 is: {}", u16(1000));
+
+    // 1000 - 256 - 256 - 256 = 232
+    // Under the hood, the first 8 least significant bits (LSB) are kept,
+    // while the rest towards the most significant bit (MSB) get truncated.
+    print("1000 as a u8 is : {}", u8(1000));
+    // -1 + 256 = 255
+    print("  -1 as a u8 is : {}", u8(-1i8));
+
+    // For positive numbers, this is the same as the modulus
+    print("1000 mod 256 is : {}", 1000 % 256);
+
+    // When casting to a signed type, the (bitwise) result is the same as
+    // first casting to the corresponding unsigned type. If the most significant
+    // bit of that value is 1, then the value is negative.
+
+    // Unless it already fits, of course.
+    print(" 128 as a i16 is: {}", i16(128));
+
+    // In boundary case 128 value in 8-bit two's complement representation is -128
+    print(" 128 as a i8 is : {}", i8(128));
+
+    // repeating the example above
+    // 1000 as u8 -> 232
+    print("1000 as a u8 is : {}", u8(1000));
+    // and the value of 232 in 8-bit two's complement representation is -24
+    print(" 232 as a i8 is : {}", i8(232));
+
+    // Since Rust 1.45, the `as` keyword performs a *saturating cast*
+    // when casting from float to int. If the floating point value exceeds
+    // the upper bound or is less than the lower bound, the returned value
+    // will be equal to the bound crossed.
+
+    // 300.0 as u8 is 255
+    print(" 300.0 as u8 is : {}", u8(300.0_f32));
+    // -100.0 as u8 is 0
+    print("-100.0 as u8 is : {}", u8(-100.0_f32));
+    // nan as u8 is 0
+    print("   nan as u8 is : {}", u8(f32.NAN));
+    
+}
+
+// literals.ext
+fn main() void {
+    // Suffixed literals, their types are known at initialization
+    const x = 1u8;
+    const y = 2u32;
+    const z = 3f32;
+
+    // Unsuffixed literals, their types depend on how they are used
+    const i = 1;
+    const f = 1.0;
+
+    // `size_of_val` returns the size of a variable in bytes
+    print("size of `x` in bytes: {}", std.mem.size_of_val(x));
+    print("size of `y` in bytes: {}", std.mem.size_of_val(y));
+    print("size of `z` in bytes: {}", std.mem.size_of_val(z));
+    print("size of `i` in bytes: {}", std.mem.size_of_val(i));
+    print("size of `f` in bytes: {}", std.mem.size_of_val(f));
+}
+
+// aliasing.ext
+
+// `NanoSecond`, `Inch`, and `U64` are new names for `u64`.
+// TODO: may be change the const to type or alias
+const NanoSecond = u64;
+const Inch = u64;
+const U64 = u64;
+
+fn main() void {
+    // `NanoSecond` = `Inch` = `U64` = `u64`.
+    const nanoseconds: NanoSecond = u64(5);
+    const inches: Inch = U64(2);
+
+    // Note that type aliases *don't* provide any extra type safety, because
+    // aliases are *not* new types
+    print("{} nanoseconds + {} inches = {} unit?",
+             nanoseconds,
+             inches,
+             nanoseconds + inches);
+}
+
+// type_casting.ext
+
+struct Number {
+    value: i32,
+}
+
+impl Number {
+    fn init(mut self, item: i32) Self {
+        self.value = item;
+        return self;
+    }
+
+    fn init(mut self, item: f64) Self {
+        self.value = i32(item);
+        return self;
+    }
+}
+
+fn main() void {
+    const num = Number(30);
+    const num_from_float = Number(5.0);
+    print("My number is {}, {}", num, num_from_float);
+}
+
+// formatter.ext
+import fmt.Formatter;
+
+struct Circle {
+    radius: i32
+}
+
+impl Circle {
+    fn init(mut self, radius: i32) Self {
+        self.radius = radius;
+        return self;
+    }
+}
+
+impl Formatter for Circle {
+    fn fmt(self, mut writer: Formatter) void {
+        writer.write("Circle of radius {}", self.radius);
+    }
+}
+
+fn main() void {
+    const circle = Circle(6);
+    print(circle);
+}
+
+// block_expression.ext
+fn main() void {
+    const x = 5u32;
+
+    const y = {
+        const x_squared = x * x;
+        const x_cube = x_squared * x;
+        
+        // Block expressions can return values using `break` keyword
+        break x_cube + x_squared + x;
+    };
+
+    const z = {
+        // The semicolon suppresses this expression and `void` is assigned to `z`
+        2 * x;
+    };
+
+    print("x is {}", x);
+    print("y is {}", y);
+    print("z is {}", z);
+}
+
+// if_else.ext
+fn main() void {
+    const n = 5;
+
+    if n < 0 {
+        print("{} is negative", n);
+    } else if n > 0 {
+        print("{} is positive", n);
+    } else {
+        print("{} is zero", n);
+    }
+    
+    // logical and is 'and' instead of '&&' so is logical or 'or' instead of '||' and logical not
+    // is 'not' instead of '!' 
+    // Reason: Very simple, my pinkies are very weak and I don't want to use them too much (I'm not
+    // kidding)
+    const big_n =
+        if n < 10 and n > -10 {
+            print(", and is a small number, increase ten-fold");
+            break 10 * n;
+        } else {
+            print(", and is a big number, halve the number");
+            break n / 2;
+        };
+
+    print("{} -> {}", n, big_n);
+}
+
+// loops.ext
+fn main() void {
+    var count = 0u32;
+
+    print("Let's count until infinity!");
+
+    // Infinite loop
+    for {
+        count += 1;
+
+        if count == 3 {
+            print("three");
+
+            // Skip the rest of this iteration
+            continue;
+        }
+
+        print("{}", count);
+
+        if count == 5 {
+            print("OK, that's enough");
+
+            // Exit this loop
+            break;
+        }
+    }
+}
+
+// labeled_loops.ext
+fn main() void {
+    for :outer {
+        print("Entered the outer loop");
+
+        for :inner {
+            print("Entered the inner loop");
+
+            // This would break only the inner loop
+            //break;
+
+            // This breaks the outer loop
+            break :outer;
+        }
+
+        print("This point will never be reached");
+    }
+
+    print("Exited the outer loop");
+}
+
+// returning_from_loops.ext
+fn main() void {
+    var counter = 0;
+
+    const result = for {
+        counter += 1;
+
+        if counter == 10 {
+            break counter * 2;
+        }
+    };
+
+    assert_eq(result, 20);
+}
+
+// while.ext
+fn main() void {
+    // A counter variable
+    var n = 1;
+
+    // Loop while `n` is less than 101
+    // There is no need for an explicit `while` keyword
+    for n < 101 {
+        if n % 15 == 0 {
+            print("fizzbuzz");
+        } else if n % 3 == 0 {
+            print("fizz");
+        } else if n % 5 == 0 {
+            print("buzz");
+        } else {
+            print("{}", n);
+        }
+
+        // Increment counter
+        n += 1;
+    }
+}
+
+// for_in.ext
+fn main() void {
+    // `n` will take the values: 1, 2, ..., 100 in each iteration
+    for n in 1..101 {
+        if n % 15 == 0 {
+            print("fizzbuzz");
+        } else if n % 3 == 0 {
+            print("fizz");
+        } else if n % 5 == 0 {
+            print("buzz");
+        } else {
+            print("{}", n);
+        }
+    }
+}
+
+fn main() void {
+    // `n` will take the values: 1, 2, ..., 100 in each iteration
+    for n in 1..=100 {
+        if n % 15 == 0 {
+            print("fizzbuzz");
+        } else if n % 3 == 0 {
+            print("fizz");
+        } else if n % 5 == 0 {
+            print("buzz");
+        } else {
+            print("{}", n);
+        }
+    }
+}
+
+// for_each.ext
+fn main() void {
+    const names = Vector(["Bob", "Frank", "Ferris"]);
+
+    for name in names {
+        // name is Reference(String)
+        match name {
+            is "Ferris" => print("There is a rustacean among us!"),
+            is _ => print("Hello {}", name),
+        }
+    }
+    
+    print("names: {}", names);
+}
+
+
+
+// for_each_mut.ext
+fn main() void {
+    var names = Vector(["Bob", "Frank", "Ferris"]);
+
+    for name in names {
+        // NOTE: names is mutable so we can mutate name in place
+        // normally we might have to dereference name to mutate it, for eg. *name = "new name"
+        // This is ideal scenario.
+        name = match name {
+            is "Ferris" => "There is a rustacean among us!",
+            is _ => "Hello",
+        };
+    }
+
+    print("names: {}", names);
+}
+
+// match.ext
+fn main() void {
+    const number = 13;
+    // TODO ^ Try different values for `number`
+
+    print("Tell me about {}", number);
+    match number {
+        // Match a single value
+        is 1 => print("One!"),
+        // Match several values
+        is 2 | 3 | 5 | 7 | 11 => print("This is a prime"),
+        // TODO ^ Try adding 13 to the list of prime values
+        // Match an inclusive range
+        is 13..=19 => print("A teen"),
+        // Handle the rest of cases
+        is _ => print("Ain't special"),
+        // TODO ^ Try commenting out this catch-all arm
+    }
+
+    const boolean = true;
+    // Match is an expression too
+    const binary = match boolean {
+        // The arms of a match must cover all the possible values
+        is false => 0,
+        is true => 1,
+        // TODO ^ Try commenting out one of these arms
+    };
+
+    print("{} -> {}", boolean, binary);
+}
+
+// match_destructuring.ext
+fn main() void {
+    const triple = (0, -2, 3);
+    // TODO ^ Try different values for `triple`
+
+    print("Tell me about {}", triple);
+    // Match can be used to destructure a tuple
+    match triple {
+        // Destructure the second and third elements
+        is (0, y, z) => print("First is `0`, `y` is {}, and `z` is {}", y, z),
+        is (1, ..)  => print("First is `1` and the rest doesn't matter"),
+        is (.., 2)  => print("last is `2` and the rest doesn't matter"),
+        is (3, .., 4)  => print("First is `3`, last is `4`, and the rest doesn't matter"),
+        // `..` can be used to ignore the rest of the tuple
+        is _      => print("It doesn't matter what they are"),
+    }
+}
+
+fn main() void {
+    // Try changing the values in the array, or make it a slice!
+    const array = [1, -2, 6];
+
+    match array {
+        // Binds the second and the third elements to the respective variables
+        is [0, second, third] =>
+            print("array[0] = 0, array[1] = {}, array[2] = {}", second, third),
+
+        // Single values can be ignored with _
+        is [1, _, third] => print(
+            "array[0] = 1, array[2] = {} and array[1] was ignored",
+            third
+        ),
+
+        // You can also bind some and ignore the rest
+        is [-1, second, ..] => print(
+            "array[0] = -1, array[1] = {} and all the other ones were ignored",
+            second
+        ),
+        // The code below would not compile
+        // [-1, second] => ...
+
+        // Or store them in another array/slice (the type depends on
+        // that of the value that is being matched against)
+        is [3, second, tail..] => print(
+            "array[0] = 3, array[1] = {} and the other elements were {}",
+            second, tail
+        ),
+
+        // Combining these patterns, we can, for example, bind the first and
+        // last values, and store the rest of them in a single array
+        is [first, middle.., last] => print(
+            "array[0] = {}, middle = {}, array[2] = {}",
+            first, middle, last
+        ),
+    }
+}
+
+enum Color {
+    // These 3 are specified solely by their name.
+    Red,
+    Blue,
+    Green,
+    // These likewise tie `u32` tuples to different names: color models.
+    RGB(u32, u32, u32),
+    HSV(u32, u32, u32),
+    HSL(u32, u32, u32),
+    CMY(u32, u32, u32),
+    CMYK(u32, u32, u32, u32),
+}
+
+fn main() void {
+    const color = Color.RGB(122, 17, 40);
+    // TODO ^ Try different variants for `color`
+
+    print("What color is it?");
+    // An `enum` can be destructured using a `match`.
+    match color {
+        is .Red   => print("The color is Red!"),
+        is .Blue  => print("The color is Blue!"),
+        is .Green => print("The color is Green!"),
+        is .RGB(r, g, b) =>
+            print("Red: {}, green: {}, and blue: {}!", r, g, b),
+        is .HSV(h, s, v) =>
+            print("Hue: {}, saturation: {}, value: {}!", h, s, v),
+        is .HSL(h, s, l) =>
+            print("Hue: {}, saturation: {}, lightness: {}!", h, s, l),
+        is .CMY(c, m, y) =>
+            print("Cyan: {}, magenta: {}, yellow: {}!", c, m, y),
+        is .CMYK(c, m, y, k) =>
+            print("Cyan: {}, magenta: {}, yellow: {}, key (black): {}!",
+                c, m, y, k),
+        // Don't need another arm because all variants have been examined
+    }
+}
+
+// TODO: Look into all the matching syntaxes, see if they can be made more concise
+
+fn main() void {
+    struct Foo {
+        x: (u32, u32),
+        y: u32,
+    }
+
+    // Try changing the values in the struct to see what happens
+    const foo = Foo(x=(1, 2), y=3);
+
+    match foo {
+        is Foo { x: (1, b), y } => print("First of x is 1, b = {},  y = {} ", b, y),
+
+        // you can destructure structs and rename the variables,
+        // the order is not important
+        is Foo { y: 2, x: i } => print("y is 2, i = {}", i),
+
+        // and you can also ignore some variables:
+        is Foo { y, .. } => print("y = {}, we don't care about x", y),
+        // this will give an error: pattern does not mention field `x`
+        //Foo { y } => println!("y = {}", y),
+    }
+
+    // You do not need a match block to destructure structs:
+    // let Foo { x : x0, y: y0 } = faa;
+    const foo is Foo { x: (x0, _), y: y0 };
+    print("Outside: x0 = {x0}, y0 = {y0}");
+
+    // Destructuring works with nested structs as well:
+    struct Bar {
+        foo: Foo,
+    }
+
+    const bar = Bar(foo=faa);
+    const bar is Bar { foo: Foo { x: nested_x, y: nested_y } };
+    print("Nested: nested_x = {nested_x}, nested_y = {nested_y}");
+}
+
+enum Temperature {
+    Celsius(i32),
+    Fahrenheit(i32),
+}
+
+fn main() void {
+    const temperature = Temperature.Celsius(35);
+    // ^ TODO try different values for `temperature`
+
+    match temperature {
+        is Temperature.Celsius(t) if t > 30 => print("{}C is above 30 Celsius", t),
+        // The `if condition` part ^ is a guard
+        is Temperature.Celsius(t) => print("{}C is equal to or below 30 Celsius", t),
+
+        is Temperature.Fahrenheit(t) if t > 86 => print("{}F is above 86 Fahrenheit", t),
+        is Temperature.Fahrenheit(t) => print("{}F is equal to or below 86 Fahrenheit", t),
+    }
+}
+
+// A function `age` which returns a `u32`.
+fn age() u32 {
+    return 15;
+}
+
+fn main() void {
+    print("Tell me what type of person you are");
+
+    match age() {
+        is 0             => print("I haven't celebrated my first birthday yet"),
+        // Could `match` 1 ..= 12 directly but then what age
+        // would the child be? Instead, bind to `n` for the
+        // sequence of 1 ..= 12. Now the age can be reported.
+        is 1  ..= 12 as n => print("I'm a child of age {}", n),
+        is 13 ..= 19 as n => print("I'm a teen of age {}", n),
+        // Nothing bound. Return the result.
+        _ as n            => print("I'm an old person of age {}", n),
+    }
+}
+
+// binding.ext
+fn main() void  {
+    // All have type `Option<i32>`
+    const number = Some(7);
+    const letter: Option[i32] = None;
+    const emoticon: Option[i32] = None;
+
+    if number is Some(i) {
+        print("Matched {}!", i);
+    }
+
+    // If you need to specify a failure, use an else:
+    if letter is Some(i) {
+        print("Matched {}!", i);
+    } else {
+        // Destructure failed. Change to the failure case.
+        print("Didn't match a number. Let's go with a letter!");
+    }
+
+    // Provide an altered failing condition.
+    const i_like_letters = false;
+
+    if emoticon is Some(i) {
+        print("Matched {}!", i);
+    // Destructure failed. Evaluate an `else if` condition to see if the
+    // alternate failure branch should be taken:
+    } else if i_like_letters {
+        print("Didn't match a number. Let's go with a letter!");
+    } else {
+        // The condition evaluated false. This branch is the default:
+        print("I don't like letters. Let's go with an emoticon :)!");
+    }
+
+    const ch = 'a';
+    if ch is 'a' | 'e' | 'i' | 'o' | 'u' {
+        print("{} is a vowel", ch);
+    }
+    
+    struct Point {
+        x: i32,
+        y: i32,
+    }
+    const point = Point(3, 4);
+    if point is Point(x, y) {
+        print("Point at ({}, {})", x, y);
+    }
+
+    if emoticon is Some(_) {
+        print("Has some value");
+    }
+    
+    const x = Some(2);
+    if value is Some(x) if x % 2 == 0 {
+        print("Even value: {}", x);
+    }
+}
+
+// Our example enum
+enum Foo {
+    Bar,
+    Baz,
+    Qux(u32)
+}
+
+fn main() void {
+    // Create example variables
+    const a = Foo.Bar;
+    const b = Foo.Baz;
+    const c = Foo.Qux(100);
+    
+    // Variable a matches Foo::Bar
+    if a is Foo.Bar {
+        print("a is foobar");
+    }
+    
+    // Variable b does not match Foo::Bar
+    // So this will print nothing
+    if b is Foo.Bar {
+        print("b is foobar");
+    }
+    
+    // Variable c matches Foo::Qux which has a value
+    // Similar to Some() in the previous example
+    if c is Foo.Qux(value) {
+        print("c is {}", value);
+    }
+
+    // Binding also works with `if let`
+    if c is Foo.Qux(value) if value == 100 {
+        print("c is one hundred");
+    }
+}
+
+// for_let.ext
+fn main() void {
+    var optional = Some(0);
+    
+    for optional is Some(i) {
+        if i > 9 {
+            print("Greater than 9, quit!");
+            optional = None;
+        } else {
+            print("`i` is `{}`. Try again.", i);
+            optional = Some(i + 1);
+        }
+    }
+}
+
+// functions.ext
+// Unlike C/C++, there's no restriction on the order of function definitions
+fn main() void {
+    // We can use this function here, and define it somewhere later
+    fizzbuzz_to(100);
+}
+
+// Function that returns a boolean value
+fn is_divisible_by(lhs: u32, rhs: u32) bool {
+    // Corner case, early return
+    if rhs == 0 {
+        return false;
+    }
+
+    return lhs % rhs == 0;
+}
+
+// Functions that "don't" return a value, actually return the unit type `void`
+fn fizzbuzz(n: u32) void {
+    if is_divisible_by(n, 15) {
+        print("fizzbuzz");
+    } else if is_divisible_by(n, 3) {
+        print("fizz");
+    } else if is_divisible_by(n, 5) {
+        print("buzz");
+    } else {
+        print("{}", n);
+    }
+}
+
+fn fizzbuzz_to(n: u32) void {
+    for n in 1..=n {
+        fizzbuzz(n);
+    }
+}
+
+struct Point {
+    x: f64,
+    y: f64,
+}
+
+// Implementation block, all `Point` associated functions & methods go in here
+impl Point {
+    // This is an "associated function" because this function is associated with
+    // a particular type, that is, Point.
+    //
+    // Associated functions don't need to be called with an instance.
+    // These functions are generally used like constructors.
+    fn origin() Point {
+        return Point(0.0, 0.0);
+    }
+
+    fn init(mut self, x: f64, y: f64) Self {
+        self.x = x;
+        self.y = y;
+        return self;
+    }
+
+}
+
+struct Rectangle {
+    p1: Point,
+    p2: Point,
+}
+
+impl Rectangle {
+    // This is a method
+    fn area(self) f64 {
+        // `self` gives access to the struct fields via the dot operator
+        const self.p1 is Point { x: x1, y: y1 };
+        const self.p2 is Point { x: x2, y: y2 };
+
+        // `abs` is a `f64` method that returns the absolute value of the
+        // caller
+        return ((x1 - x2) * (y1 - y2)).abs();
+    }
+
+    fn perimeter(self) f64 {
+        const self.p1 is Point { x: x1, y: y1 };
+        const self.p2 is Point { x: x2, y: y2 };       
+
+        return 2.0 * ((x1 - x2).abs() + (y1 - y2).abs());
+    }
+
+    // This method requires the caller object to be mutable
+    fn translate(mut self, x: f64, y: f64) void {
+        self.p1.x += x;
+        self.p2.x += x;
+
+        self.p1.y += y;
+        self.p2.y += y;
+    }
+}
+
+// `Pair` owns resources: two heap allocated integers
+struct Pair(Box[i32], Box[i32]);
+// TODO: This is not the behavior we expect, but will come back to it later
+impl Pair {
+    fn destroy(self) void {
+        // Destructure `self`
+        const self is Pair(first, second);
+
+        print("Destroying Pair({}, {})", first, second);
+
+        // `first` and `second` go out of scope and get freed
+    }
+}
+
+fn main() void {
+    const rectange = Rectangle(p1=Point.origin(), p2=Point(3.0, 4.0));
+
+    // Methods are called using the dot operator
+    // Note that the first argument `self` is implicitly passed, i.e.
+    // `rectangle.perimeter()` === `Rectangle.perimeter(rectangle)`
+    print("Rectangle perimeter: {}", rectangle.perimeter());
+    print("Rectangle area: {}", rectangle.area());
+
+    var square = Rectangle(p1=Point.origin(), p2=Point(1.0, 1.0));
+
+    // Error! `rectangle` is immutable, but this method requires a mutable
+    // object
+    //rectangle.translate(1.0, 0.0);
+    // TODO ^ Try uncommenting this line
+
+    // Okay! Mutable objects can call mutable methods
+    square.translate(1.0, 1.0);
+
+    const pair = Pair(Box.new(1), Box.new(2));
+    pair.destroy();
+
+}
+
+// TODO: Closures are not yet implemented, SO are Higher Order Functions
+//
+// // closures.ext
+// fn main() void {
+//     const outer_var = 42;
+//     
+//     // A regular function can't refer to variables in the enclosing environment
+//     //fn function(i: i32)  i32 { return i + outer_var; }
+//
+//     // Closures are anonymous, here we are binding them to references.
+//     // Annotation is identical to function annotation but is optional
+//     // as are the `{}` wrapping the body. These nameless functions
+//     // are assigned to appropriately named variables.
+//     const closure_annotated = |i: i32| i32 { i + outer_var };
+//     const closure_inferred  = |i     |       i + outer_var  ;
+//
+//     // Call the closures.
+//     print("closure_annotated: {}", closure_annotated(1));
+//     print("closure_inferred: {}", closure_inferred(1));
+//     // Once closure's type has been inferred, it cannot be inferred again with another type.
+//     //print("cannot reuse closure_inferred with another type: {}", closure_inferred(42i64));
+//
+//     // A closure taking no arguments which returns an `i32`.
+//     // The return type is inferred.
+//     const one = || 1;
+//     print("closure returning one: {}", one());
+// }
+//
+// // closure_capture.ext
+// fn main() void {
+//     const color = String("green");
+//
+//     // A closure to print `color` which immediately borrows `color` and
+//     // stores the borrow and closure in the `print` variable. It will remain
+//     // borrowed until `print` is used the last time. 
+//     const print = || print("`color`: {}", color);
+//
+//     // Call the closure using the borrow.
+//     print();
+//
+//     // `color` can be borrowed immutably again, because the closure only holds
+//     // an immutable reference to `color`. 
+//  
+//     // A move or reborrow is allowed after the final use of `print`
+//     const _color_moved = color^;
+//
+//
+//     var count = 0;
+//     // A closure to increment `count` could take either `mut count` or `count`
+//     // but `mut count` is less restrictive so it takes that. Immediately
+//     // borrows `count`.
+//     //
+//     // A `mut` is required on `inc` because a `mut` is stored inside. Thus,
+//     // calling the closure mutates `count` which requires a `mut`.
+//     var inc = || {
+//         count += 1;
+//         print("`count`: {}", count);
+//     };
+//
+//     // Call the closure using a mutable borrow.
+//     inc();
+//
+//     // The closure still mutably borrows `count` because it is called later.
+//     // An attempt to reborrow will lead to an error.
+//     inc();
+//
+//     // The closure no longer needs to borrow `&mut count`. Therefore, it is
+//     // possible to reborrow without an error
+// }
+
+// higher_order_functions.ext
+fn is_odd(n: u32) bool {
+    return n % 2 == 1;
+}
+
+fn main() void {
+    print("Find the sum of all the numbers with odd squares under 1000");
+    const upper = 1000;
+
+    // Imperative approach
+    // Declare accumulator variable
+    var acc = 0;
+    // Iterate: 0, 1, 2, ... to infinity
+    for n in 0.. {
+        // Square the number
+        const n_squared = n * n;
+
+        if n_squared >= upper {
+            // Break loop if exceeded the upper limit
+            break;
+        } else if is_odd(n_squared) {
+            // Accumulate value, if it's odd
+            acc += n_squared;
+        }
+    }
+    print("imperative style: {}", acc);
+
+    // Functional approach
+    const sum_of_squared_odd_numbers: u32 =
+        (0..).map(|n| n * n)                             // All natural numbers squared
+             .take_while(|n_squared| n_squared < upper) // Below upper limit
+             .filter(|n_squared| is_odd(n_squared))     // That are odd
+             .sum();                                     // Sum them
+    
+    print("functional style: {}", sum_of_squared_odd_numbers);
+}
+
+// noreturn.ext
+fn foo() noreturn {
+    panic("This call never returns.");
+}
+
+fn main() void {
+    fn sum_odd_numbers(up_to: u32)  u32 {
+        var acc = 0;
+        for i in 0..up_to {
+            // Notice that the return type of this match expression must be u32
+            // because of the type of the "addition" variable.
+            const addition: u32 = match i % 2 == 1 {
+                // The "i" variable is of type u32, which is perfectly fine.
+                is true => i,
+                // On the other hand, the "continue" expression does not return
+                // u32, but it is still fine, because it never returns and therefore
+                // does not violate the type requirements of the match expression.
+                is false => continue,
+            };
+            acc += addition;
+        }
+        return acc;
+    }
+    print("Sum of odd numbers up to 9 (excluding): {}", sum_odd_numbers(9));
+}
+
+// TODO: modules/packaging is not yet implemented
+// TODO: Generics are not yet implemented
+// TODO: Traits are not yet implemented
+// TODO: Lifetimes are not yet implemented
+// TODO: RAII
+// TODO: Error handling
+// TODO: Concurrency (threads, async, channels)
+// TODO: FFI
+// TODO: MLIR and LLVM intrinsics

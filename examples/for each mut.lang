@@ -1,0 +1,15 @@
+fn main() void {
+    var names = Vector(["Bob", "Frank", "Ferris"]);
+
+    for name in names {
+        // NOTE: names is mutable so we can mutate name in place
+        // normally we might have to dereference name to mutate it, for eg. *name = "new name"
+        // This is ideal scenario.
+        name = match name {
+            is "Ferris" => "There is a rustacean among us!",
+            is _ => "Hello",
+        };
+    }
+
+    print("names: {}", names);
+}

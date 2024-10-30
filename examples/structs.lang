@@ -1,0 +1,77 @@
+struct Person {
+    name: String,
+    age: u8,
+}
+impl Person {
+    fn init(mut self: Self, name: String, age: u8) Self {
+        self.name = name;
+        self.age = age;
+        return self;
+    }
+}
+// A unit struct
+struct Unit{}
+// A tuple struct
+struct Pair(i32, f32)
+// A struct with two fields
+struct Point {
+    x: f32,
+    y: f32,
+}
+impl Point {
+    fn init(mut self: Self, x: f32, y: f32) Self {
+        self.x = x;
+        self.y = y;
+        return self;
+    }
+}
+// Structs can be reused as fields of another struct
+struct Rectangle {
+    // A rectangle can be specified by where the top left and bottom right
+    // corners are in space.
+    top_left: Point,
+    bottom_right: Point,
+}
+impl Rectangle {
+    fn init(mut self: Self, top_left: Point, bottom_right: Point) Self {
+        self.top_left = top_left;
+        self.bottom_right = bottom_right;
+        return self;
+    }
+}
+fn main() void {
+    // Create struct with field init shorthand
+    const name = String("Peter");
+    const age = 27;
+    const peter = Person(name, age);
+
+    // Print debug struct
+    print("{}", peter);
+
+    // Instantiate a `Point`
+    const point: Point = Point(10.3, 0.4);
+    const another_point: Point = Point(5.2, 0.2);
+
+    // Access the fields of the point
+    print("point coordinates: ({}, {})", point.x, point.y);
+
+    const bottom_right = Point(5.2, another_point.y);
+
+    print("second point: ({}, {})", bottom_right.x, bottom_right.y);
+
+    const _rectangle = Rectangle(top_left = Point(left_edge, top_edge),
+                                bottom_right = bottom_right);
+
+    // Instantiate a unit struct
+    const _unit = Unit();
+
+    // Instantiate a tuple struct
+    const pair = Pair(1, 0.1);
+
+    // Access the fields of a tuple struct
+
+    // Destructure a tuple struct
+    const (integer, decimal) = pair;
+
+    print("pair contains {} and {}", integer, decimal);
+}

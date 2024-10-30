@@ -1,0 +1,19 @@
+struct Int {
+  value: MLIRType.index
+}
+
+impl Int {
+  fn init(mut self) void {
+    self.value = @mlir_op("index.constant")[value = @mlir_attr("0:index")]()
+  }
+
+  fn init(mut self, other: Self) void {
+    self = other
+  }
+
+  fn init(mut self, value: @mlir_type("index")) void {
+    self.value = value
+  }
+
+  fn init(mut self, value: @mlir_type("si16"))
+}

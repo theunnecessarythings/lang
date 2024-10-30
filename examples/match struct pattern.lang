@@ -1,0 +1,36 @@
+fn main() void {
+    struct Foo {
+        x: (u32, u32),
+        y: u32,
+    }
+
+    // Try changing the values in the struct to see what happens
+    const foo = Foo(x=(1, 2), y=3);
+
+    match foo {
+        is Foo { x: (1, b), y } => print("First of x is 1, b = {},  y = {} ", b, y),
+
+        // you can destructure structs and rename the variables,
+        // the order is not important
+        is Foo { y: 2, x: i } => print("y is 2, i = {}", i),
+
+        // and you can also ignore some variables:
+        is Foo { y, .. } => print("y = {}, we don't care about x", y),
+        // this will give an error: pattern does not mention field `x`
+        //Foo { y } => println!("y = {}", y),
+    }
+
+    // You do not need a match block to destructure structs:
+    // let Foo { x : x0, y: y0 } = faa;
+    const Foo { x: (x0, _), y: y0 } = faa;
+    print("Outside: x0 = {x0}, y0 = {y0}");
+
+    // Destructuring works with nested structs as well:
+    struct Bar {
+        foo: Foo,
+    }
+
+    const bar = Bar(foo=faa);
+    const Bar { foo: Foo { x: nested_x, y: nested_y } } = bar;
+    print("Nested: nested_x = {nested_x}, nested_y = {nested_y}");
+}

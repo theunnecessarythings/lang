@@ -49,12 +49,13 @@ pub fn build(b: *std.Build) void {
     exe_unit_tests.addCSourceFiles(.{
         .files = &.{
             "tests/test_lexer.cpp",
+            "tests/test_parser.cpp",
         },
         .flags = &.{
             "-std=c++20",
-            "-Wall",
-            "-Wextra",
-            "-Wpedantic",
+            // "-Wall",
+            // "-Wextra",
+            // "-Wpedantic",
         },
     });
 

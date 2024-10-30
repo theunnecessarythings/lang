@@ -1,0 +1,19 @@
+fn main() void {
+    // This binding lives in the main function
+    const long_lived_binding = 1;
+
+    // This is a block, and has a smaller scope than the main function
+    {
+        // This binding only exists in this block
+        const short_lived_binding = 2;
+
+        print("inner short: {}", short_lived_binding);
+    }
+    // End of the block
+
+    // Error! `short_lived_binding` doesn't exist in this scope
+    print("outer short: {}", short_lived_binding);
+    // FIXME ^ Comment out this line
+
+    print("outer long: {}", long_lived_binding);
+}

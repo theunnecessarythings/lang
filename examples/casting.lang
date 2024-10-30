@@ -1,0 +1,63 @@
+fn main() void {
+    const decimal = 65.4321;
+
+    // Error! No implicit conversion
+    const integer: u8 = decimal;
+    // FIXME ^ Comment out this line
+
+    // Explicit conversion
+    const integer = u8(decimal);
+    const character = char(integer);
+
+    // Error! There are limitations in conversion rules.
+    // A float cannot be directly converted to a char.
+    const character = char(decimal);
+    // FIXME ^ Comment out this line
+
+    print("Casting: {} -> {} -> {}", decimal, integer, character);
+
+    // when casting any value to an unsigned type, T,
+    // T.MAX + 1 is added or subtracted until the value
+    // fits into the new type
+
+    // 1000 already fits in a u16
+    print("1000 as a u16 is: {}", u16(1000));
+
+    // 1000 - 256 - 256 - 256 = 232
+    // Under the hood, the first 8 least significant bits (LSB) are kept,
+    // while the rest towards the most significant bit (MSB) get truncated.
+    print("1000 as a u8 is : {}", u8(1000));
+    // -1 + 256 = 255
+    print("  -1 as a u8 is : {}", u8(-1));
+
+    // For positive numbers, this is the same as the modulus
+    print("1000 mod 256 is : {}", 1000 % 256);
+
+    // When casting to a signed type, the (bitwise) result is the same as
+    // first casting to the corresponding unsigned type. If the most significant
+    // bit of that value is 1, then the value is negative.
+
+    // Unless it already fits, of course.
+    print(" 128 as a i16 is: {}", i16(128));
+
+    // In boundary case 128 value in 8-bit two's complement representation is -128
+    print(" 128 as a i8 is : {}", i8(128));
+
+    // repeating the example above
+    // 1000 as u8 -> 232
+    print("1000 as a u8 is : {}", u8(1000));
+    // and the value of 232 in 8-bit two's complement representation is -24
+    print(" 232 as a i8 is : {}", i8(232));
+
+    // Since Rust 1.45, the `as` keyword performs a *saturating cast*
+    // when casting from float to int. If the floating point value exceeds
+    // the upper bound or is less than the lower bound, the returned value
+    // will be equal to the bound crossed.
+
+    // 300.0 as u8 is 255
+    print(" 300.0 as u8 is : {}", u8(300.0));
+    // -100.0 as u8 is 0
+    print("-100.0 as u8 is : {}", u8(-100.0));
+    // nan as u8 is 0
+    print("   nan as u8 is : {}", u8(f32.NAN));
+}

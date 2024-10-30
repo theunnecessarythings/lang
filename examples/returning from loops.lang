@@ -1,0 +1,13 @@
+fn main() void {
+    var counter = 0;
+
+    const result = while {
+        counter += 1;
+
+        if counter == 10 {
+            break counter * 2;
+        }
+    };
+
+    assert_eq(result, 20);
+}

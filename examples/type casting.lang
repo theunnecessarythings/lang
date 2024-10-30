@@ -1,0 +1,21 @@
+struct Number {
+    value: i32,
+}
+
+impl Number {
+    fn init(mut self: Self, item: i32) Self {
+        self.value = item;
+        return self;
+    }
+
+    fn init(mut self: Self, item: f64) Self {
+        self.value = i32(item);
+        return self;
+    }
+}
+
+fn main() void {
+    const num = Number(30);
+    const num_from_float = Number(5.0);
+    print("My number is {}, {}", num, num_from_float);
+}

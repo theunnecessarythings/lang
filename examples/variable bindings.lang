@@ -1,0 +1,12 @@
+fn main() void {
+    const an_integer = 1;
+    const a_boolean = true;
+    // copy `an_integer` into `copied_integer`
+    const copied_integer = an_integer;
+
+    print("An integer: {}", copied_integer);
+    print("A boolean: {}", a_boolean);
+
+    const unused_variable = 3;
+    _ = unused_variable;
+}

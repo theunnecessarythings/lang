@@ -15,51 +15,54 @@ void test_lexer(std::basic_string<char> source,
   REQUIRE(source.size() == last_token.span.end);
 }
 
-TEST_CASE("keywords") {
+TEST_CASE("keywords", "[lexer]") {
   test_lexer("match is mut impl as and break const continue else "
              "enum fn for if import "
-             "in not or pub return struct var module",
-             {TokenKind::KeywordMatch,    TokenKind::KeywordIs,
-              TokenKind::KeywordMut,      TokenKind::KeywordImpl,
-              TokenKind::KeywordAs,       TokenKind::KeywordAnd,
-              TokenKind::KeywordBreak,    TokenKind::KeywordConst,
-              TokenKind::KeywordContinue, TokenKind::KeywordElse,
-              TokenKind::KeywordEnum,     TokenKind::KeywordFn,
-              TokenKind::KeywordFor,      TokenKind::KeywordIf,
-              TokenKind::KeywordImport,   TokenKind::KeywordIn,
-              TokenKind::KeywordNot,      TokenKind::KeywordOr,
-              TokenKind::KeywordPub,      TokenKind::KeywordReturn,
-              TokenKind::KeywordStruct,   TokenKind::KeywordVar,
-              TokenKind::KeywordModule});
+             "in not or pub return struct var module trait union",
+             {
+                 TokenKind::KeywordMatch,    TokenKind::KeywordIs,
+                 TokenKind::KeywordMut,      TokenKind::KeywordImpl,
+                 TokenKind::KeywordAs,       TokenKind::KeywordAnd,
+                 TokenKind::KeywordBreak,    TokenKind::KeywordConst,
+                 TokenKind::KeywordContinue, TokenKind::KeywordElse,
+                 TokenKind::KeywordEnum,     TokenKind::KeywordFn,
+                 TokenKind::KeywordFor,      TokenKind::KeywordIf,
+                 TokenKind::KeywordImport,   TokenKind::KeywordIn,
+                 TokenKind::KeywordNot,      TokenKind::KeywordOr,
+                 TokenKind::KeywordPub,      TokenKind::KeywordReturn,
+                 TokenKind::KeywordStruct,   TokenKind::KeywordVar,
+                 TokenKind::KeywordModule,   TokenKind::KeywordTrait,
+                 TokenKind::KeywordUnion,
+             });
 }
 
-TEST_CASE("newline in string literal") {
+TEST_CASE("newline in string literal", "[lexer]") {
   test_lexer("\"\n\"", {TokenKind::Invalid, TokenKind::Invalid});
 }
 
-TEST_CASE("float literal e exponent") {
+TEST_CASE("float literal e exponent", "[lexer]") {
   test_lexer("a = 4.94065645841246544177e-324;\n",
              {TokenKind::Identifier, TokenKind::Equal, TokenKind::NumberLiteral,
               TokenKind::Semicolon});
 }
 
-TEST_CASE("float literal p exponent") {
+TEST_CASE("float literal p exponent", "[lexer]") {
   test_lexer("a = 0x1.a827999fcef32p+1022;\n",
              {TokenKind::Identifier, TokenKind::Equal, TokenKind::NumberLiteral,
               TokenKind::Semicolon});
 }
 
-TEST_CASE("pipe and then Invalid") {
+TEST_CASE("pipe and then Invalid", "[lexer]") {
   test_lexer("||=", {TokenKind::PipePipe, TokenKind::Equal});
 }
 
-TEST_CASE("line comment") { test_lexer("//", {}); }
+TEST_CASE("line comment", "[lexer]") { test_lexer("//", {}); }
 
-TEST_CASE("line comment followed by identifier") {
+TEST_CASE("line comment followed by identifier", "[lexer]") {
   test_lexer("//\nAnother", {TokenKind::Identifier});
 }
 
-TEST_CASE("number literals decimal") {
+TEST_CASE("number literals decimal", "[lexer]") {
   test_lexer("0", {TokenKind::NumberLiteral});
   test_lexer("1", {TokenKind::NumberLiteral});
   test_lexer("2", {TokenKind::NumberLiteral});
@@ -119,7 +122,7 @@ TEST_CASE("number literals decimal") {
   test_lexer("1.0e0_+", {TokenKind::NumberLiteral, TokenKind::Plus});
 }
 
-TEST_CASE("number literal binary") {
+TEST_CASE("number literal binary", "[lexer]") {
   test_lexer("0b0", {TokenKind::NumberLiteral});
   test_lexer("0b1", {TokenKind::NumberLiteral});
   test_lexer("0b2", {TokenKind::NumberLiteral});
@@ -158,7 +161,7 @@ TEST_CASE("number literal binary") {
   test_lexer("0b_,", {TokenKind::NumberLiteral, TokenKind::Comma});
 }
 
-TEST_CASE("number literal octal") {
+TEST_CASE("number literal octal", "[lexer]") {
   test_lexer("0o0", {TokenKind::NumberLiteral});
   test_lexer("0o1", {TokenKind::NumberLiteral});
   test_lexer("0o2", {TokenKind::NumberLiteral});
@@ -195,7 +198,7 @@ TEST_CASE("number literal octal") {
   test_lexer("0o_,", {TokenKind::NumberLiteral, TokenKind::Comma});
 }
 
-TEST_CASE("number literals hexadecimal") {
+TEST_CASE("number literals hexadecimal", "[lexer]") {
   test_lexer("0x0", {TokenKind::NumberLiteral});
   test_lexer("0x1", {TokenKind::NumberLiteral});
   test_lexer("0x2", {TokenKind::NumberLiteral});
@@ -287,16 +290,16 @@ TEST_CASE("number literals hexadecimal") {
   test_lexer("0x0.0p0_", {TokenKind::NumberLiteral});
 }
 
-TEST_CASE("code point literal with hex escape") {
+TEST_CASE("code point literal with hex escape", "[lexer]") {
   test_lexer({0x27, 0x5c, 0x78, 0x31, 0x62, 0x27}, {TokenKind::CharLiteral});
   test_lexer({0x27, 0x5c, 0x78, 0x31, 0x27},
              {TokenKind::Invalid, TokenKind::Invalid});
 }
-TEST_CASE("newline in char literal") {
+TEST_CASE("newline in char literal", "[lexer]") {
   test_lexer("'\n'", {TokenKind::Invalid, TokenKind::Invalid});
 }
 
-TEST_CASE("code point literal with unicode escapes") {
+TEST_CASE("code point literal with unicode escapes", "[lexer]") {
   test_lexer("'\u{3}'", {TokenKind::CharLiteral});
   test_lexer("'\u{01}'", {TokenKind::CharLiteral});
   test_lexer("'\u{2a}'", {TokenKind::CharLiteral});
@@ -314,9 +317,9 @@ TEST_CASE("code point literal with unicode escapes") {
   //                         TokenKind::Invalid});
 }
 
-TEST_CASE("chars") { test_lexer("'c'", {TokenKind::CharLiteral}); }
+TEST_CASE("chars", "[lexer]") { test_lexer("'c'", {TokenKind::CharLiteral}); }
 
-TEST_CASE("Invalid token characters") {
+TEST_CASE("Invalid token characters", "[lexer]") {
   test_lexer("#", {TokenKind::Invalid});
   test_lexer("`", {TokenKind::Invalid});
   test_lexer("'c", {TokenKind::Invalid});
@@ -324,7 +327,7 @@ TEST_CASE("Invalid token characters") {
   test_lexer("''", {TokenKind::Invalid, TokenKind::Invalid});
 }
 
-TEST_CASE("Invalid literal/comment characters") {
+TEST_CASE("Invalid literal/comment characters", "[lexer]") {
   test_lexer({0x22, 0x00, 0x22},
              {TokenKind::StringLiteral, TokenKind::Invalid});
   test_lexer({0x2f, 0x2f, 0x00}, {TokenKind::Invalid});
@@ -332,12 +335,12 @@ TEST_CASE("Invalid literal/comment characters") {
   test_lexer("//\x7f", {TokenKind::Invalid});
 }
 
-TEST_CASE("utf8") {
+TEST_CASE("utf8", "[lexer]") {
   test_lexer("//\xc2\x80", {});
   test_lexer("//\xf4\x8f\xbf\xbf", {});
 }
 
-TEST_CASE("Invalid utf8") {
+TEST_CASE("Invalid utf8", "[lexer]") {
   test_lexer("//\x80", {TokenKind::Invalid});
   test_lexer("//\xbf", {TokenKind::Invalid});
   test_lexer("//\xf8", {TokenKind::Invalid});
@@ -348,7 +351,7 @@ TEST_CASE("Invalid utf8") {
   test_lexer("//\xf0\x90\x80\xc0", {TokenKind::Invalid});
 }
 
-TEST_CASE("illegal unicode codepoints") {
+TEST_CASE("illegal unicode codepoints", "[lexer]") {
   test_lexer("//\xc2\x84", {});
   test_lexer("//\xc2\x85", {TokenKind::Invalid});
   test_lexer("//\xc2\x86", {});
@@ -358,11 +361,11 @@ TEST_CASE("illegal unicode codepoints") {
   test_lexer("//\xe2\x80\xaa", {});
 }
 
-TEST_CASE("shift operator") {
+TEST_CASE("shift operator", "[lexer]") {
   test_lexer("<<", {TokenKind::LessLess});
   test_lexer(">>", {TokenKind::GreaterGreater});
 }
 
-TEST_CASE("code point literal with unicode code point") {
+TEST_CASE("code point literal with unicode code point", "[lexer]") {
   test_lexer("'💩'", {TokenKind::CharLiteral});
 }

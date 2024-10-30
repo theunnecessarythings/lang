@@ -1,4 +1,3 @@
-#include "src/lexer.hpp"
 #include <iostream>
 
 int main() {

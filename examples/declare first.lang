@@ -1,0 +1,24 @@
+fn main() void {
+    // Declare a variable binding
+    var a_binding = undefined;
+
+    {
+        var x = 2;
+
+        // Initialize the binding
+        a_binding = x * x;
+    }
+
+    print("a binding: {}", a_binding);
+
+    var another_binding = undefined;
+
+    // Error! Use of uninitialized binding
+    print("another binding: {}", another_binding);
+    // FIXME ^ Comment out this line
+
+    another_binding = 1;
+
+    print("another binding: {}", another_binding);
+}
+

@@ -1,0 +1,20 @@
+fn main() void {
+    const x = 5;
+
+    const y = {
+        const x_squared = x * x;
+        const x_cube = x_squared * x;
+
+        // Block expressions can return values using `break` keyword
+        break x_cube + x_squared + x;
+    };
+
+    const z = {
+        // No break stmt and `void` is assigned to `z`
+        2 * x;
+    };
+
+    print("x is {}", x);
+    print("y is {}", y);
+    print("z is {}", z);
+}

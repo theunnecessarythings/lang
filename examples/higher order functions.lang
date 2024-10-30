@@ -1,0 +1,29 @@
+fn is_odd(n: u32) bool {
+    return n % 2 == 1;
+}
+
+fn main() void {
+    print("Find the sum of all the numbers with odd squares under 1000");
+    const upper = 1000;
+
+    // Imperative approach
+    // Declare accumulator variable
+    var acc = 0;
+    // Iterate: 0, 1, 2, ... to infinity
+    for n in 0.. {
+        // Square the number
+        const n_squared = n * n;
+
+        if n_squared >= upper {
+            // Break loop if exceeded the upper limit
+            break;
+        } else if is_odd(n_squared) {
+            // Accumulate value, if it's odd
+            acc += n_squared;
+        }
+    }
+    print("imperative style: {}", acc);
+
+    
+    print("functional style: {}", sum_of_squared_odd_numbers);
+}

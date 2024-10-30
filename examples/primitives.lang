@@ -1,0 +1,19 @@
+fn main() void {
+    // Variables can be type annotated.
+    const logical: bool = true;
+
+    const a_float: f64 = 1.0; // Regular annotation
+    const an_integer = 5;
+
+    // Or a default will be used.
+    const default_float = 3.0; // `f64`
+    const default_integer = 7; // `isize`
+
+    // A mutable variable's value can be changed.
+    var mutable = 12; // Mutable `isize`
+    mutable = 21;
+
+    // Error! The type of a variable can't be changed.
+    // mutable = true;
+}
+

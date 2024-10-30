@@ -1,0 +1,8 @@
+- [ ] Comptime
+- [ ] Add Test cases from zig
+- [ ] Labeled Blocks
+- [ ] Dynamic Match (Check Swift)
+- [ ] If guard - side effect ?
+- [ ] Bug: Error location is not correct
+- [ ] Bug: I don't think comma's are correctly consumed everywhere
+- [ ] Bug: Something unexpected comes, the parser loops forever
