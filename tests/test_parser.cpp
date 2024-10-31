@@ -139,3 +139,29 @@ TEST_CASE("higher order functions", "[parser]") {
 TEST_CASE("no return, hof", "[parser]") {
   test_repr("examples/no return, hof.lang");
 }
+
+TEST_CASE("traits", "[parser]") { test_repr("examples/traits.lang"); }
+
+TEST_CASE("supertraits", "[parser]") {
+  test_repr("examples/super_traits.lang");
+}
+
+TEST_CASE("basic comptime", "[parser]") {
+  test_repr("examples/basic_comptime.lang");
+}
+
+TEST_CASE("comptime trait", "[parser]") {
+  test_repr("examples/comptime_trait.lang");
+}
+
+TEST_CASE("multiple trait constraints", "[parser]") {
+  test_repr("examples/multiple_trait_constraint.lang");
+}
+
+TEST_CASE("generic struct", "[parser]") {
+  test_repr("examples/generic_struct.lang");
+}
+
+TEST_CASE("nested comptime", "[parser]") {
+  test_repr("examples/nested_comptime.lang");
+}

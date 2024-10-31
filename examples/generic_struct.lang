@@ -1,0 +1,54 @@
+
+fn Collection(comptime T: type impl Serializable + Comparable,
+              comptime U: type impl ComparableWith(T)) type {
+    struct CollectionType {
+        item1: T,
+        item2: U,
+    }
+
+    impl CollectionType {
+        fn compare_and_serialize(self: Self) bool {
+            return self.item1.compare(self.item2) and self.item1.serialize();
+        }
+    }
+    return CollectionType;
+}
+
+
+fn MultiCollection(
+    comptime T: type impl Serializable + Comparable,
+    comptime U: type impl ComparableWith(T) + Serializable,
+    comptime V: type impl Hashable + Equatable
+) type {
+    struct CollectionType {
+        item1: T,
+        item2: U,
+        item3: V,
+    }
+
+    impl CollectionType {
+        fn serialize_all(self: Self) void {
+            self.item1.serialize();
+            self.item2.serialize();
+        }
+
+        fn compare_items(self: Self) bool {
+            return self.item1.compare(self.item2) and self.item3.hash() == self.item3.hash();
+        }
+    }
+    return CollectionType;
+}
+
+pub fn main() void {
+    const MyCollection = Collection(serializable_comparable_type, comparable_with_serializable_type);
+    var my_collection = MyCollection(item1=some_val1, item2=some_val2);
+    my_collection.compare_and_serialize();
+
+    const ComplexCollection = MultiCollection(
+        some_serializable_comparable,
+        some_comparable_with_serializable,
+        some_hashable_equatable
+    );
+    const collection_instance = ComplexCollection(item1=val1, item2=val2, item3=val3);
+    collection_instance.serialize_all();
+}

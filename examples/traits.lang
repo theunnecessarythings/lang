@@ -1,0 +1,64 @@
+struct Sheep { naked: bool, name: String }
+
+trait Animal {
+    // Associated function signature; `Self` refers to the implementor type.
+    fn new(mut self: Self, name: String) Self;
+
+    // Method signatures; these will return a string.
+    fn name(self: Self) String;
+    fn noise(self: Self) String;
+
+    // Traits can provide default method definitions.
+    fn talk(self: Self) void {
+        print("{} says {}", self.name(), self.noise());
+    }
+}
+
+impl Sheep : Animal {
+    fn is_naked(self: Self) bool {
+        return self.naked;
+    }
+
+    fn shear(mut self: Self) void {
+        if self.is_naked() {
+            // Implementor methods can use the implementor's trait methods.
+            print("{} is already naked...", self.name());
+        } else {
+            print("{} gets a haircut!", self.name);
+            self.naked = true;
+        }
+    }
+
+    fn new(mut self: Self, name: String) Sheep {
+        self.name = name;
+        self.naked = false;
+        return self;
+    }
+
+    fn name(self: Self) String {
+        return self.name;
+    }
+
+    fn noise(self: Self) String {
+        return if self.is_naked() 
+            "baaaaah?"
+         else 
+            "baaaaah!";
+    }
+    
+    // Default trait methods can be overridden.
+    fn talk(self: Self) void {
+        // For example, we can add some quiet contemplation.
+        print("{} pauses briefly... {}", self.name, self.noise());
+    }
+}
+
+fn main() void {
+    // Type annotation is necessary in this case.
+    var dolly: Sheep = Animal.new("Dolly");
+    // TODO ^ Try removing the type annotations.
+
+    dolly.talk();
+    dolly.shear();
+    dolly.talk();
+}

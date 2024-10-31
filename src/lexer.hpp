@@ -92,6 +92,7 @@ enum class TokenKind {
   KeywordReturn,
   KeywordStruct,
   KeywordVar,
+  KeywordComptime,
   KeywordModule,
 
   Eof,
@@ -183,6 +184,7 @@ struct Lexer {
       {"return", TokenKind::KeywordReturn},
       {"struct", TokenKind::KeywordStruct},
       {"var", TokenKind::KeywordVar},
+      {"comptime", TokenKind::KeywordComptime},
       {"module", TokenKind::KeywordModule},
   };
 
@@ -1264,6 +1266,8 @@ struct Lexer {
       return "struct";
     case TokenKind::KeywordVar:
       return "var";
+    case TokenKind::KeywordComptime:
+      return "comptime";
     case TokenKind::KeywordModule:
       return "module";
     }

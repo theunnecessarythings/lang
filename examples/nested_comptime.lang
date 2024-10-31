@@ -1,0 +1,18 @@
+
+fn OuterFunction(comptime T: type impl Cloneable) type {
+    fn InnerFunction(comptime U: type impl Comparable) type {
+        struct Inner {
+            item1: T,
+            item2: U,
+        }
+        return Inner;
+    }
+    return InnerFunction;
+}
+
+
+pub fn main() void {
+    const Outer = OuterFunction(cloneable_type);
+    const Inner = Outer(comparable_type);
+    const instance = Inner(item1 = cloneable_instance, item2 = comparable_instance);
+}

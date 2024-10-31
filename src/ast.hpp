@@ -4,6 +4,7 @@
 #include <memory>
 #include <optional>
 #include <string>
+#include <unordered_map>
 #include <variant>
 #include <vector>
 
@@ -70,6 +71,17 @@ struct Module : public TopLevelDecl {
   std::vector<std::unique_ptr<TopLevelDecl>> items;
 };
 
+struct ComptimeExpr : public Expression {
+  std::unique_ptr<Expression> expr;
+
+  ComptimeExpr(std::unique_ptr<Expression> expr) : expr(std::move(expr)) {}
+
+  void render() const override {
+    std::cout << "comptime ";
+    expr->render();
+  }
+};
+
 struct BlockExpression : public Expression {
   std::vector<std::unique_ptr<Statement>> statements;
   std::optional<std::unique_ptr<Type>> return_type;
@@ -99,18 +111,29 @@ struct BlockStatement : public Statement {
 struct Parameter : public Node {
   std::unique_ptr<Pattern> pattern;
   std::unique_ptr<Type> type;
+  std::optional<std::unique_ptr<Type>> trait_bound;
   bool is_mut;
+  bool is_comptime;
 
   Parameter(std::unique_ptr<Pattern> pattern, std::unique_ptr<Type> type,
-            bool is_mut)
-      : pattern(std::move(pattern)), type(std::move(type)), is_mut(is_mut) {}
+            std::optional<std::unique_ptr<Type>> trait_bound, bool is_mut,
+            bool is_comptime)
+      : pattern(std::move(pattern)), type(std::move(type)),
+        trait_bound(std::move(trait_bound)), is_mut(is_mut),
+        is_comptime(is_comptime) {}
 
   void render() const override {
+    if (is_comptime)
+      std::cout << "comptime ";
     if (is_mut)
       std::cout << "mut ";
     pattern->render();
     std::cout << ": ";
     type->render();
+    if (trait_bound.has_value()) {
+      std::cout << " impl ";
+      trait_bound.value()->render();
+    }
   }
 };
 
@@ -130,11 +153,15 @@ struct StructField : public Node {
 struct StructDecl : public TopLevelDecl {
   std::string name;
   std::vector<std::unique_ptr<StructField>> fields;
+  bool is_pub;
 
-  StructDecl(std::string name, std::vector<std::unique_ptr<StructField>> fields)
-      : name(std::move(name)), fields(std::move(fields)) {}
+  StructDecl(std::string name, std::vector<std::unique_ptr<StructField>> fields,
+             bool is_pub)
+      : name(std::move(name)), fields(std::move(fields)), is_pub(is_pub) {}
 
   void render() const override {
+    if (is_pub)
+      std::cout << "pub ";
     std::cout << "struct " << name << " {" << std::endl;
     for (auto &field : fields) {
       field->render();
@@ -157,11 +184,15 @@ struct StructDecl : public TopLevelDecl {
 struct TupleStructDecl : public TopLevelDecl {
   std::string name;
   std::vector<std::unique_ptr<Type>> fields;
+  bool is_pub;
 
-  TupleStructDecl(std::string name, std::vector<std::unique_ptr<Type>> fields)
-      : name(std::move(name)), fields(std::move(fields)) {}
+  TupleStructDecl(std::string name, std::vector<std::unique_ptr<Type>> fields,
+                  bool is_pub)
+      : name(std::move(name)), fields(std::move(fields)), is_pub(is_pub) {}
 
   void render() const override {
+    if (is_pub)
+      std::cout << "pub ";
     std::cout << "struct " << name << "(";
     for (auto &field : fields) {
       field->render();
@@ -269,17 +300,16 @@ struct UnionField : public Node {
   void render() const override { type->render(); }
 };
 
-struct Function : public TopLevelDecl {
+struct FunctionDecl : public Node {
   std::string name;
   std::vector<std::unique_ptr<Parameter>> parameters;
   std::unique_ptr<Type> return_type;
-  std::unique_ptr<BlockExpression> body;
 
-  Function(std::string name, std::vector<std::unique_ptr<Parameter>> parameters,
-           std::unique_ptr<Type> return_type,
-           std::unique_ptr<BlockExpression> body)
-      : name(name), parameters(std::move(parameters)),
-        return_type(std::move(return_type)), body(std::move(body)) {}
+  FunctionDecl(std::string name,
+               std::vector<std::unique_ptr<Parameter>> parameters,
+               std::unique_ptr<Type> return_type)
+      : name(std::move(name)), parameters(std::move(parameters)),
+        return_type(std::move(return_type)) {}
 
   void render() const override {
     std::cout << "fn " << name << "(";
@@ -290,6 +320,33 @@ struct Function : public TopLevelDecl {
     }
     std::cout << ") ";
     return_type->render();
+  }
+};
+
+struct Function : public TopLevelDecl {
+  std::unique_ptr<FunctionDecl> decl;
+  std::unique_ptr<BlockExpression> body;
+  bool is_pub;
+
+  Function(std::string name, std::vector<std::unique_ptr<Parameter>> parameters,
+           std::unique_ptr<Type> return_type,
+           std::unique_ptr<BlockExpression> body, bool is_pub = false)
+      : body(std::move(body)), is_pub(is_pub) {
+    decl = std::make_unique<FunctionDecl>(name, std::move(parameters),
+                                          std::move(return_type));
+  }
+
+  void render() const override {
+    if (is_pub)
+      std::cout << "pub ";
+    std::cout << "fn " << decl->name << "(";
+    for (auto &param : decl->parameters) {
+      param->render();
+      if (&param != &decl->parameters.back())
+        std::cout << ", ";
+    }
+    std::cout << ") ";
+    decl->return_type->render();
     body->render();
   }
 };
@@ -318,11 +375,15 @@ struct ImportDecl : public TopLevelDecl {
 struct EnumDecl : public TopLevelDecl {
   std::string name;
   std::vector<std::unique_ptr<Variant>> variants;
+  bool is_pub;
 
-  EnumDecl(std::string name, std::vector<std::unique_ptr<Variant>> variants)
-      : name(std::move(name)), variants(std::move(variants)) {}
+  EnumDecl(std::string name, std::vector<std::unique_ptr<Variant>> variants,
+           bool is_pub)
+      : name(std::move(name)), variants(std::move(variants)), is_pub(is_pub) {}
 
   void render() const override {
+    if (is_pub)
+      std::cout << "pub ";
     std::cout << "enum " << name << " {" << std::endl;
     for (auto &variant : variants) {
       variant->render();
@@ -337,28 +398,60 @@ struct EnumDecl : public TopLevelDecl {
 struct UnionDecl : public TopLevelDecl {
   std::string name;
   std::vector<std::unique_ptr<UnionField>> fields;
+  bool is_pub;
 
-  UnionDecl(std::string name, std::vector<std::unique_ptr<UnionField>> fields)
-      : name(std::move(name)), fields(std::move(fields)) {}
+  UnionDecl(std::string name, std::vector<std::unique_ptr<UnionField>> fields,
+            bool is_pub)
+      : name(std::move(name)), fields(std::move(fields)), is_pub(is_pub) {}
 
   void render() const override {
+    if (is_pub)
+      std::cout << "pub ";
+    std::cout << "union " << name << " {" << std::endl;
     for (auto &field : fields) {
       field->render();
+      if (&field != &fields.back())
+        std::cout << ", ";
     }
+    std::cout << "}" << std::endl;
   }
 };
 
 struct TraitDecl : public TopLevelDecl {
+  using Method =
+      std::variant<std::unique_ptr<Function>, std::unique_ptr<FunctionDecl>>;
   std::string name;
-  std::vector<std::unique_ptr<Function>> functions;
+  std::vector<Method> functions;
+  std::vector<std::unique_ptr<Type>> super_traits;
+  bool is_pub;
 
-  TraitDecl(std::string name, std::vector<std::unique_ptr<Function>> functions)
-      : name(std::move(name)), functions(std::move(functions)) {}
+  TraitDecl(std::string name, std::vector<Method> functions,
+            std::vector<std::unique_ptr<Type>> super_traits, bool is_pub)
+      : name(std::move(name)), functions(std::move(functions)), is_pub(is_pub),
+        super_traits(std::move(super_traits)) {}
 
   void render() const override {
-    for (auto &func : functions) {
-      func->render();
+    if (is_pub)
+      std::cout << "pub ";
+    std::cout << "trait " << name;
+    if (super_traits.size() > 0) {
+      std::cout << " : ";
+      for (auto &trait : super_traits) {
+        trait->render();
+        if (&trait != &super_traits.back())
+          std::cout << ", ";
+      }
     }
+    std::cout << " {" << std::endl;
+    for (auto &func : functions) {
+      if (std::holds_alternative<std::unique_ptr<Function>>(func)) {
+        std::get<std::unique_ptr<Function>>(func)->render();
+      } else {
+        std::get<std::unique_ptr<FunctionDecl>>(func)->render();
+        std::cout << ";" << std::endl;
+      }
+    }
+    std::cout << "}" << std::endl;
   }
 };
 
@@ -395,14 +488,18 @@ struct VarDecl : public Statement {
   std::optional<std::unique_ptr<Type>> type;
   std::optional<std::unique_ptr<Expression>> initializer;
   bool is_mut;
+  bool is_pub;
 
   VarDecl(std::unique_ptr<Pattern> pattern,
           std::optional<std::unique_ptr<Type>> type,
-          std::optional<std::unique_ptr<Expression>> initializer, bool is_mut)
+          std::optional<std::unique_ptr<Expression>> initializer, bool is_mut,
+          bool is_pub)
       : pattern(std::move(pattern)), type(std::move(type)),
-        initializer(std::move(initializer)), is_mut(is_mut) {}
+        initializer(std::move(initializer)), is_mut(is_mut), is_pub(is_pub) {}
 
   void render() const override {
+    if (is_pub)
+      std::cout << "pub ";
     if (is_mut)
       std::cout << "var ";
     else
@@ -1002,7 +1099,9 @@ struct PrimitiveType : public Type {
     U64,
     F32,
     F64,
+    type,
   };
+
   PrimitiveTypeKind kind;
 
   PrimitiveType(PrimitiveTypeKind kind) : kind(kind) {}
@@ -1050,6 +1149,9 @@ struct PrimitiveType : public Type {
       break;
     case PrimitiveTypeKind::F64:
       std::cout << "f64";
+      break;
+    case PrimitiveTypeKind::type:
+      std::cout << "type";
       break;
     }
   }
@@ -1161,6 +1263,14 @@ struct UnionType : public Type {
   UnionType(std::string name) : name(std::move(name)) {}
 
   void render() const override { std::cout << name; }
+};
+
+struct ExprType : public Type {
+  std::unique_ptr<Expression> expr;
+
+  ExprType(std::unique_ptr<Expression> expr) : expr(std::move(expr)) {}
+
+  void render() const override { expr->render(); }
 };
 
 struct LiteralPattern : public Pattern {

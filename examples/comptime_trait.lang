@@ -1,0 +1,12 @@
+
+fn Printable(comptime T: type impl Display, value: T) void {
+    print(value);
+}
+
+
+pub fn main() void {
+    // Usage
+    Printable("hello");  // Valid
+    Printable(42);       // Valid if i32 implements Display
+    Printable([1, 2, 3]); // Invalid if arrays do not implement Display
+} 

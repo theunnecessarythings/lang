@@ -1,0 +1,9 @@
+fn Identity(comptime T: type, value: T) T {
+    return value;
+}
+
+pub fn main() void {
+    const int_id = Identity(i32, 5);
+    const float_id = Identity(f32, 3.14);
+    const string_id = Identity(String, "hello");
+}

@@ -1,0 +1,22 @@
+
+fn SerializeAndCompare(comptime T: type impl Serializable + Comparable, a: T, b: T) bool {
+    return a.serialize() and a.compare(b);
+}
+
+fn Pair(
+    comptime T: type impl Cloneable,
+    comptime U: type impl Hashable,
+    first: T,
+    second: U
+) void {
+    // Function body
+}
+
+// Usage
+
+
+
+pub fn main() void {
+    const s = SerializeAndCompare(some_serializable_comparable_obj1, some_serializable_comparable_obj2);
+    const p = Pair(cloneable_object, hashable_object);
+}

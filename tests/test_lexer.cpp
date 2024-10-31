@@ -18,7 +18,7 @@ void test_lexer(std::basic_string<char> source,
 TEST_CASE("keywords", "[lexer]") {
   test_lexer("match is mut impl as and break const continue else "
              "enum fn for if import "
-             "in not or pub return struct var module trait union",
+             "in not or pub return struct var module trait union comptime",
              {
                  TokenKind::KeywordMatch,    TokenKind::KeywordIs,
                  TokenKind::KeywordMut,      TokenKind::KeywordImpl,
@@ -32,7 +32,7 @@ TEST_CASE("keywords", "[lexer]") {
                  TokenKind::KeywordPub,      TokenKind::KeywordReturn,
                  TokenKind::KeywordStruct,   TokenKind::KeywordVar,
                  TokenKind::KeywordModule,   TokenKind::KeywordTrait,
-                 TokenKind::KeywordUnion,
+                 TokenKind::KeywordUnion,    TokenKind::KeywordComptime,
              });
 }
 

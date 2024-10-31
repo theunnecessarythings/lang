@@ -4,6 +4,26 @@
 #include <fstream>
 #include <memory>
 #include <optional>
+#include <unordered_map>
+
+static std::unordered_map<std::string, PrimitiveType::PrimitiveTypeKind>
+    str_to_primitive_type = {
+        {"i8", PrimitiveType::PrimitiveTypeKind::I8},
+        {"i16", PrimitiveType::PrimitiveTypeKind::I16},
+        {"i32", PrimitiveType::PrimitiveTypeKind::I32},
+        {"i64", PrimitiveType::PrimitiveTypeKind::I64},
+        {"u8", PrimitiveType::PrimitiveTypeKind::U8},
+        {"u16", PrimitiveType::PrimitiveTypeKind::U16},
+        {"u32", PrimitiveType::PrimitiveTypeKind::U32},
+        {"u64", PrimitiveType::PrimitiveTypeKind::U64},
+        {"f32", PrimitiveType::PrimitiveTypeKind::F32},
+        {"f64", PrimitiveType::PrimitiveTypeKind::F64},
+        {"bool", PrimitiveType::PrimitiveTypeKind::Bool},
+        {"char", PrimitiveType::PrimitiveTypeKind::Char},
+        {"String", PrimitiveType::PrimitiveTypeKind::String},
+        {"type", PrimitiveType::PrimitiveTypeKind::type},
+        {"void", PrimitiveType::PrimitiveTypeKind::Void},
+};
 
 Token get_error_token(TokenSpan &span) { return Token{TokenKind::Dummy, span}; }
 
@@ -204,8 +224,13 @@ struct Parser {
       return parse_break_expr(false);
     case TokenKind::KeywordContinue:
       return parse_continue_expr(false);
+    case TokenKind::KeywordComptime: {
+      auto expr = parse_expr(0);
+      return std::make_unique<ComptimeExpr>(std::move(expr));
+    }
     default:
-      context->diagnostics.report_error(token, "Invalid character");
+      context->diagnostics.report_error(token, "Invalid token " +
+                                                   Lexer::lexeme(token.kind));
       return std::make_unique<InvalidExpression>();
     }
   }
@@ -385,31 +410,36 @@ struct Parser {
   // top_level_decl = function_decl | struct_decl | enum_decl | impl_decl |
   // union_decl | trait_decl
   std::unique_ptr<TopLevelDecl> parse_top_level_decl() {
+    bool is_pub = false;
+    if (is_peek(TokenKind::KeywordPub)) {
+      consume();
+      is_pub = true;
+    }
     if (is_peek(TokenKind::KeywordFn)) {
-      return parse_function();
+      return parse_function(is_pub);
     } else if (is_peek(TokenKind::KeywordStruct)) {
       consume();
       if (is_peek2(TokenKind::LParen)) {
-        return parse_tuple_struct_decl();
+        return parse_tuple_struct_decl(is_pub);
       }
-      return parse_struct_decl();
+      return parse_struct_decl(is_pub);
     } else if (is_peek(TokenKind::KeywordImport)) {
       return parse_import_decl();
     } else if (is_peek(TokenKind::KeywordEnum)) {
-      return parse_enum_decl();
+      return parse_enum_decl(is_pub);
     } else if (is_peek(TokenKind::KeywordImpl)) {
       return parse_impl_decl();
     } else if (is_peek(TokenKind::KeywordVar) ||
                is_peek(TokenKind::KeywordConst)) {
-      auto var_decl = parse_var_decl();
+      auto var_decl = parse_var_decl(is_pub);
       return std::make_unique<TopLevelVarDecl>(std::move(var_decl));
     }
     // else if (is_peek(TokenKind::KeywordUnion)) {
     //   return parse_union_decl();
-    // } else if (is_peek(TokenKind::KeywordTrait)) {
-    //   return parse_trait_decl();
-    //  }
-    else {
+    // }
+    else if (is_peek(TokenKind::KeywordTrait)) {
+      return parse_trait_decl(is_pub);
+    } else {
       auto token = consume();
       context->diagnostics.report_error(token.value(),
                                         "Expected top level decl found " +
@@ -463,12 +493,29 @@ struct Parser {
   }
 
   // function = 'fn' identifier '(' params ')' type block
-  std::unique_ptr<Function> parse_function() {
+  std::unique_ptr<Function> parse_function(bool is_pub = false) {
     auto fn_token = consume_kind(TokenKind::KeywordFn);
     auto name = consume_kind(TokenKind::Identifier);
     auto name_str = lexer->token_to_string(name);
     auto params = parse_params();
     auto return_type = parse_type();
+    auto block = parse_block();
+    return std::make_unique<Function>(std::move(name_str), std::move(params),
+                                      std::move(return_type), std::move(block),
+                                      is_pub);
+  }
+
+  TraitDecl::Method parse_trait_method() {
+    auto fn_token = consume_kind(TokenKind::KeywordFn);
+    auto name = consume_kind(TokenKind::Identifier);
+    auto name_str = lexer->token_to_string(name);
+    auto params = parse_params();
+    auto return_type = parse_type();
+    if (is_peek(TokenKind::Semicolon)) {
+      consume();
+      return std::make_unique<FunctionDecl>(
+          std::move(name_str), std::move(params), std::move(return_type));
+    }
     auto block = parse_block();
     return std::make_unique<Function>(std::move(name_str), std::move(params),
                                       std::move(return_type), std::move(block));
@@ -491,16 +538,38 @@ struct Parser {
 
   // param -> ("mut")? identifier ":" type
   std::unique_ptr<Parameter> parse_param() {
+    bool is_comptime = false;
     bool is_mut = false;
+    if (is_peek(TokenKind::KeywordComptime)) {
+      consume();
+      is_comptime = true;
+    }
     if (is_peek(TokenKind::KeywordMut)) {
+      if (is_comptime) {
+        context->diagnostics.report_error(
+            current_token.value(), "Comptime parameter cannot be mutable");
+      }
       consume();
       is_mut = true;
     }
     auto pattern = parse_pattern();
     consume_kind(TokenKind::Colon);
     auto type = parse_type();
+    // if type is primitive type and it is "type" then check for impl Trait
+    if (auto primitive_type = dynamic_cast<PrimitiveType *>(type.get())) {
+      if (primitive_type->kind == PrimitiveType::PrimitiveTypeKind::type) {
+        if (is_peek(TokenKind::KeywordImpl)) {
+          consume();
+          auto trait_bound = parse_type();
+          return std::make_unique<Parameter>(
+              std::move(pattern), std::move(type), std::move(trait_bound),
+              is_mut, is_comptime);
+        }
+      }
+    }
     return std::make_unique<Parameter>(std::move(pattern), std::move(type),
-                                       is_mut);
+                                       std::move(std::nullopt), is_mut,
+                                       is_comptime);
   }
 
   // block_expr = '{' stmt* '}'
@@ -518,7 +587,7 @@ struct Parser {
   }
 
   // struct_decl = 'struct' identifier '{' struct_field* '}'
-  std::unique_ptr<StructDecl> parse_struct_decl() {
+  std::unique_ptr<StructDecl> parse_struct_decl(bool is_pub = false) {
     auto name = consume_kind(TokenKind::Identifier);
     consume_kind(TokenKind::LBrace);
     std::vector<std::unique_ptr<StructField>> fields;
@@ -528,7 +597,7 @@ struct Parser {
     }
     consume_kind(TokenKind::RBrace);
     return std::make_unique<StructDecl>(lexer->token_to_string(name),
-                                        std::move(fields));
+                                        std::move(fields), is_pub);
   }
 
   // struct_field = identifier ':' type ','
@@ -544,7 +613,8 @@ struct Parser {
   }
 
   // tuple_struct_decl = 'struct' identifier '(' type (',' type)* ')'
-  std::unique_ptr<TupleStructDecl> parse_tuple_struct_decl() {
+  std::unique_ptr<TupleStructDecl>
+  parse_tuple_struct_decl(bool is_pub = false) {
     auto name = consume_kind(TokenKind::Identifier);
     consume_kind(TokenKind::LParen);
     std::vector<std::unique_ptr<Type>> fields;
@@ -559,7 +629,7 @@ struct Parser {
     }
     consume_kind(TokenKind::RParen);
     return std::make_unique<TupleStructDecl>(lexer->token_to_string(name),
-                                             std::move(fields));
+                                             std::move(fields), is_pub);
   }
 
   // // union_decl = 'union' identifier '{' union_field* '}'
@@ -588,7 +658,7 @@ struct Parser {
   // }
 
   // enum_decl = 'enum' identifier '{' enum_variant* '}'
-  std::unique_ptr<EnumDecl> parse_enum_decl() {
+  std::unique_ptr<EnumDecl> parse_enum_decl(bool is_pub = false) {
     auto enum_token = consume_kind(TokenKind::KeywordEnum);
     auto name = consume_kind(TokenKind::Identifier);
     consume_kind(TokenKind::LBrace);
@@ -601,7 +671,7 @@ struct Parser {
     }
     consume_kind(TokenKind::RBrace);
     return std::make_unique<EnumDecl>(std::move(lexer->token_to_string(name)),
-                                      std::move(variants));
+                                      std::move(variants), is_pub);
   }
 
   std::unique_ptr<FieldsUnnamed> parse_field_unnamed() {
@@ -666,7 +736,7 @@ struct Parser {
       while (!is_peek(TokenKind::LBrace)) {
         auto trait = parse_type();
         traits.emplace_back(std::move(trait));
-        if (is_peek(TokenKind::Comma)) {
+        if (is_peek(TokenKind::Plus)) {
           consume();
         }
       }
@@ -682,22 +752,35 @@ struct Parser {
                                       std::move(functions));
   }
 
-  // // trait_decl = 'trait' identifier '{' function_decl* '}'
-  // std::shared_ptr<TraitDecl> parse_trait_decl() {
-  //   auto trait_token = consume_kind(TokenKind::KeywordTrait);
-  //   auto name = consume_kind(TokenKind::Identifier);
-  //   consume_kind(TokenKind::LBrace);
-  //   std::vector<std::shared_ptr<FunctionDecl>> functions;
-  //   while (!is_peek(TokenKind::RBrace)) {
-  //     auto function = parse_function(true, false);
-  //     functions.push_back(function);
-  //   }
-  //   consume_kind(TokenKind::RBrace);
-  //   return std::make_shared<TraitDecl>(trait_token, name, functions);
-  // }
-  //
+  // trait_decl = 'trait' identifier '{' function_decl* '}'
+  std::unique_ptr<TraitDecl> parse_trait_decl(bool is_pub = false) {
+    auto trait_token = consume_kind(TokenKind::KeywordTrait);
+    auto name = consume_kind(TokenKind::Identifier);
+    std::vector<std::unique_ptr<Type>> traits;
+    if (is_peek(TokenKind::Colon)) {
+      consume();
+      while (!is_peek(TokenKind::LBrace)) {
+        auto trait = parse_type();
+        traits.emplace_back(std::move(trait));
+        if (is_peek(TokenKind::Plus)) {
+          consume();
+        }
+      }
+    }
+    consume_kind(TokenKind::LBrace);
+    std::vector<TraitDecl::Method> functions;
+    while (!is_peek(TokenKind::RBrace)) {
+      auto function = parse_trait_method();
+      functions.emplace_back(std::move(function));
+    }
+    consume_kind(TokenKind::RBrace);
+    return std::make_unique<TraitDecl>(lexer->token_to_string(name),
+                                       std::move(functions), std::move(traits),
+                                       is_pub);
+  }
+
   // type = primitive_type | tuple_type | array_type | function_type |
-  //          pointer_type | reference_type | identifier
+  //          pointer_type | reference_type | identifier | expr_type
   std::unique_ptr<Type> parse_type() {
     // if (is_peek(TokenKind::KeywordFn)) {
     //   return parse_function_type();
@@ -707,45 +790,17 @@ struct Parser {
     } else if (is_peek(TokenKind::LBracket)) {
       return parse_array_type();
     }
-    return parse_primitive_type();
-  }
-
-  // primitive_type = 'i8' | 'i16' | 'i32' | 'i64' | 'u8' | 'u16' | 'u32' |
-  //                 'u64' | 'f32' | 'f64' | 'bool' | 'char' | 'str' | 'void'
-  std::unique_ptr<Type> parse_primitive_type() {
-    auto token = consume_kind(TokenKind::Identifier);
-    auto token_str = lexer->token_to_string(token);
-    PrimitiveType::PrimitiveTypeKind kind =
-        PrimitiveType::PrimitiveTypeKind::Void;
-    if (token_str == "bool")
-      kind = PrimitiveType::PrimitiveTypeKind::Bool;
-    else if (token_str == "char")
-      kind = PrimitiveType::PrimitiveTypeKind::Char;
-    else if (token_str == "i8")
-      kind = PrimitiveType::PrimitiveTypeKind::I8;
-    else if (token_str == "i16")
-      kind = PrimitiveType::PrimitiveTypeKind::I16;
-    else if (token_str == "i32")
-      kind = PrimitiveType::PrimitiveTypeKind::I32;
-    else if (token_str == "i64")
-      kind = PrimitiveType::PrimitiveTypeKind::I64;
-    else if (token_str == "u8")
-      kind = PrimitiveType::PrimitiveTypeKind::U8;
-    else if (token_str == "u16")
-      kind = PrimitiveType::PrimitiveTypeKind::U16;
-    else if (token_str == "u32")
-      kind = PrimitiveType::PrimitiveTypeKind::U32;
-    else if (token_str == "u64")
-      kind = PrimitiveType::PrimitiveTypeKind::U64;
-    else if (token_str == "f32")
-      kind = PrimitiveType::PrimitiveTypeKind::F32;
-    else if (token_str == "f64")
-      kind = PrimitiveType::PrimitiveTypeKind::F64;
-    else if (token_str == "string")
-      kind = PrimitiveType::PrimitiveTypeKind::String;
-    else
-      return std::make_unique<IdentifierType>(std::move(token_str));
-    return std::make_unique<PrimitiveType>(kind);
+    if (is_peek(TokenKind::Identifier)) {
+      auto token_str = lexer->token_to_string(peek().value());
+      if (str_to_primitive_type.find(token_str) !=
+          str_to_primitive_type.end()) {
+        consume();
+        return std::make_unique<PrimitiveType>(
+            str_to_primitive_type.at(token_str));
+      }
+    }
+    auto expr = parse_expr(0);
+    return std::make_unique<ExprType>(std::move(expr));
   }
 
   // tuple_type = '(' type (',' type)* ')'
@@ -1150,6 +1205,13 @@ struct Parser {
     } else if (is_peek(TokenKind::KeywordWhile)) {
       auto expr = parse_while_expr();
       return std::make_unique<ExprStmt>(std::move(expr));
+    } else if (is_peek(TokenKind::KeywordComptime)) {
+      consume();
+      auto token = peek().value();
+      auto expr = parse_expr(0);
+      if (token.kind != TokenKind::LBrace)
+        consume_kind(TokenKind::Semicolon);
+      return std::make_unique<ExprStmt>(std::move(expr));
     } else if (is_peek(TokenKind::KeywordBreak)) {
       auto break_expr = parse_break_expr();
       consume_kind(TokenKind::Semicolon);
@@ -1173,6 +1235,15 @@ struct Parser {
       consume();
       auto struct_decl = parse_struct_decl();
       return std::make_unique<TopLevelDeclStmt>(std::move(struct_decl));
+    } else if (is_peek(TokenKind::KeywordEnum)) {
+      auto enum_decl = parse_enum_decl();
+      return std::make_unique<TopLevelDeclStmt>(std::move(enum_decl));
+    } else if (is_peek(TokenKind::KeywordImpl)) {
+      auto impl_decl = parse_impl_decl();
+      return std::make_unique<TopLevelDeclStmt>(std::move(impl_decl));
+    } else if (is_peek(TokenKind::KeywordTrait)) {
+      auto trait_decl = parse_trait_decl();
+      return std::make_unique<TopLevelDeclStmt>(std::move(trait_decl));
     } else if (is_peek(TokenKind::KeywordFn)) {
       auto function = parse_function();
       return std::make_unique<TopLevelDeclStmt>(std::move(function));
@@ -1188,7 +1259,7 @@ struct Parser {
   }
 
   // var_decl = 'var' | 'const' identifier ('=' expr)? ';'
-  std::unique_ptr<VarDecl> parse_var_decl() {
+  std::unique_ptr<VarDecl> parse_var_decl(bool is_pub = false) {
     bool is_mut = false;
     if (peek()->kind == TokenKind::KeywordConst) {
       consume_kind(TokenKind::KeywordConst);
@@ -1209,7 +1280,7 @@ struct Parser {
     }
     consume_kind(TokenKind::Semicolon);
     return std::make_unique<VarDecl>(std::move(pattern), std::move(type),
-                                     std::move(expr), is_mut);
+                                     std::move(expr), is_mut, is_pub);
   }
 
   // break_expr = 'break' (':' identifier)? (expr)?;

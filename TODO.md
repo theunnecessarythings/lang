@@ -3,6 +3,10 @@
 - [ ] Labeled Blocks
 - [ ] Dynamic Match (Check Swift)
 - [ ] If guard - side effect ?
+- [ ] Closure
+- [ ] Errors/Results/Optionals/Try/Catch
+- [ ] Disambiguating overlapping traits
 - [ ] Bug: Error location is not correct
 - [ ] Bug: I don't think comma's are correctly consumed everywhere
 - [ ] Bug: Something unexpected comes, the parser loops forever
+- [ ] Remote Trait Implementation

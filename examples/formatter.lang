@@ -3,7 +3,7 @@ struct Circle {
     radius: i32
 }
 
-impl Circle: Formatter {
+impl Circle: Formatter + Debug {
     fn init(mut self: Self, radius: i32) Self {
         self.radius = radius;
         return self;
