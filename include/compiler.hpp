@@ -80,10 +80,9 @@ struct Diagnostic {
   } level;
 
   static std::string literal(Level &level) {
-    switch (level) {
-    case Level::Error:
+    if (level == Level::Error) {
       return "\x1b[31m\x1b[1mError\x1b[0m";
-    case Level::Warning:
+    } else {
       return "\x1b[32m\x1b[1mWarning\x1b[0m";
     }
   }

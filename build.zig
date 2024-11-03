@@ -1,112 +1,60 @@
 const std = @import("std");
 
-fn generateTablegen(b: *std.Build) !*std.Build.Step.Run {
-    const llvm_path = "/mnt/ubuntu/home/sreeraj/Documents/llvm-project";
-    const mlir_tblgen = llvm_path ++ "/build/bin/mlir-tblgen";
+const LLVM_PATH = "/mnt/ubuntu/home/sreeraj/Documents/llvm-project";
+
+fn generateTablegen(b: *std.Build) !void {
+    const mlir_tblgen = LLVM_PATH ++ "/build/bin/mlir-tblgen";
 
     const dialect_dir = try std.fs.cwd().openDir(
-        "src/tablegen/dialect/",
+        "src/tablegen/",
         .{ .iterate = true },
     );
+
+    const mlir_types = &[_][]const u8{ "dialect", "op", "typedef" };
+
     var iter = dialect_dir.iterate();
 
-    var gen_dialect_decls: ?*std.Build.Step.Run = null;
-    var gen_dialect_defs: ?*std.Build.Step.Run = null;
-    while (try iter.next()) |entry| {
-        std.debug.print("{s}", .{entry.name});
-        const output_file_defs = try std.fmt.allocPrint(
-            b.allocator,
-            "{s}/{s}.cpp.inc",
-            .{ b.path("src/dialect/").getPath(b), entry.name[0 .. entry.name.len - 3] },
-        );
-        const output_file_decls = try std.fmt.allocPrint(
-            b.allocator,
-            "{s}/{s}.h.inc",
-            .{ b.path("src/dialect/").getPath(b), entry.name[0 .. entry.name.len - 3] },
-        );
-        const input_file = try std.fmt.allocPrint(
-            b.allocator,
-            "{s}/{s}",
-            .{ b.path("src/tablegen/dialect/").getPath(b), entry.name },
-        );
+    for (mlir_types) |mlir_type| {
+        iter.reset();
+        while (try iter.next()) |entry| {
+            const output_file_defs = try std.fmt.allocPrint(
+                b.allocator,
+                "{s}/{s}/{s}.cpp.inc",
+                .{ b.path("src/").getPath(b), mlir_type, entry.name[0 .. entry.name.len - 3] },
+            );
+            const output_file_decls = try std.fmt.allocPrint(
+                b.allocator,
+                "{s}/{s}/{s}.h.inc",
+                .{ b.path("src/").getPath(b), mlir_type, entry.name[0 .. entry.name.len - 3] },
+            );
+            const input_file = try std.fmt.allocPrint(
+                b.allocator,
+                "{s}/{s}",
+                .{ b.path("src/tablegen/").getPath(b), entry.name },
+            );
 
-        gen_dialect_decls = b.addSystemCommand(&.{
-            mlir_tblgen,
-            "-gen-dialect-decls",
-            "-o",
-            output_file_decls,
-            input_file,
-            "-I" ++ llvm_path ++ "/mlir/include",
-        });
-        if (gen_dialect_defs != null) {
-            gen_dialect_decls.?.step.dependOn(&gen_dialect_defs.?.step);
+            const gen_decls = b.addSystemCommand(&.{
+                mlir_tblgen,
+                try std.fmt.allocPrint(b.allocator, "-gen-{s}-decls", .{mlir_type}),
+                "-o",
+                output_file_decls,
+                input_file,
+                "-I" ++ LLVM_PATH ++ "/mlir/include",
+            });
+            b.getInstallStep().dependOn(&gen_decls.step);
+
+            const gen_defs = b.addSystemCommand(&.{
+                mlir_tblgen,
+                try std.fmt.allocPrint(b.allocator, "-gen-{s}-defs", .{mlir_type}),
+                "-o",
+                output_file_defs,
+                input_file,
+                "-I" ++ LLVM_PATH ++ "/mlir/include",
+            });
+
+            b.getInstallStep().dependOn(&gen_defs.step);
         }
-
-        gen_dialect_defs = b.addSystemCommand(&.{
-            mlir_tblgen,
-            "-gen-dialect-defs",
-            "-o",
-            output_file_defs,
-            input_file,
-            "-I" ++ llvm_path ++ "/mlir/include",
-        });
-
-        gen_dialect_defs.?.step.dependOn(&gen_dialect_decls.?.step);
     }
-
-    const ops_dir = try std.fs.cwd().openDir(
-        "src/tablegen/ops/",
-        .{ .iterate = true },
-    );
-    iter = ops_dir.iterate();
-
-    var gen_op_defs: ?*std.Build.Step.Run = null;
-    var gen_op_decls: ?*std.Build.Step.Run = null;
-
-    while (try iter.next()) |entry| {
-        const output_file_defs = try std.fmt.allocPrint(
-            b.allocator,
-            "{s}/{s}.cpp.inc",
-            .{ b.path("src/ops/").getPath(b), entry.name[0 .. entry.name.len - 3] },
-        );
-        const output_file_decls = try std.fmt.allocPrint(
-            b.allocator,
-            "{s}/{s}.h.inc",
-            .{ b.path("src/ops/").getPath(b), entry.name[0 .. entry.name.len - 3] },
-        );
-        const input_file = try std.fmt.allocPrint(
-            b.allocator,
-            "{s}/{s}",
-            .{ b.path("src/tablegen/ops/").getPath(b), entry.name },
-        );
-
-        gen_op_decls = b.addSystemCommand(&.{
-            mlir_tblgen,
-            "-gen-op-decls",
-            "-o",
-            output_file_decls,
-            input_file,
-            "-I" ++ llvm_path ++ "/mlir/include",
-        });
-        if (gen_op_defs != null) {
-            gen_op_decls.?.step.dependOn(&gen_op_defs.?.step);
-        }
-
-        gen_op_defs = b.addSystemCommand(&.{
-            mlir_tblgen,
-            "-gen-op-defs",
-            "-o",
-            output_file_defs,
-            input_file,
-            "-I" ++ llvm_path ++ "/mlir/include",
-        });
-
-        gen_op_defs.?.step.dependOn(&gen_op_decls.?.step);
-    }
-
-    gen_op_defs.?.step.dependOn(&gen_dialect_defs.?.step);
-
-    return gen_op_defs.?;
 }
 
 pub fn build(b: *std.Build) void {
@@ -159,17 +107,46 @@ pub fn build(b: *std.Build) void {
         .files = &.{
             "tests/test_lexer.cpp",
             "tests/test_parser.cpp",
+            "src/Dialect.cpp",
         },
         .flags = &.{
-            "-std=c++20",
+            // "-std=c++20",
             // "-Wall",
             // "-Wextra",
             // "-Wpedantic",
+            \\-I/mnt/ubuntu/home/sreeraj/Documents/llvm-project/llvm/include -I/mnt/ubuntu/home/sreeraj/Documents/llvm-project/build/include -std=c++17   -fno-exceptions -funwind-tables -fno-rtti -D_GNU_SOURCE -D_DEBUG -D_GLIBCXX_ASSERTIONS -D__STDC_CONSTANT_MACROS -D__STDC_FORMAT_MACROS -D__STDC_LIMIT_MACROS
+            \\-L/mnt/ubuntu/home/sreeraj/Documents/llvm-project/build/lib
+            \\-lLLVMWindowsManifest -lLLVMXRay -lLLVMLibDriver -lLLVMDlltoolDriver -lLLVMTextAPIBinaryReader -lLLVMCoverage -lLLVMLineEditor -lLLVMX86TargetMCA -lLLVMX86Disassembler -lLLVMX86AsmParser -lLLVMX86CodeGen -lLLVMX86Desc -lLLVMX86Info -lLLVMNVPTXCodeGen -lLLVMNVPTXDesc -lLLVMNVPTXInfo -lLLVMOrcDebugging -lLLVMOrcJIT -lLLVMWindowsDriver -lLLVMMCJIT -lLLVMJITLink -lLLVMInterpreter -lLLVMExecutionEngine -lLLVMRuntimeDyld -lLLVMOrcTargetProcess -lLLVMOrcShared -lLLVMDWP -lLLVMDebugInfoLogicalView -lLLVMDebugInfoGSYM -lLLVMOption -lLLVMObjectYAML -lLLVMObjCopy -lLLVMMCA -lLLVMMCDisassembler -lLLVMLTO -lLLVMPasses -lLLVMHipStdPar -lLLVMCFGuard -lLLVMCoroutines -lLLVMipo -lLLVMVectorize -lLLVMSandboxIR -lLLVMLinker -lLLVMInstrumentation -lLLVMFrontendOpenMP -lLLVMFrontendOffloading -lLLVMFrontendOpenACC -lLLVMFrontendHLSL -lLLVMFrontendDriver -lLLVMFrontendAtomic -lLLVMExtensions -lLLVMDWARFLinkerParallel -lLLVMDWARFLinkerClassic -lLLVMDWARFLinker -lLLVMGlobalISel -lLLVMMIRParser -lLLVMAsmPrinter -lLLVMSelectionDAG -lLLVMCodeGen -lLLVMTarget -lLLVMObjCARCOpts -lLLVMCodeGenTypes -lLLVMCGData -lLLVMIRPrinter -lLLVMInterfaceStub -lLLVMFileCheck -lLLVMFuzzMutate -lLLVMScalarOpts -lLLVMInstCombine -lLLVMAggressiveInstCombine -lLLVMTransformUtils -lLLVMBitWriter -lLLVMAnalysis -lLLVMProfileData -lLLVMSymbolize -lLLVMDebugInfoBTF -lLLVMDebugInfoPDB -lLLVMDebugInfoMSF -lLLVMDebugInfoCodeView -lLLVMDebugInfoDWARF -lLLVMObject -lLLVMTextAPI -lLLVMMCParser -lLLVMIRReader -lLLVMAsmParser -lLLVMMC -lLLVMBitReader -lLLVMFuzzerCLI -lLLVMCore -lLLVMRemarks -lLLVMBitstreamReader -lLLVMBinaryFormat -lLLVMTargetParser -lLLVMTableGen -lLLVMSupport -lLLVMDemangle
         },
     });
+    exe.addObjectFile(.{ .cwd_relative = "/usr/lib/x86_64-linux-gnu/libstdc++.so.6" });
+    exe_unit_tests.addIncludePath(b.path("include"));
+    exe_unit_tests.addIncludePath(
+        .{ .cwd_relative = LLVM_PATH ++ "/build/include" },
+    );
+    exe_unit_tests.addIncludePath(
+        .{ .cwd_relative = LLVM_PATH ++ "/build/tools/mlir/include" },
+    );
 
-    var tablegen_step = generateTablegen(b) catch unreachable;
-    exe_unit_tests.step.dependOn(&tablegen_step.step);
+    exe_unit_tests.addIncludePath(
+        .{ .cwd_relative = LLVM_PATH ++ "/mlir/include" },
+    );
+    exe_unit_tests.addIncludePath(
+        .{ .cwd_relative = LLVM_PATH ++ "/llvm/include" },
+    );
+
+    exe_unit_tests.addLibraryPath(
+        .{ .cwd_relative = LLVM_PATH ++ "/build/lib" },
+    );
+    // exe_unit_tests.linkSystemLibrary("LLVMSupport");
+    exe_unit_tests.linkSystemLibrary("MLIRAnalysis");
+    exe_unit_tests.linkSystemLibrary("MLIRFunctionInterfaces");
+    exe_unit_tests.linkSystemLibrary("MLIRIR");
+    exe_unit_tests.linkSystemLibrary("MLIRParser");
+    exe_unit_tests.linkSystemLibrary("MLIRSideEffectInterfaces");
+    exe_unit_tests.linkSystemLibrary("MLIRTransforms");
+
+    generateTablegen(b) catch unreachable;
 
     const catch2 = b.addStaticLibrary(.{
         .name = "catch2",
@@ -191,8 +168,8 @@ pub fn build(b: *std.Build) void {
     catch2.linkLibC();
     catch2.linkLibCpp();
 
-    exe_unit_tests.linkLibC();
-    exe_unit_tests.linkLibCpp();
+    // exe_unit_tests.linkLibC();
+    // exe_unit_tests.linkLibCpp();
     exe_unit_tests.linkLibrary(catch2);
     b.installArtifact(exe_unit_tests);
 
