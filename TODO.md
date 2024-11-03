@@ -1,4 +1,6 @@
-- [ ] Comptime
+- [ ] Defer
+- [ ] Union
+- [ ] Modules
 - [ ] Add Test cases from zig
 - [ ] Labeled Blocks
 - [ ] Dynamic Match (Check Swift)
@@ -9,4 +11,4 @@
 - [ ] Bug: Error location is not correct
 - [ ] Bug: I don't think comma's are correctly consumed everywhere
 - [ ] Bug: Something unexpected comes, the parser loops forever
-- [ ] Remote Trait Implementation
+- [ ] Remote Trait Implementation/ Implicit trait conformance (Mojo duck typing)

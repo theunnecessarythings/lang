@@ -165,46 +165,48 @@ struct Context {
   std::shared_ptr<SourceManager> source_manager;
   DiagnosticsManager diagnostics;
   CompilerOptions options;
-  std::unordered_map<std::string, std::shared_ptr<Function>> functions;
-  std::unordered_map<std::string, std::shared_ptr<StructDecl>> structs;
-  std::unordered_map<std::string, std::shared_ptr<TupleStructDecl>>
+  std::unordered_map<std::string, std::shared_ptr<Ast::Function>> functions;
+  std::unordered_map<std::string, std::shared_ptr<Ast::StructDecl>> structs;
+  std::unordered_map<std::string, std::shared_ptr<Ast::TupleStructDecl>>
       tuple_structs;
-  std::unordered_map<std::string, std::shared_ptr<EnumDecl>> enums;
-  std::unordered_map<std::string, std::shared_ptr<UnionDecl>> unions;
+  std::unordered_map<std::string, std::shared_ptr<Ast::EnumDecl>> enums;
+  std::unordered_map<std::string, std::shared_ptr<Ast::UnionDecl>> unions;
 
   Context(std::shared_ptr<SourceManager> source_manager)
       : source_manager(source_manager),
         diagnostics(DiagnosticsManager(source_manager)) {}
 
-  void add_function(std::string name, std::shared_ptr<Function> function) {
+  void add_function(std::string name, std::shared_ptr<Ast::Function> function) {
     functions[name] = function;
   }
 
-  void add_struct(std::string name, std::shared_ptr<StructDecl> decl) {
+  void add_struct(std::string name, std::shared_ptr<Ast::StructDecl> decl) {
     structs[name] = decl;
   }
 
   void add_tuple_struct(std::string name,
-                        std::shared_ptr<TupleStructDecl> decl) {
+                        std::shared_ptr<Ast::TupleStructDecl> decl) {
     tuple_structs[name] = decl;
   }
 
-  void add_enum(std::string name, std::shared_ptr<EnumDecl> decl) {
+  void add_enum(std::string name, std::shared_ptr<Ast::EnumDecl> decl) {
     enums[name] = decl;
   }
 
-  void add_union(std::string name, std::shared_ptr<UnionDecl> decl) {
+  void add_union(std::string name, std::shared_ptr<Ast::UnionDecl> decl) {
     unions[name] = decl;
   }
 };
 
-struct Scope {
+template <typename T> struct Scope {
   std::optional<std::shared_ptr<Scope>> parent;
-  std::unordered_map<std::string, std::shared_ptr<Type>> symbols;
+  std::unordered_map<std::string, T> symbols;
 };
 
-struct SymbolTable {
-  std::vector<Scope> scopes;
+template <typename T> struct SymbolTable {
+  std::vector<Scope<T>> scopes;
+
+  SymbolTable() { push_scope(); }
 
   void push_scope() {
     auto parent =
@@ -220,14 +222,14 @@ struct SymbolTable {
     }
   }
 
-  void declare_symbol(std::string name, std::shared_ptr<Type> type) {
+  void declare_symbol(std::string name, T type) {
     if (scopes.size() == 0) {
       return;
     }
     scopes.back().symbols[name] = type;
   }
 
-  std::optional<std::shared_ptr<Type>> get_symbol(std::string name) {
+  std::optional<T> get_symbol(std::string name) {
     for (int i = scopes.size() - 1; i >= 0; i--) {
       auto &scope = scopes[i];
       if (scope.symbols.count(name) > 0) {
