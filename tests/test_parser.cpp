@@ -1,14 +1,12 @@
+#include "ast.hpp"
 #include "parser.hpp"
 #include <catch2/catch_test_macros.hpp>
 #include <fstream>
 #include <string>
 
-auto parse(const std::string &path, bool print_tokens = false) {
-  std::ifstream file(path);
-  if (!file)
-    throw std::runtime_error("Could not open file " + path);
-  std::string str((std::istreambuf_iterator<char>(file)),
-                  std::istreambuf_iterator<char>());
+auto parse(const std::string &path, std::string &str,
+           bool print_tokens = false) {
+
   std::shared_ptr<SourceManager> source_manager =
       std::make_shared<SourceManager>();
   std::shared_ptr<Context> context = std::make_shared<Context>(source_manager);
@@ -28,22 +26,35 @@ auto parse(const std::string &path, bool print_tokens = false) {
 
   Parser parser(std::move(lexer), context);
   auto tree = parser.parse_program();
-
-  context->diagnostics.report(Diagnostic::Level::Error);
-  context->diagnostics.report(Diagnostic::Level::Warning);
-
-  REQUIRE(context->diagnostics.level_count(Diagnostic::Level::Error) == 0);
-  REQUIRE(context->diagnostics.level_count(Diagnostic::Level::Warning) == 0);
+  if (context->diagnostics.level_count(Diagnostic::Level::Error) > 0) {
+    context->diagnostics.report(Diagnostic::Level::Error);
+    REQUIRE(false);
+  }
+  if (context->diagnostics.level_count(Diagnostic::Level::Warning) > 0) {
+    context->diagnostics.report(Diagnostic::Level::Warning);
+    REQUIRE(false);
+  }
   return tree;
 }
 
 void test_repr(const std::string &path) {
   std::cout << "Parsing " << path << std::endl;
+  std::ifstream file(path);
+  if (!file)
+    throw std::runtime_error("Could not open file " + path);
+  std::string str((std::istreambuf_iterator<char>(file)),
+                  std::istreambuf_iterator<char>());
+  auto tree = parse(path, str, false);
 
-  auto tree = parse(path, false);
-  std::cout << std::string(80, '-') << std::endl;
-  tree->render();
-  std::cout << std::string(80, '-') << std::endl;
+  AstDumper dumper(true);
+  dumper.dump(tree.get());
+  auto repr = dumper.to_string();
+
+  auto tree2 = parse(path, repr, false);
+  AstDumper dumper2(true);
+  dumper2.dump(tree2.get());
+
+  REQUIRE(repr == dumper2.to_string());
 }
 
 TEST_CASE("hello", "[parser]") { test_repr("../examples/hello.lang"); }

@@ -1,0 +1,23 @@
+fn expr_test() f32 {
+    var r: f32 = 2.0;
+    var b: f32 = 3.14;
+    var area: f32 = r * r * b / 20.0;
+    return area;
+}
+
+fn fib(n: i32) i32 {
+    if n == 0 {
+        return 0;
+    }
+    if n == 1 {
+        return 1;
+    }
+    return fib(n - 1) + fib(n - 2);
+}
+
+fn main() void {
+    var area = expr_test();
+    var n = fib(30);
+    print("fib(%d) = %d", 30, n);
+    print("area = %f", area);
+}

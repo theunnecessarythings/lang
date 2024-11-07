@@ -7,8 +7,6 @@
 #include <optional>
 #include <unordered_map>
 
-using namespace Ast;
-
 static std::unordered_map<std::string, PrimitiveType::PrimitiveTypeKind>
     str_to_primitive_type = {
         {"i8", PrimitiveType::PrimitiveTypeKind::I8},
@@ -366,14 +364,9 @@ std::unique_ptr<ImportDecl> Parser::parse_import_decl() {
   auto import_token = consume_kind(TokenKind::KeywordImport);
   std::vector<ImportDecl::Path> paths;
   while (true) {
-    std::string path = "../"; // TODO: Fix this
-    while (is_peek2(TokenKind::Dot)) {
-      auto ident = consume_kind(TokenKind::Identifier);
-      path += lexer->token_to_string(ident) + "/";
-      consume();
-    }
-    auto ident = consume_kind(TokenKind::Identifier);
-    path += lexer->token_to_string(ident);
+    auto path_token = consume_kind(TokenKind::StringLiteral);
+    auto path = lexer->token_to_string(path_token);
+    path = "../" + path.substr(1, path.size() - 2);
 
     if (is_peek(TokenKind::KeywordAs)) {
       consume();
@@ -655,7 +648,7 @@ std::unique_ptr<TupleStructDecl> Parser::parse_tuple_struct_decl(bool is_pub) {
 
 // enum_decl = 'enum' identifier '{' enum_variant* '}'
 std::unique_ptr<EnumDecl> Parser::parse_enum_decl(bool is_pub) {
-  auto enum_token = consume_kind(TokenKind::KeywordEnum);
+  consume_kind(TokenKind::KeywordEnum);
   auto name = consume_kind(TokenKind::Identifier);
   consume_kind(TokenKind::LBrace);
   std::vector<std::unique_ptr<Variant>> variants;
@@ -752,7 +745,7 @@ std::unique_ptr<ImplDecl> Parser::parse_impl_decl() {
 
 // trait_decl = 'trait' identifier '{' function_decl* '}'
 std::unique_ptr<TraitDecl> Parser::parse_trait_decl(bool is_pub) {
-  auto trait_token = consume_kind(TokenKind::KeywordTrait);
+  consume_kind(TokenKind::KeywordTrait);
   auto name = consume_kind(TokenKind::Identifier);
   std::vector<std::unique_ptr<Type>> traits;
   if (is_peek(TokenKind::Colon)) {
@@ -803,6 +796,12 @@ std::unique_ptr<Type> Parser::parse_type() {
 // tuple_type = '(' type (',' type)* ')'
 std::unique_ptr<Type> Parser::parse_tuple_type() {
   auto token = consume_kind(TokenKind::LParen);
+  if (!is_peek2(TokenKind::Comma)) {
+    // not a tuple type
+    auto type = parse_type();
+    consume_kind(TokenKind::RParen);
+    return type;
+  }
   std::vector<std::unique_ptr<Type>> types;
   while (!is_peek(TokenKind::RParen)) {
     auto type = parse_type();
@@ -1189,7 +1188,7 @@ std::unique_ptr<CallExpr> Parser::parse_call_expr() {
 
 // return_stmt = 'return' expr? ';'?
 std::unique_ptr<ReturnExpr> Parser::parse_return_expr() {
-  auto return_token = consume_kind(TokenKind::KeywordReturn);
+  consume_kind(TokenKind::KeywordReturn);
   auto expr = parse_expr(0);
   return std::make_unique<ReturnExpr>(expr->token, std::move(expr));
 }

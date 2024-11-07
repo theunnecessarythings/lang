@@ -11,8 +11,8 @@ void test_lexer(std::basic_string<char> source,
   }
   Token last_token = lexer.next();
   REQUIRE(TokenKind::Eof == last_token.kind);
-  REQUIRE(source.size() == last_token.span.start);
-  REQUIRE(source.size() == last_token.span.end);
+  REQUIRE((int)source.size() == last_token.span.start);
+  REQUIRE((int)source.size() == last_token.span.end);
 }
 
 TEST_CASE("keywords", "[lexer]") {

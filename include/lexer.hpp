@@ -226,7 +226,7 @@ struct Lexer {
       case State::Start:
         switch (ch) {
         case 0:
-          if (index != source.size()) {
+          if (index != (int)source.size()) {
             result.kind = TokenKind::Invalid;
             result.span.start = index;
             index += 1;
@@ -473,7 +473,7 @@ struct Lexer {
           loop_break = true;
           break;
         case 0:
-          if (index == source.size()) {
+          if (index == (int)source.size()) {
             result.kind = TokenKind::Invalid;
             loop_break = true;
             break;
@@ -828,7 +828,7 @@ struct Lexer {
       case State::LineCommentStart:
         switch (ch) {
         case 0:
-          if (index != source.size()) {
+          if (index != (int)source.size()) {
             result.kind = TokenKind::Invalid;
             index += 1;
           }
@@ -852,7 +852,7 @@ struct Lexer {
       case State::LineComment:
         switch (ch) {
         case 0:
-          if (index != source.size()) {
+          if (index != (int)source.size()) {
             result.kind = TokenKind::Invalid;
             index += 1;
           }
@@ -1007,7 +1007,7 @@ struct Lexer {
     // if (c0 < 128) { // is_ascii
     if (isascii(c0)) {
       if (c0 == '\r') {
-        if (index + 1 < source.size() && source[index + 1] == '\n')
+        if (index + 1 < (int)source.size() && source[index + 1] == '\n')
           return 0;
         else
           return 1;
@@ -1019,7 +1019,7 @@ struct Lexer {
       int length = utf8_byte_sequence_length(c0);
       if (length == -1)
         return 1;
-      if (index + length > source.size())
+      if (index + length > (int)source.size())
         return source.size() - index;
 
       const char *bytes = source.c_str() + index;

@@ -12,3 +12,5 @@
 - [ ] Bug: I don't think comma's are correctly consumed everywhere
 - [ ] Bug: Something unexpected comes, the parser loops forever
 - [ ] Remote Trait Implementation/ Implicit trait conformance (Mojo duck typing)
+- [ ] Multiple results from any regions/blocks
+- [ ] String literals are not parsed (unescaped)

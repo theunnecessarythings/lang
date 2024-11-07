@@ -7,8 +7,6 @@
 #include "compiler.hpp"
 #include "lexer.hpp"
 
-using namespace Ast;
-
 struct Parser {
   std::unique_ptr<Lexer> lexer;
   std::optional<Token> current_token;
