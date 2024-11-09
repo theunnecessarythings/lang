@@ -11,6 +11,10 @@
 enum class AstNodeKind {
   Program,
   Module,
+  Expression,
+  Statement,
+  Type,
+  Pattern,
   ComptimeExpr,
   BlockExpression,
   BlockStatement,
@@ -188,13 +192,13 @@ struct BlockExpression : public Expression {
 struct Parameter : public Node {
   std::unique_ptr<Pattern> pattern;
   std::unique_ptr<Type> type;
-  std::optional<std::unique_ptr<Type>> trait_bound;
+  std::vector<std::unique_ptr<Type>> trait_bound;
   bool is_mut;
   bool is_comptime;
 
   Parameter(Token token, std::unique_ptr<Pattern> pattern,
             std::unique_ptr<Type> type,
-            std::optional<std::unique_ptr<Type>> trait_bound, bool is_mut,
+            std::vector<std::unique_ptr<Type>> trait_bound, bool is_mut,
             bool is_comptime)
       : Node(std::move(token)), pattern(std::move(pattern)),
         type(std::move(type)), trait_bound(std::move(trait_bound)),
@@ -302,6 +306,12 @@ struct FunctionDecl : public Node {
   std::vector<std::unique_ptr<Parameter>> parameters;
   std::unique_ptr<Type> return_type;
 
+  struct ExtraData {
+    bool is_method = false;
+    std::optional<std::string> parent_name = std::nullopt;
+    AstNodeKind parent_kind = AstNodeKind::InvalidNode;
+  } extra;
+
   FunctionDecl(Token token, std::string name,
                std::vector<std::unique_ptr<Parameter>> parameters,
                std::unique_ptr<Type> return_type)
@@ -383,11 +393,11 @@ struct TraitDecl : public TopLevelDecl {
 };
 
 struct ImplDecl : public TopLevelDecl {
-  std::unique_ptr<Type> type;
+  std::string type;
   std::vector<std::unique_ptr<Type>> traits;
   std::vector<std::unique_ptr<Function>> functions;
 
-  ImplDecl(Token token, std::unique_ptr<Type> type,
+  ImplDecl(Token token, std::string type,
            std::vector<std::unique_ptr<Type>> traits,
            std::vector<std::unique_ptr<Function>> functions)
       : TopLevelDecl(std::move(token)), type(std::move(type)),
@@ -610,7 +620,6 @@ enum class Operator {
   Le,
   Gt,
   Ge,
-  Xor,
   BitAnd,
   BitOr,
   BitXor,
@@ -646,10 +655,10 @@ struct UnaryExpr : public Expression {
 };
 
 struct CallExpr : public Expression {
-  std::unique_ptr<Expression> callee;
+  std::string callee;
   std::vector<std::unique_ptr<Expression>> arguments;
 
-  CallExpr(Token token, std::unique_ptr<Expression> callee,
+  CallExpr(Token token, std::string callee,
            std::vector<std::unique_ptr<Expression>> arguments)
       : Expression(std::move(token)), callee(std::move(callee)),
         arguments(std::move(arguments)) {}

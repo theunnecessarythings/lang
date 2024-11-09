@@ -34,14 +34,14 @@ add_subdirectory(include)
 add_subdirectory(dialect)
 
 # Main project as a library
-add_library(liblang STATIC src/parser.cpp src/ast.cpp src/MLIRGen.cpp src/analyzer.cpp)  
+add_library(liblang STATIC src/parser.cpp src/ast.cpp src/MLIRGen.cpp src/analyzer.cpp src/json_dumper.cpp)  
 target_include_directories(liblang PUBLIC include/)
 
 get_property(dialect_libs GLOBAL PROPERTY MLIR_DIALECT_LIBS)
 get_property(conversion_libs GLOBAL PROPERTY MLIR_CONVERSION_LIBS)
 get_property(extension_libs GLOBAL PROPERTY MLIR_EXTENSION_LIBS)
 set(LIBS
-        ${dialect_libs}
+    ${dialect_libs}
     ${conversion_libs}
     ${extension_libs}
     MLIRAnalysis
@@ -59,8 +59,7 @@ set(LIBS
     MLIRSideEffectInterfaces
     MLIRTargetLLVMIRExport
     MLIRTransforms
-        Lang
-        )
+    Lang)
 add_llvm_executable(lang main.cpp)
 
 llvm_update_compile_flags(lang)

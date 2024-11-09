@@ -71,7 +71,9 @@
 
 #include "MLIRGen.h"
 #include "ast.hpp"
+#include "json_dumper.hpp"
 // #include "comptime_eval_pass.hpp"
+#include "analyzer.hpp"
 #include "lexer.hpp"
 #include "parser.hpp"
 
@@ -94,11 +96,12 @@ static cl::opt<enum InputType>
                                     "load the input file as an MLIR file")));
 
 namespace {
-enum Action { None, DumpAST, DumpMLIR, DumpMLIRAffine };
+enum Action { None, DumpAST, DumpJSON, DumpMLIR, DumpMLIRAffine };
 } // namespace
 static cl::opt<enum Action> emitAction(
     "emit", cl::desc("Select the kind of output desired"),
     cl::values(clEnumValN(DumpAST, "ast", "output the AST dump")),
+    cl::values(clEnumValN(DumpJSON, "json", "output the AST dump")),
     cl::values(clEnumValN(DumpMLIR, "mlir", "output the MLIR dump")),
     cl::values(clEnumValN(DumpMLIRAffine, "mlir-affine",
                           "output the MLIR dump after affine lowering")));
@@ -118,12 +121,31 @@ std::unique_ptr<Program> parseInputFile(llvm::StringRef filename) {
   auto source_manager = std::make_shared<SourceManager>();
   auto context = std::make_shared<Context>(source_manager);
   auto parser = Parser(std::move(lexer), context);
-  return parser.parse_program();
+  auto tree = parser.parse_program();
+  auto analyzer = Analyzer(context);
+  analyzer.analyze(tree.get());
+  return tree;
+}
+
+int dumpJSON() {
+  if (inputType == InputType::MLIR) {
+    llvm::errs() << "Can't dump a Lang AST JSON when the input is MLIR\n";
+    return 5;
+  }
+
+  auto moduleAST = parseInputFile(inputFilename);
+  if (!moduleAST)
+    return 1;
+  auto dumper = JsonDumper();
+  dumper.dump(moduleAST.get());
+  auto str = dumper.to_string();
+  llvm::errs() << str << "\n";
+  return 0;
 }
 
 int dumpAST() {
   if (inputType == InputType::MLIR) {
-    llvm::errs() << "Can't dump a Toy AST when the input is MLIR\n";
+    llvm::errs() << "Can't dump a Lang AST when the input is MLIR\n";
     return 5;
   }
 
@@ -284,6 +306,8 @@ int main(int argc, char **argv) {
   switch (emitAction) {
   case Action::DumpAST:
     return dumpAST();
+  case Action::DumpJSON:
+    return dumpJSON();
   case Action::DumpMLIR:
   case Action::DumpMLIRAffine:
     return dumpMLIR();

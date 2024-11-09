@@ -15,7 +15,7 @@ fn main() void {
     }
 }
 
-fn main() void {
+fn main2() void {
     // Try changing the values in the array, or make it a slice!
     const array = [1, -2, 6];
 

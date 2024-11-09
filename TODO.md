@@ -14,3 +14,8 @@
 - [ ] Remote Trait Implementation/ Implicit trait conformance (Mojo duck typing)
 - [ ] Multiple results from any regions/blocks
 - [ ] String literals are not parsed (unescaped)
+- [ ] Function overloading
+- [ ] Implement RAII and similar to mojo
+- [ ] Pointers
+- [ ] Bug: All structs are returned as values, not pointers
+- [ ] Bug: Handling Path Expressions, (eg. Impl only work with a type(str), not a path)

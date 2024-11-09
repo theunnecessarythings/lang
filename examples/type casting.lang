@@ -8,10 +8,10 @@ impl Number {
         return self;
     }
 
-    fn init(mut self: Self, item: f64) Self {
-        self.value = i32(item);
-        return self;
-    }
+    // fn init(mut self: Self, item: f64) Self {
+    //     self.value = i32(item);
+    //     return self;
+    // }
 }
 
 fn main() void {

@@ -1,5 +1,8 @@
 #pragma once
 
+#include "llvm/ADT/ScopedHashTable.h"
+#include "llvm/ADT/StringRef.h"
+
 #include "ast.hpp"
 #include "lexer.hpp"
 #include <memory>
@@ -164,36 +167,79 @@ struct Context {
   std::shared_ptr<SourceManager> source_manager;
   DiagnosticsManager diagnostics;
   CompilerOptions options;
-  std::unordered_map<std::string, std::shared_ptr<Function>> functions;
-  std::unordered_map<std::string, std::shared_ptr<StructDecl>> structs;
-  std::unordered_map<std::string, std::shared_ptr<TupleStructDecl>>
-      tuple_structs;
-  std::unordered_map<std::string, std::shared_ptr<EnumDecl>> enums;
-  std::unordered_map<std::string, std::shared_ptr<UnionDecl>> unions;
+  llvm::ScopedHashTable<llvm::StringRef, Function *> function_table;
+  llvm::ScopedHashTable<llvm::StringRef, StructDecl *> struct_table;
+  llvm::ScopedHashTable<llvm::StringRef, TupleStructDecl *> tuple_struct_table;
+  llvm::ScopedHashTable<llvm::StringRef, EnumDecl *> enum_table;
+  llvm::ScopedHashTable<llvm::StringRef, UnionDecl *> union_table;
+  llvm::ScopedHashTable<llvm::StringRef, TraitDecl *> trait_table;
+  llvm::ScopedHashTable<llvm::StringRef, VarDecl *> var_table;
 
   Context(std::shared_ptr<SourceManager> source_manager)
       : source_manager(source_manager),
         diagnostics(DiagnosticsManager(source_manager)) {}
 
-  void add_function(std::string name, std::shared_ptr<Function> function) {
-    functions[name] = function;
+  void declare_function(llvm::StringRef name, Function *decl) {
+    if (function_table.lookup(name)) {
+      diagnostics.report_error(decl->token,
+                               "Function " + name.str() + " already declared");
+      return;
+    }
+    function_table.insert(name, decl);
   }
 
-  void add_struct(std::string name, std::shared_ptr<StructDecl> decl) {
-    structs[name] = decl;
+  void declare_struct(llvm::StringRef name, StructDecl *decl) {
+    if (struct_table.lookup(name)) {
+      diagnostics.report_error(decl->token,
+                               "Struct " + name.str() + " already declared");
+      return;
+    }
+    struct_table.insert(name, decl);
   }
 
-  void add_tuple_struct(std::string name,
-                        std::shared_ptr<TupleStructDecl> decl) {
-    tuple_structs[name] = decl;
+  void declare_tuple_struct(llvm::StringRef name, TupleStructDecl *decl) {
+    if (tuple_struct_table.lookup(name)) {
+      diagnostics.report_error(decl->token, "Tuple struct " + name.str() +
+                                                " already declared");
+      return;
+    }
+    tuple_struct_table.insert(name, decl);
   }
 
-  void add_enum(std::string name, std::shared_ptr<EnumDecl> decl) {
-    enums[name] = decl;
+  void declare_enum(llvm::StringRef name, EnumDecl *decl) {
+    if (enum_table.lookup(name)) {
+      diagnostics.report_error(decl->token,
+                               "Enum " + name.str() + " already declared");
+      return;
+    }
+    enum_table.insert(name, decl);
   }
 
-  void add_union(std::string name, std::shared_ptr<UnionDecl> decl) {
-    unions[name] = decl;
+  void declare_union(llvm::StringRef name, UnionDecl *decl) {
+    if (union_table.lookup(name)) {
+      diagnostics.report_error(decl->token,
+                               "Union " + name.str() + " already declared");
+      return;
+    }
+    union_table.insert(name, decl);
+  }
+
+  void declare_trait(llvm::StringRef name, TraitDecl *decl) {
+    if (trait_table.lookup(name)) {
+      diagnostics.report_error(decl->token,
+                               "Trait " + name.str() + " already declared");
+      return;
+    }
+    trait_table.insert(name, decl);
+  }
+
+  void declare_var(llvm::StringRef name, VarDecl *decl) {
+    if (var_table.lookup(name)) {
+      diagnostics.report_error(decl->token,
+                               "Variable " + name.str() + " already declared");
+      return;
+    }
+    var_table.insert(name, decl);
   }
 };
 

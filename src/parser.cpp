@@ -7,6 +7,22 @@
 #include <optional>
 #include <unordered_map>
 
+#define NEW_SCOPE()                                                            \
+  llvm::ScopedHashTableScope<llvm::StringRef, Function *> function_scope(      \
+      context->function_table);                                                \
+  llvm::ScopedHashTableScope<llvm::StringRef, StructDecl *> struct_scope(      \
+      context->struct_table);                                                  \
+  llvm::ScopedHashTableScope<llvm::StringRef, EnumDecl *> enum_scope(          \
+      context->enum_table);                                                    \
+  llvm::ScopedHashTableScope<llvm::StringRef, TupleStructDecl *>               \
+      tuple_struct_scope(context->tuple_struct_table);                         \
+  llvm::ScopedHashTableScope<llvm::StringRef, UnionDecl *> union_scope(        \
+      context->union_table);                                                   \
+  llvm::ScopedHashTableScope<llvm::StringRef, TraitDecl *> trait_scope(        \
+      context->trait_table);                                                   \
+  llvm::ScopedHashTableScope<llvm::StringRef, VarDecl *> var_scope(            \
+      context->var_table);
+
 static std::unordered_map<std::string, PrimitiveType::PrimitiveTypeKind>
     str_to_primitive_type = {
         {"i8", PrimitiveType::PrimitiveTypeKind::I8},
@@ -320,6 +336,7 @@ std::unique_ptr<Program> Parser::parse_single_source(std::string &path) {
 
 // program = top_level_decl*
 std::unique_ptr<Program> Parser::parse_program() {
+  NEW_SCOPE();
   while (true) {
     if (is_peek(TokenKind::Eof)) {
       break;
@@ -333,6 +350,7 @@ std::unique_ptr<Program> Parser::parse_program() {
     }
     top_level_decls.emplace_back(std::move(top_level_decl));
   }
+
   return std::make_unique<Program>(next_token.value(),
                                    std::move(top_level_decls));
 }
@@ -402,17 +420,25 @@ std::unique_ptr<TopLevelDecl> Parser::parse_top_level_decl() {
     is_pub = true;
   }
   if (is_peek(TokenKind::KeywordFn)) {
-    return parse_function(is_pub);
+    auto fn = parse_function(is_pub);
+    context->declare_function(fn->decl->name, fn.get());
+    return fn;
   } else if (is_peek(TokenKind::KeywordStruct)) {
     consume();
     if (is_peek2(TokenKind::LParen)) {
-      return parse_tuple_struct_decl(is_pub);
+      auto tuple_struct = parse_tuple_struct_decl(is_pub);
+      context->declare_tuple_struct(tuple_struct->name, tuple_struct.get());
+      return tuple_struct;
     }
-    return parse_struct_decl(is_pub);
+    auto struct_decl = parse_struct_decl(is_pub);
+    context->declare_struct(struct_decl->name, struct_decl.get());
+    return struct_decl;
   } else if (is_peek(TokenKind::KeywordImport)) {
     return parse_import_decl();
   } else if (is_peek(TokenKind::KeywordEnum)) {
-    return parse_enum_decl(is_pub);
+    auto enum_decl = parse_enum_decl(is_pub);
+    context->declare_enum(enum_decl->name, enum_decl.get());
+    return enum_decl;
   } else if (is_peek(TokenKind::KeywordImpl)) {
     return parse_impl_decl();
   } else if (is_peek(TokenKind::KeywordVar) ||
@@ -426,7 +452,9 @@ std::unique_ptr<TopLevelDecl> Parser::parse_top_level_decl() {
   //   return parse_union_decl();
   // }
   else if (is_peek(TokenKind::KeywordTrait)) {
-    return parse_trait_decl(is_pub);
+    auto trait_decl = parse_trait_decl(is_pub);
+    context->declare_trait(trait_decl->name, trait_decl.get());
+    return trait_decl;
   } else {
     auto token = consume();
     context->diagnostics.report_error(token.value(),
@@ -482,6 +510,7 @@ std::unique_ptr<Expression> Parser::parse_array_expr() {
 
 // function = 'fn' identifier '(' params ')' type block
 std::unique_ptr<Function> Parser::parse_function(bool is_pub) {
+  NEW_SCOPE();
   auto fn_token = consume_kind(TokenKind::KeywordFn);
   auto name = consume_kind(TokenKind::Identifier);
   auto name_str = lexer->token_to_string(name);
@@ -546,25 +575,34 @@ std::unique_ptr<Parameter> Parser::parse_param() {
   auto pattern = parse_pattern();
   consume_kind(TokenKind::Colon);
   auto type = parse_type();
+  std::vector<std::unique_ptr<Type>> trait_bounds;
   // if type is primitive type and it is "type" then check for impl Trait
   if (auto primitive_type = dynamic_cast<PrimitiveType *>(type.get())) {
     if (primitive_type->type_kind == PrimitiveType::PrimitiveTypeKind::type) {
       if (is_peek(TokenKind::KeywordImpl)) {
         consume();
-        auto trait_bound = parse_type();
+        while (true) {
+          auto trait = parse_type();
+          trait_bounds.emplace_back(std::move(trait));
+          if (is_peek(TokenKind::Plus))
+            consume();
+          else
+            break;
+        }
         return std::make_unique<Parameter>(
             token.value(), std::move(pattern), std::move(type),
-            std::move(trait_bound), is_mut, is_comptime);
+            std::move(trait_bounds), is_mut, is_comptime);
       }
     }
   }
   return std::make_unique<Parameter>(token.value(), std::move(pattern),
-                                     std::move(type), std::move(std::nullopt),
+                                     std::move(type), std::move(trait_bounds),
                                      is_mut, is_comptime);
 }
 
 // block_expr = '{' stmt* '}'
 std::unique_ptr<BlockExpression> Parser::parse_block(bool consume_lbrace) {
+  NEW_SCOPE();
   std::vector<std::unique_ptr<Statement>> stmts;
   if (consume_lbrace)
     consume_kind(TokenKind::LBrace);
@@ -718,8 +756,9 @@ std::unique_ptr<Variant> Parser::parse_enum_variant() {
 
 // impl_decl = 'impl' type '{' function_decl* '}'
 std::unique_ptr<ImplDecl> Parser::parse_impl_decl() {
+  NEW_SCOPE();
   auto impl_token = consume_kind(TokenKind::KeywordImpl);
-  auto type = parse_type();
+  auto type = consume_kind(TokenKind::Identifier);
 
   std::vector<std::unique_ptr<Type>> traits;
   if (is_peek(TokenKind::Colon)) {
@@ -736,10 +775,11 @@ std::unique_ptr<ImplDecl> Parser::parse_impl_decl() {
   std::vector<std::unique_ptr<Function>> functions;
   while (!is_peek(TokenKind::RBrace)) {
     auto function = parse_function();
+    context->declare_function(function->decl->name, function.get());
     functions.emplace_back(std::move(function));
   }
   consume_kind(TokenKind::RBrace);
-  return std::make_unique<ImplDecl>(impl_token, std::move(type),
+  return std::make_unique<ImplDecl>(impl_token, lexer->token_to_string(type),
                                     std::move(traits), std::move(functions));
 }
 
@@ -787,6 +827,11 @@ std::unique_ptr<Type> Parser::parse_type() {
       auto token = consume();
       return std::make_unique<PrimitiveType>(
           token.value(), str_to_primitive_type.at(token_str));
+    }
+    if (is_peek2(TokenKind::RParen) || is_peek2(TokenKind::Comma) ||
+        is_peek2(TokenKind::LBrace)) {
+      auto token = consume();
+      return std::make_unique<IdentifierType>(token.value(), token_str);
     }
   }
   auto expr = parse_expr(0);
@@ -1180,10 +1225,9 @@ std::unique_ptr<CallExpr> Parser::parse_call_expr() {
     }
   }
   consume_kind(TokenKind::RParen);
-  auto name_expr =
-      std::make_unique<IdentifierExpr>(name, lexer->token_to_string(name));
-  return std::make_unique<CallExpr>(name, std::move(name_expr),
-                                    std::move(args));
+  auto call_expr = std::make_unique<CallExpr>(
+      name, lexer->token_to_string(name), std::move(args));
+  return call_expr;
 }
 
 // return_stmt = 'return' expr? ';'?
@@ -1242,10 +1286,12 @@ std::unique_ptr<Statement> Parser::parse_stmt() {
   } else if (is_peek(TokenKind::KeywordStruct)) {
     consume();
     auto struct_decl = parse_struct_decl();
+    context->declare_struct(struct_decl->name, struct_decl.get());
     return std::make_unique<TopLevelDeclStmt>(struct_decl->token,
                                               std::move(struct_decl));
   } else if (is_peek(TokenKind::KeywordEnum)) {
     auto enum_decl = parse_enum_decl();
+    context->declare_enum(enum_decl->name, enum_decl.get());
     return std::make_unique<TopLevelDeclStmt>(enum_decl->token,
                                               std::move(enum_decl));
   } else if (is_peek(TokenKind::KeywordImpl)) {
@@ -1254,10 +1300,12 @@ std::unique_ptr<Statement> Parser::parse_stmt() {
                                               std::move(impl_decl));
   } else if (is_peek(TokenKind::KeywordTrait)) {
     auto trait_decl = parse_trait_decl();
+    context->declare_trait(trait_decl->name, trait_decl.get());
     return std::make_unique<TopLevelDeclStmt>(trait_decl->token,
                                               std::move(trait_decl));
   } else if (is_peek(TokenKind::KeywordFn)) {
     auto function = parse_function();
+    context->declare_function(function->decl->name, function.get());
     return std::make_unique<TopLevelDeclStmt>(function->token,
                                               std::move(function));
   } else {
@@ -1604,7 +1652,7 @@ Operator Parser::token_to_operator(const Token &op) {
     return Operator::Or;
   case TokenKind::Caret:
   case TokenKind::CaretEqual:
-    return Operator::Xor;
+    return Operator::BitXor;
   case TokenKind::LessLess:
   case TokenKind::LessLessEqual:
     return Operator::BitShl;

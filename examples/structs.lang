@@ -1,9 +1,10 @@
 struct Person {
-    name: String,
+    name: []u8,
     age: u8,
 }
+
 impl Person {
-    fn init(mut self: Self, name: String, age: u8) Self {
+    fn init(mut self: Self, name: []u8, age: u8) Self {
         self.name = name;
         self.age = age;
         return self;
@@ -41,37 +42,38 @@ impl Rectangle {
 }
 fn main() void {
     // Create struct with field init shorthand
-    const name = String("Peter");
-    const age = 27;
+    // const name = "Peter";
+    const name: []u8 = "Peter";
+    const age: u8 = 27;
     const peter = Person(name, age);
 
     // Print debug struct
-    print("{}", peter);
+    // print("Name: %s, Age: %d", peter.name.ptr, peter.age);
 
     // Instantiate a `Point`
     const point: Point = Point(10.3, 0.4);
-    const another_point: Point = Point(5.2, 0.2);
-
-    // Access the fields of the point
-    print("point coordinates: ({}, {})", point.x, point.y);
-
-    const bottom_right = Point(5.2, another_point.y);
-
-    print("second point: ({}, {})", bottom_right.x, bottom_right.y);
-
-    const _rectangle = Rectangle(top_left = Point(left_edge, top_edge),
-                                bottom_right = bottom_right);
-
-    // Instantiate a unit struct
-    const _unit = Unit();
-
-    // Instantiate a tuple struct
-    const pair = Pair(1, 0.1);
-
-    // Access the fields of a tuple struct
-
-    // Destructure a tuple struct
-    const (integer, decimal) = pair;
-
-    print("pair contains {} and {}", integer, decimal);
+    // const another_point: Point = Point(5.2, 0.2);
+    //
+    // // Access the fields of the point
+    // print("point coordinates: ({}, {})", point.x, point.y);
+    //
+    // const bottom_right = Point(5.2, another_point.y);
+    //
+    // print("second point: ({}, {})", bottom_right.x, bottom_right.y);
+    //
+    // const _rectangle = Rectangle(top_left = Point(left_edge, top_edge),
+    //                             bottom_right = bottom_right);
+    //
+    // // Instantiate a unit struct
+    // const _unit = Unit();
+    //
+    // // Instantiate a tuple struct
+    // const pair = Pair(1, 0.1);
+    //
+    // // Access the fields of a tuple struct
+    //
+    // // Destructure a tuple struct
+    // const (integer, decimal) = pair;
+    //
+    // print("pair contains {} and {}", integer, decimal);
 }

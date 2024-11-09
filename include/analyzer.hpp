@@ -4,6 +4,11 @@
 #include <memory>
 
 struct Analyzer {
+
+  std::shared_ptr<Context> context;
+
+  Analyzer(std::shared_ptr<Context> context) : context(context) {}
+
   void analyze(Program *);
   void analyze(TopLevelDecl *);
   void analyze(Module *);

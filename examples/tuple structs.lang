@@ -1,5 +1,5 @@
 // The following struct is for the activity.
-struct Matrix(f32, f32, f32, f32)
+struct Matrix(f64, f64, f64, f64)
 
 fn main() void {
     const long_tuple = (1, 2, 3, 4,
@@ -12,10 +12,10 @@ fn main() void {
     // Tuples can be tuple members.
     const tuple_of_tuples = ((1, 2, 2), (4, -1), -2);
 
-    print("tuple of tuples: {}", tuple_of_tuples);
+    print("tuple of tuples: %d", tuple_of_tuples);
 
     const pair = (1, true);
-    print("Pair is {}", pair);
+    print("Pair is %d", pair);
 
     // To create one element tuples, the comma is required to tell them apart
     // from a literal surrounded by parentheses.

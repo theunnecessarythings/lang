@@ -1,4 +1,5 @@
 #include "ast.hpp"
+#include <array>
 
 #define INDENT() Indent level_(cur_indent);
 
@@ -63,9 +64,13 @@ void AstDumper::dump(Parameter *param) {
   dump(param->pattern.get());
   output_stream << ": ";
   dump(param->type.get());
-  if (param->trait_bound.has_value()) {
+  if (!param->trait_bound.empty()) {
     output_stream << " impl ";
-    dump(param->trait_bound.value().get());
+    for (size_t i = 0; i < param->trait_bound.size(); i++) {
+      dump(param->trait_bound[i].get());
+      if (i != param->trait_bound.size() - 1)
+        output_stream << " + ";
+    }
   }
 }
 
@@ -215,7 +220,7 @@ void AstDumper::dump(TraitDecl *decl) {
     for (size_t i = 0; i < decl->super_traits.size(); i++) {
       dump(decl->super_traits[i].get());
       if (i != decl->super_traits.size() - 1)
-        output_stream << ", ";
+        output_stream << " + ";
     }
   }
   output_stream << " {\n";
@@ -233,14 +238,13 @@ void AstDumper::dump(TraitDecl *decl) {
 }
 
 void AstDumper::dump(ImplDecl *decl) {
-  output_stream << "impl ";
-  dump(decl->type.get());
+  output_stream << "impl " << decl->type;
   if (!decl->traits.empty()) {
     output_stream << " : ";
     for (size_t i = 0; i < decl->traits.size(); i++) {
       dump(decl->traits[i].get());
       if (i != decl->traits.size() - 1)
-        output_stream << ", ";
+        output_stream << " + ";
     }
   }
   output_stream << " {\n";
@@ -495,9 +499,6 @@ void AstDumper::dump(BinaryExpr *expr) {
   case Operator::BitShr:
     output_stream << " >> ";
     break;
-  case Operator::Xor:
-    output_stream << " ^ ";
-    break;
   case Operator::Invalid:
     output_stream << " invalid ";
     break;
@@ -532,8 +533,7 @@ void AstDumper::dump(UnaryExpr *expr) {
 }
 
 void AstDumper::dump(CallExpr *expr) {
-  dump(expr->callee.get());
-  output_stream << "(";
+  output_stream << expr->callee << "(";
   for (size_t i = 0; i < expr->arguments.size(); i++) {
     dump(expr->arguments[i].get());
     if (i != expr->arguments.size() - 1)

@@ -48,7 +48,7 @@ void test_analyzer(const std::string &path) {
 
   auto tree = parse(path, str, file_id, context, false);
 
-  Analyzer analyzer;
+  Analyzer analyzer(context);
   analyzer.analyze(tree.get());
 
   if (context->diagnostics.level_count(Diagnostic::Level::Error) > 0) {

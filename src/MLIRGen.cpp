@@ -21,6 +21,8 @@
 #include "llvm/ADT/StringMap.h"
 #include "llvm/ADT/StringRef.h"
 #include <cassert>
+#include <functional>
+#include <string>
 #include <variant>
 
 using llvm::ArrayRef;
@@ -29,18 +31,42 @@ using llvm::ScopedHashTableScope;
 using llvm::SmallVector;
 using llvm::StringRef;
 
+#define NEW_SCOPE()                                                            \
+  ScopedHashTableScope<StringRef, mlir::Value> varScope(symbol_table);         \
+  ScopedHashTableScope<StringRef, mlir::Type> typeScope(type_table);           \
+  ScopedHashTableScope<StringRef, StructDecl *> structScope(struct_table);
+
 class MLIRGenImpl {
 public:
   MLIRGenImpl(mlir::MLIRContext &context) : builder(&context) {}
 
   mlir::ModuleOp mlirGen(Program *program) {
+    NEW_SCOPE()
+    if (failed(builtins())) {
+      emitError(loc(program->token.span), "error generating builtins");
+      return nullptr;
+    }
     the_module = mlir::ModuleOp::create(builder.getUnknownLoc());
 
     for (auto &f : program->items) {
       if (dynamic_cast<Function *>(f.get())) {
         auto func = mlirGen(dynamic_cast<Function *>(f.get()));
         if (failed(func)) {
-          the_module.emitError("error in function generation");
+          return nullptr;
+        }
+      } else if (dynamic_cast<TupleStructDecl *>(f.get())) {
+        auto tuple_struct = mlirGen(dynamic_cast<TupleStructDecl *>(f.get()));
+        if (failed(tuple_struct)) {
+          return nullptr;
+        }
+      } else if (dynamic_cast<StructDecl *>(f.get())) {
+        auto struct_decl = mlirGen(dynamic_cast<StructDecl *>(f.get()));
+        if (failed(struct_decl)) {
+          return nullptr;
+        }
+      } else if (dynamic_cast<ImplDecl *>(f.get())) {
+        auto impl_decl = mlirGen(dynamic_cast<ImplDecl *>(f.get()));
+        if (failed(impl_decl)) {
           return nullptr;
         }
       } else {
@@ -60,6 +86,8 @@ private:
   mlir::ModuleOp the_module;
   mlir::OpBuilder builder;
   llvm::ScopedHashTable<StringRef, mlir::Value> symbol_table;
+  llvm::ScopedHashTable<StringRef, mlir::Type> type_table;
+  llvm::ScopedHashTable<StringRef, StructDecl *> struct_table;
   llvm::StringMap<mlir::func::FuncOp> function_map;
   bool control_flow = false;
 
@@ -83,8 +111,51 @@ private:
     return mlir::success();
   }
 
+  llvm::LogicalResult declare(llvm::StringRef var, mlir::Type type) {
+    if (type_table.count(var))
+      return mlir::failure();
+    type_table.insert(var, type);
+    return mlir::success();
+  }
+
+  llvm::LogicalResult builtins() {
+    // Generate a struct for the slice type with a pointer and length
+    auto slice_type = mlir::LLVM::LLVMStructType::getIdentified(
+        builder.getContext(), "Slice");
+    if (failed(slice_type.setBody(
+            {mlir::LLVM::LLVMPointerType::get(builder.getContext()),
+             builder.getI64Type()},
+            /*isPacked=*/false))) {
+      return mlir::failure();
+    }
+    if (failed(declare("Slice", slice_type))) {
+      return mlir::failure();
+    }
+    return mlir::success();
+  }
+
+  std::string mangle_function_name(const FunctionDecl &decl) {
+    std::string mangled_name = "";
+    if (decl.extra.is_method) {
+      mangled_name = mangled_name + decl.extra.parent_name.value();
+      if (decl.name != "init") {
+        mangled_name = mangled_name + "_" + decl.name;
+      }
+    } else {
+      mangled_name = decl.name;
+    }
+    return mangled_name;
+  }
+
+  std::string mangle_function_name(const CallExpr &expr,
+                                   StringRef basename = "") {
+    std::string mangled_name =
+        basename.empty() ? expr.callee : basename.str() + "_" + expr.callee;
+    return mangled_name;
+  }
+
   llvm::FailureOr<mlir::func::FuncOp> mlirGen(Function *func) {
-    ScopedHashTableScope<StringRef, mlir::Value> varScope(symbol_table);
+    NEW_SCOPE()
 
     builder.setInsertionPointToEnd(the_module.getBody());
 
@@ -97,11 +168,12 @@ private:
             ? mlir::TypeRange()
             : mlir::TypeRange(mlirGen(func->decl->return_type.get()).value());
 
+    auto mangled_name = mangle_function_name(*func->decl);
     auto func_type = builder.getFunctionType(param_types.value(), return_types);
-    auto func_op = builder.create<mlir::func::FuncOp>(
-        loc(func->token.span), func->decl->name, func_type);
+    auto func_op = builder.create<mlir::func::FuncOp>(loc(func->token.span),
+                                                      mangled_name, func_type);
 
-    function_map[func->decl->name] = func_op;
+    function_map[mangled_name] = func_op;
 
     auto entry_block = func_op.addEntryBlock();
     builder.setInsertionPointToStart(entry_block);
@@ -114,10 +186,33 @@ private:
       return mlir::failure();
     }
 
-    if (failed(mlirGen(func->body.get()))) {
-      emitError(loc(func->token.span), "function body generation error");
-      func_op.erase();
-      return mlir::failure();
+    if (func->decl->extra.is_method && func->decl->name == "init") {
+      auto create_self = [this, &func]() {
+        // Create a new struct instance
+        auto struct_type = type_table.lookup("Self");
+        auto struct_ptr = builder.create<mlir::LLVM::AllocaOp>(
+            loc(func->token.span),
+            mlir::LLVM::LLVMPointerType::get(builder.getContext()), struct_type,
+            builder.create<mlir::arith::ConstantOp>(
+                loc(func->token.span), builder.getI32Type(),
+                builder.getI32IntegerAttr(1)));
+        auto struct_val = builder.create<mlir::LLVM::LoadOp>(
+            loc(func->token.span), struct_type, struct_ptr,
+            /*isVolatile=*/false);
+        if (failed(declare("self", struct_val))) {
+          emitError(loc(func->token.span), "redeclaration of self");
+        }
+      };
+      if (failed(mlirGen(func->body.get(), create_self))) {
+        func_op.erase();
+        return mlir::failure();
+      }
+    } else {
+
+      if (failed(mlirGen(func->body.get()))) {
+        func_op.erase();
+        return mlir::failure();
+      }
     }
 
     // Ensure that `func.return` is the last operation in the function body
@@ -166,8 +261,135 @@ private:
     return argTypes;
   }
 
-  llvm::LogicalResult mlirGen(BlockExpression *block) {
-    ScopedHashTableScope<StringRef, mlir::Value> varScope(symbol_table);
+  llvm::LogicalResult mlirGen(TupleStructDecl *decl) {
+    auto span = this->loc(decl->token.span);
+    llvm::SmallVector<mlir::Type, 4> fieldTypes;
+    for (auto &field : decl->fields) {
+      auto type = mlirGen(field.get());
+      if (failed(type)) {
+        emitError(span, "unsupported field type");
+        return mlir::failure();
+      }
+      fieldTypes.push_back(type.value());
+    }
+    // auto struct_type = builder.getTupleType(fieldTypes);
+    auto struct_type = mlir::LLVM::LLVMStructType::getLiteral(
+        builder.getContext(), fieldTypes);
+    // declare struct type
+    if (failed(declare(decl->name, struct_type))) {
+      emitError(span, "redeclaration of struct type");
+      return mlir::failure();
+    }
+
+    // Register a default contructor from the struct type
+    if (failed(defineDefaultConstructor(fieldTypes, struct_type, decl, span))) {
+      return mlir::failure();
+    }
+    return mlir::success();
+  }
+
+  llvm::LogicalResult mlirGen(StructDecl *decl) {
+    auto span = this->loc(decl->token.span);
+    llvm::SmallVector<mlir::Type, 4> fieldTypes;
+    for (auto &field : decl->fields) {
+      auto type = mlirGen(field.get()->type.get());
+      if (failed(type)) {
+        return mlir::failure();
+      }
+      fieldTypes.push_back(type.value());
+    }
+    auto struct_type = mlir::LLVM::LLVMStructType::getIdentified(
+        builder.getContext(), decl->name);
+    if (failed(struct_type.setBody(fieldTypes, false))) {
+      emitError(span, "error in struct type definition");
+      return mlir::failure();
+    }
+
+    // declare struct type
+    struct_table.insert(decl->name, decl);
+    if (failed(declare(decl->name, struct_type))) {
+      emitError(span, "redeclaration of struct type");
+      return mlir::failure();
+    }
+    return mlir::success();
+  }
+
+  llvm::LogicalResult mlirGen(ImplDecl *decl) {
+    NEW_SCOPE()
+    auto span = this->loc(decl->token.span);
+    auto struct_type = type_table.lookup(decl->type);
+    if (!struct_type) {
+      emitError(span, "struct type not found");
+      return mlir::failure();
+    }
+    if (failed(declare("Self", struct_type))) {
+      emitError(span, "redeclaration of Self");
+      return mlir::failure();
+    }
+
+    for (auto &method : decl->functions) {
+      auto func = mlirGen(method.get());
+      if (failed(func)) {
+        return mlir::failure();
+      }
+    }
+    // TODO: Traits
+    return mlir::success();
+  }
+
+  llvm::LogicalResult
+  defineDefaultConstructor(llvm::SmallVector<mlir::Type, 4> fieldTypes,
+                           mlir::Type struct_type, TupleStructDecl *decl,
+                           mlir::Location loc) {
+    mlir::OpBuilder::InsertionGuard guard(builder);
+    builder.setInsertionPointToStart(the_module.getBody());
+
+    auto constructor_type = builder.getFunctionType(fieldTypes, {struct_type});
+    auto constructor_op =
+        builder.create<mlir::func::FuncOp>(loc, decl->name, constructor_type);
+    auto entry_block = constructor_op.addEntryBlock();
+    builder.setInsertionPointToStart(entry_block);
+    auto struct_ptr = builder.create<mlir::LLVM::AllocaOp>(
+        loc, mlir::LLVM::LLVMPointerType::get(builder.getContext()),
+        struct_type,
+        builder.create<mlir::arith::ConstantOp>(loc, builder.getI32Type(),
+                                                builder.getI32IntegerAttr(1)));
+    for (int i = 0; i < (int)fieldTypes.size(); i++) {
+      mlir::Value index_val = builder.create<mlir::arith::ConstantOp>(
+          loc, builder.getI32IntegerAttr(i));
+      mlir::ValueRange indices = {
+          builder.create<mlir::arith::ConstantOp>(loc, builder.getI32Type(),
+                                                  builder.getI32IntegerAttr(0)),
+          index_val};
+      mlir::Value gep = builder.create<mlir::LLVM::GEPOp>(
+          loc, mlir::LLVM::LLVMPointerType::get(builder.getContext()),
+          struct_type, struct_ptr, indices);
+      builder.create<mlir::LLVM::StoreOp>(
+          loc,
+          builder.create<mlir::arith::ConstantOp>(
+              loc, fieldTypes[i], builder.getZeroAttr(fieldTypes[i])),
+          gep);
+    }
+
+    // load the struct pointer
+    mlir::Value struct_val = builder.create<mlir::LLVM::LoadOp>(
+        loc, struct_type, struct_ptr, /*isVolatile=*/false);
+
+    mlir::ValueRange struct_ptr_val = {struct_val};
+    builder.create<mlir::func::ReturnOp>(loc, struct_ptr_val);
+
+    // save the constructor function
+    function_map[decl->name] = constructor_op;
+
+    return mlir::success();
+  }
+
+  llvm::LogicalResult mlirGen(BlockExpression *block,
+                              std::function<void()> callback = nullptr) {
+    NEW_SCOPE()
+    if (callback)
+      callback();
+
     for (auto &stmt : block->statements) {
       if (mlir::failed(mlirGen(stmt.get()))) {
         return mlir::failure();
@@ -203,7 +425,6 @@ private:
     // Assume identifier pattern
     auto pattern = var_decl->pattern.get();
     auto &var_name = dynamic_cast<IdentifierPattern *>(pattern)->name;
-
     auto init_value = mlirGen(var_decl->initializer.value().get());
     if (failed(init_value)) {
       emitError(loc, "unsupported initializer");
@@ -214,8 +435,10 @@ private:
     if (var_decl->type.has_value()) {
       auto init_type = init_value->getType();
       if (!check_type(init_type, var_decl->type.value().get())) {
-        emitError(loc, "type mismatch in variable declaration");
-        return mlir::failure();
+        if (!try_coercion(init_value.value(), var_decl->type.value().get())) {
+          emitError(loc, "type mismatch in variable declaration");
+          return mlir::failure();
+        }
       }
     }
 
@@ -226,20 +449,113 @@ private:
     return init_value;
   }
 
-  llvm::FailureOr<mlir::Type> mlirGen(Type *type) {
-    if (auto t = dynamic_cast<PrimitiveType *>(type)) {
-      if (t->type_kind == PrimitiveType::PrimitiveTypeKind::I32) {
-        return builder.getIntegerType(32);
-      } else if (t->type_kind == PrimitiveType::PrimitiveTypeKind::F32) {
-        return builder.getF32Type();
-      } else if (t->type_kind == PrimitiveType::PrimitiveTypeKind::Void) {
-        return builder.getNoneType();
-      } else {
-        emitError(loc(t->token.span), "unsupported type");
-        return mlir::failure();
+  bool try_coercion(mlir::Value &value, Type *type) {
+    if (auto t = dynamic_cast<SliceType *>(type)) {
+      // check if type is []u8
+      if (t->base->kind() != AstNodeKind::PrimitiveType ||
+          dynamic_cast<PrimitiveType *>(t->base.get())->type_kind !=
+              PrimitiveType::PrimitiveTypeKind::U8) {
+        return false;
+      }
+      // target type is a slice and value is constant string  then make a
+      // slice value {pointer, length} from the string literal and assign it to
+      // the value
+      if (auto op = value.getDefiningOp<mlir::LLVM::GEPOp>()) {
+        auto str_len = mlir::cast<mlir::LLVM::LLVMArrayType>(op.getElemType())
+                           .getNumElements();
+        // get address of value
+        auto len = builder.create<mlir::arith::ConstantOp>(
+            value.getLoc(), builder.getI64Type(),
+            builder.getIntegerAttr(builder.getI64Type(), str_len));
+        // Create slice struct value
+        auto slice_type = type_table.lookup("Slice");
+        auto one_val = builder.create<mlir::arith::ConstantOp>(
+            value.getLoc(), builder.getI32Type(), builder.getI32IntegerAttr(1));
+        auto zero_val = builder.create<mlir::arith::ConstantOp>(
+            value.getLoc(), builder.getI32Type(), builder.getI32IntegerAttr(0));
+        auto slice_ptr = builder.create<mlir::LLVM::AllocaOp>(
+            value.getLoc(),
+            mlir::LLVM::LLVMPointerType::get(builder.getContext()), slice_type,
+            one_val);
+        auto slice_val = builder.create<mlir::LLVM::LoadOp>(
+            value.getLoc(), slice_type, slice_ptr, /*isVolatile=*/false);
+
+        // store pointer and length in slice struct
+        auto gep = builder.create<mlir::LLVM::GEPOp>(
+            value.getLoc(),
+            mlir::LLVM::LLVMPointerType::get(builder.getContext()), slice_type,
+            slice_ptr, mlir::ValueRange({zero_val, zero_val}));
+        builder.create<mlir::LLVM::StoreOp>(value.getLoc(), value, gep);
+        gep = builder.create<mlir::LLVM::GEPOp>(
+            value.getLoc(),
+            mlir::LLVM::LLVMPointerType::get(builder.getContext()), slice_type,
+            slice_ptr, mlir::ValueRange({zero_val, one_val}));
+        builder.create<mlir::LLVM::StoreOp>(value.getLoc(), len, gep);
+        value = slice_val.getResult();
+        return true;
+      }
+    } else if (auto t = dynamic_cast<PrimitiveType *>(type)) {
+      if (t->type_kind == PrimitiveType::PrimitiveTypeKind::U8) {
+        // if its an integer type then coerce it to u8
+        if (auto op = value.getDefiningOp<mlir::arith::ConstantOp>()) {
+          auto val = mlir::cast<mlir::IntegerAttr>(op.getValue()).getValue();
+          // val is APInt, so we can just truncate it
+          auto trunc_val = val.trunc(8);
+          auto coerced_val = builder.create<mlir::arith::ConstantOp>(
+              value.getLoc(), builder.getIntegerType(8),
+              builder.getIntegerAttr(builder.getIntegerType(8), trunc_val));
+          value = coerced_val.getResult();
+          return true;
+        }
       }
     }
-    the_module.emitError("unsupported type");
+    return false;
+  }
+
+  llvm::FailureOr<mlir::Type> mlirGen(Type *type) {
+    if (auto t = dynamic_cast<PrimitiveType *>(type)) {
+      if (t->type_kind == PrimitiveType::PrimitiveTypeKind::Bool) {
+        return builder.getI1Type();
+      } else if (t->type_kind == PrimitiveType::PrimitiveTypeKind::I8) {
+        return builder.getIntegerType(8);
+      } else if (t->type_kind == PrimitiveType::PrimitiveTypeKind::I16) {
+        return builder.getIntegerType(16);
+      } else if (t->type_kind == PrimitiveType::PrimitiveTypeKind::I32) {
+        return builder.getIntegerType(32);
+      } else if (t->type_kind == PrimitiveType::PrimitiveTypeKind::I64) {
+        return builder.getIntegerType(64);
+      } else if (t->type_kind == PrimitiveType::PrimitiveTypeKind::F32) {
+        return builder.getF32Type();
+      } else if (t->type_kind == PrimitiveType::PrimitiveTypeKind::F64) {
+        return builder.getF64Type();
+      } else if (t->type_kind == PrimitiveType::PrimitiveTypeKind::Void) {
+        return builder.getNoneType();
+      } else if (t->type_kind == PrimitiveType::PrimitiveTypeKind::Char) {
+        return builder.getIntegerType(8);
+      } else if (t->type_kind == PrimitiveType::PrimitiveTypeKind::U8) {
+        return builder.getIntegerType(8);
+      } else if (t->type_kind == PrimitiveType::PrimitiveTypeKind::U16) {
+        return builder.getIntegerType(16);
+      } else if (t->type_kind == PrimitiveType::PrimitiveTypeKind::U32) {
+        return builder.getIntegerType(32);
+      } else if (t->type_kind == PrimitiveType::PrimitiveTypeKind::U64) {
+        return builder.getIntegerType(64);
+      } else {
+        the_module.emitError("unsupported primitive type");
+        return mlir::failure();
+      }
+    } else if (dynamic_cast<SliceType *>(type)) {
+      return mlir::LLVM::LLVMStructType::getIdentified(builder.getContext(),
+                                                       "Slice");
+    } else if (auto t = dynamic_cast<IdentifierType *>(type)) {
+      auto type = type_table.lookup(t->name);
+      if (!type) {
+        emitError(loc(t->token.span), "type not found");
+        return mlir::failure();
+      }
+      return type;
+    }
+    the_module.emitError("unsupported type, " + to_string(type->kind()));
     return mlir::failure();
   }
 
@@ -256,24 +572,208 @@ private:
       return mlirGen(e);
     } else if (auto e = dynamic_cast<CallExpr *>(expr)) {
       return mlirGen(e);
+    } else if (auto e = dynamic_cast<UnaryExpr *>(expr)) {
+      return mlirGen(e);
+    } else if (auto e = dynamic_cast<TupleExpr *>(expr)) {
+      return mlirGen(e);
+    } else if (auto e = dynamic_cast<AssignExpr *>(expr)) {
+      return mlirGen(e);
+    } else if (auto e = dynamic_cast<FieldAccessExpr *>(expr)) {
+      return mlirGen(e);
     }
     emitError(loc(expr->token.span),
               "unsupported expression, " + to_string(expr->kind()));
     return mlir::failure();
   }
 
+  llvm::FailureOr<mlir::Value> mlirGen(TupleExpr *tuple) {
+    llvm::SmallVector<mlir::Value, 4> elements;
+    llvm::SmallVector<mlir::Type, 4> elementTypes;
+    for (auto &elem : tuple->elements) {
+      auto value = mlirGen(elem.get());
+      if (failed(value)) {
+        return mlir::failure();
+      }
+      elementTypes.push_back(value.value().getType());
+      elements.push_back(value.value());
+    }
+
+    auto tuple_struct_type = mlir::LLVM::LLVMStructType::getLiteral(
+        builder.getContext(), elementTypes);
+
+    mlir::Value one_val = builder.create<mlir::LLVM::ConstantOp>(
+        loc(tuple->token.span), builder.getI32Type(),
+        builder.getI32IntegerAttr(1));
+    mlir::Value zero_val = builder.create<mlir::LLVM::ConstantOp>(
+        loc(tuple->token.span), builder.getI32Type(),
+        builder.getI32IntegerAttr(0));
+
+    auto struct_ptr = builder.create<mlir::LLVM::AllocaOp>(
+        loc(tuple->token.span),
+        mlir::LLVM::LLVMPointerType::get(builder.getContext()),
+        tuple_struct_type, one_val);
+
+    for (int i = 0; i < (int)elements.size(); i++) {
+      mlir::Value index_val = builder.create<mlir::arith::ConstantOp>(
+          loc(tuple->token.span), builder.getI32IntegerAttr(i));
+      mlir::ValueRange indices = {zero_val, index_val};
+      mlir::Value gep = builder.create<mlir::LLVM::GEPOp>(
+          loc(tuple->token.span),
+          mlir::LLVM::LLVMPointerType::get(builder.getContext()),
+          tuple_struct_type, struct_ptr, indices);
+      builder.create<mlir::LLVM::StoreOp>(loc(tuple->token.span), elements[i],
+                                          gep);
+    }
+    return static_cast<mlir::Value>(struct_ptr);
+  }
+
+  llvm::FailureOr<mlir::Value> mlirGen(AssignExpr *expr) {
+    auto loc = this->loc(expr->token.span);
+    auto value = mlirGen(expr->rhs.get());
+    if (failed(value)) {
+      emitError(loc, "unsupported rvalue");
+      return mlir::failure();
+    }
+
+    // if lhs is not an identifier expr, index expr or field access expr
+    // then it is not a valid lvalue
+    auto lhs_kind = expr->lhs->kind();
+    if (lhs_kind != AstNodeKind::IdentifierExpr &&
+        lhs_kind != AstNodeKind::IndexExpr &&
+        lhs_kind != AstNodeKind::FieldAccessExpr) {
+      emitError(loc, "invalid lvalue");
+      return mlir::failure();
+    }
+
+    if (lhs_kind == AstNodeKind::FieldAccessExpr) {
+      auto field_access = static_cast<FieldAccessExpr *>(expr->lhs.get());
+      auto lhs = mlirGen(field_access->base.get());
+
+      if (failed(lhs)) {
+        emitError(loc, "unsupported lvalue");
+        return mlir::failure();
+      }
+      // For assign expr the field by definition must be an identifier expr
+      auto field =
+          std::get<std::unique_ptr<IdentifierExpr>>(field_access->field).get();
+
+      auto baseType = lhs.value().getType();
+      auto field_name = field->name;
+      auto field_index = get_field_index(baseType, field_name);
+      if (field_index < 0) {
+        emitError(loc, "field not found");
+        return mlir::failure();
+      }
+
+      // NOTE: Right now structs are returned using values, so use insertvalue
+      // TODO: Fix this to return a pointer to the struct
+      auto insert_value = builder.create<mlir::LLVM::InsertValueOp>(
+          loc, lhs.value(), value.value(), field_index.value());
+
+      return insert_value.getResult();
+    }
+    return mlir::failure();
+  }
+
+  llvm::FailureOr<mlir::Value> mlirGen(FieldAccessExpr *expr) {
+    // auto loc = this->loc(expr->token.span);
+    // auto base = mlirGen(expr->base.get());
+    // if (failed(base)) {
+    //   emitError(loc, "unsupported base");
+    //   return mlir::failure();
+    // }
+    //
+    // // NOTE: For now we only identifier field access is supported
+    // auto field =
+    // std::get<std::unique_ptr<IdentifierExpr>>(expr->field).get(); auto
+    // field_name = field->name; auto field_index =
+    // get_field_index(base.value().getType(), field_name); if (field_index < 0)
+    // {
+    //   emitError(loc, "field not found");
+    //   return mlir::failure();
+    // }
+    // auto baseType = base.value().getType();
+    // if (mlir::isa<mlir::LLVM::LLVMPointerType>(baseType)) {
+    //   auto zero = builder.create<mlir::LLVM::ConstantOp>(
+    //       loc, builder.getI32Type(), builder.getI32IntegerAttr(0));
+    //   auto fieldIndexValue = builder.create<mlir::LLVM::ConstantOp>(
+    //       loc, builder.getI32Type(),
+    //       builder.getI32IntegerAttr(*field_index));
+    //   auto fieldPtr = builder.create<mlir::LLVM::GEPOp>(
+    //       loc, *base, mlir::ValueRange{zero, fieldIndexValue});
+    //   return fieldPtr.getResult();
+    // } else {
+    //   auto extract_value = builder.create<mlir::LLVM::ExtractValueOp>(
+    //       loc, base.value(), field_index.value());
+    //   return extract_value.getResult();
+    // }
+  }
+
+  llvm::FailureOr<size_t> get_field_index(mlir::Type type,
+                                          llvm::StringRef field_name) {
+
+    // if (mlir::isa<mlir::LLVM::LLVMStructType>(type)) {
+    auto struct_type = mlir::cast<mlir::LLVM::LLVMStructType>(type);
+    auto struct_name = struct_type.getName();
+    auto struct_decl = struct_table.lookup(struct_name);
+    if (!struct_decl) {
+      return mlir::failure();
+    }
+    for (size_t i = 0; i < struct_decl->fields.size(); i++) {
+      if (struct_decl->fields[i]->name == field_name) {
+        return i;
+      }
+    }
+    // }
+    return mlir::failure();
+  }
+
+  llvm::FailureOr<mlir::Value> mlirGen(UnaryExpr *unary) {
+    auto operand = mlirGen(unary->operand.get());
+    if (failed(operand)) {
+      return mlir::failure();
+    }
+    mlir::Value op = nullptr;
+    if (unary->op == Operator::Sub) {
+      if (mlir::isa<mlir::IntegerType>(operand->getType())) {
+        // no negation operation for integers in MLIR
+        // so we subtract from 0
+        auto const_0_val = builder.create<mlir::arith::ConstantOp>(
+            loc(unary->token.span), builder.getI32IntegerAttr(0));
+        op = builder.create<mlir::arith::SubIOp>(loc(unary->token.span),
+                                                 const_0_val, operand.value());
+      } else if (mlir::isa<mlir::Float64Type>(operand->getType())) {
+        op = builder.create<mlir::arith::NegFOp>(loc(unary->token.span),
+                                                 operand.value());
+      }
+    } else if (unary->op == Operator::Not) {
+      // only for boolean type or the i1 type
+      if (operand->getType() != builder.getI1Type()) {
+        emitError(loc(unary->token.span), "negation only for boolean type");
+        return mlir::failure();
+      } else {
+        auto const_1_val = builder.create<mlir::arith::ConstantOp>(
+            loc(unary->token.span),
+            builder.getIntegerAttr(builder.getI1Type(), 1));
+        op = builder.create<mlir::arith::XOrIOp>(loc(unary->token.span),
+                                                 operand.value(), const_1_val);
+      }
+    } else {
+      emitError(loc(unary->token.span), "unsupported unary operator");
+      return mlir::failure();
+    }
+    return op;
+  }
+
   llvm::FailureOr<mlir::Value> mlirGen(CallExpr *callExpr) {
-    // Assume the callee is an identifier expression
-    auto &func_name =
-        static_cast<IdentifierExpr *>(callExpr->callee.get())->name;
+    auto &func_name = callExpr->callee;
     if (func_name == "print") {
       if (failed(mlirGenPrintCall(callExpr))) {
-        emitError(loc(callExpr->token.span), "error in print call");
         return mlir::failure();
       }
       return mlir::success(mlir::Value());
     }
-    // Step 1: Generate argument values
+    // Generate argument values
     std::vector<mlir::Value> argumentValues;
     for (auto &arg : callExpr->arguments) {
       auto argValueOrFailure = mlirGen(arg.get());
@@ -285,10 +785,8 @@ private:
       argumentValues.push_back(*argValueOrFailure);
     }
 
-    // Step 2: Look up the function
-
-    // auto functionSymbol = symbol_table.lookup(functionName);
-    auto func_symbol = function_map.find(func_name);
+    // Look up the function
+    auto func_symbol = function_map.find(mangle_function_name(*callExpr));
     if (func_symbol == function_map.end()) {
       emitError(loc(callExpr->token.span), "Function not found: ") << func_name;
       return mlir::failure();
@@ -296,12 +794,12 @@ private:
     auto func_op = func_symbol->second;
     auto func_type = func_op.getFunctionType();
 
-    // Step 3: Create the `func.call` operation
+    // Create the `func.call` operation
     mlir::Type resultType = func_type.getResult(0); // Single result
     auto callOp = builder.create<mlir::func::CallOp>(
         loc(callExpr->token.span), func_name, resultType, argumentValues);
 
-    // Step 4: Return the result of the call
+    //  Return the result of the call
     return callOp.getResult(0); // Return the single result of the function call
   }
 
@@ -388,7 +886,8 @@ private:
         }
       }
 
-      // If 'else' block does not end with a return, branch to the merge block
+      // If 'else' block does not end with a return, branch to the merge
+      // block
       if (elseBlock->empty() ||
           !elseBlock->back().mightHaveTrait<mlir::OpTrait::IsTerminator>()) {
         builder.setInsertionPointToEnd(elseBlock);
@@ -399,11 +898,11 @@ private:
     // Continue building from the merge block
     builder.setInsertionPointToStart(mergeBlock);
 
-    // Optionally, if this 'if' expression produces a value, you need to handle
-    // SSA dominance and merge the values.
+    // Optionally, if this 'if' expression produces a value, you need to
+    // handle SSA dominance and merge the values.
 
-    // Since this function does not produce a value, return success without a
-    // value
+    // Since this function does not produce a value, return success without
+    // a value
     return mlir::success(mlir::Value());
   }
 
@@ -499,13 +998,36 @@ private:
       return builder
           .create<mlir::arith::ConstantOp>(
               loc(literal->token.span),
-              builder.getF32FloatAttr(std::get<double>(literal->value)))
+              builder.getF64FloatAttr(std::get<double>(literal->value)))
           .getResult();
     } else if (literal->type == LiteralExpr::LiteralType::String) {
+      auto &str = std::get<std::string>(literal->value);
+      auto str_attr = createGlobalString("str", str, loc(literal->token.span),
+                                         builder, the_module);
+      return getPtrToGlobalString(str_attr, builder, loc(literal->token.span),
+                                  str.size());
+      // auto array_type =
+      //     mlir::LLVM::LLVMArrayType::get(builder.getI8Type(), str.size());
+      //
+      // auto str_attr = builder.getStringAttr(str);
+      // return builder
+      //     .create<mlir::LLVM::ConstantOp>(loc(literal->token.span),
+      //     array_type,
+      //                                     str_attr)
+      //     .getResult();
+    } else if (literal->type == LiteralExpr::LiteralType::Bool) {
       return builder
           .create<mlir::arith::ConstantOp>(
               loc(literal->token.span),
-              builder.getStringAttr(std::get<std::string>(literal->value)))
+              builder.getIntegerAttr(builder.getI1Type(),
+                                     std::get<bool>(literal->value)))
+          .getResult();
+    } else if (literal->type == LiteralExpr::LiteralType::Char) {
+      return builder
+          .create<mlir::arith::ConstantOp>(
+              loc(literal->token.span),
+              builder.getIntegerAttr(builder.getIntegerType(8),
+                                     std::get<char>(literal->value)))
           .getResult();
     }
 
@@ -519,7 +1041,6 @@ private:
     auto lhs_v = mlirGen(binary->lhs.get());
     auto rhs_v = mlirGen(binary->rhs.get());
     if (failed(lhs_v) || failed(rhs_v)) {
-      emitError(loc(binary->token.span), "one of the operands is null");
       return mlir::failure();
     }
     auto lhs = lhs_v.value();
@@ -529,11 +1050,10 @@ private:
     if (mlir::isa<mlir::IntegerType>(lhs.getType()) &&
         mlir::isa<mlir::IntegerType>(rhs.getType())) {
       op = integer_ops(binary, lhs, rhs).value();
-    } else if (mlir::isa<mlir::Float32Type>(lhs.getType()) &&
-               mlir::isa<mlir::Float32Type>(rhs.getType())) {
+    } else if (mlir::isa<mlir::Float64Type>(lhs.getType()) &&
+               mlir::isa<mlir::Float64Type>(rhs.getType())) {
       op = floating_ops(binary, lhs, rhs).value();
     } else {
-      emitError(loc(binary->token.span), "unsupported operand types");
       return mlir::failure();
     }
     return op;
@@ -572,8 +1092,42 @@ private:
     } else if (binary->op == Operator::Ge) {
       op = builder.create<mlir::arith::CmpIOp>(
           loc(binary->token.span), mlir::arith::CmpIPredicate::sge, lhs, rhs);
+    } else if (binary->op == Operator::BitAnd) {
+      op = builder.create<mlir::arith::AndIOp>(loc(binary->token.span), lhs,
+                                               rhs);
+    } else if (binary->op == Operator::BitOr) {
+      op =
+          builder.create<mlir::arith::OrIOp>(loc(binary->token.span), lhs, rhs);
+    } else if (binary->op == Operator::BitXor) {
+      op = builder.create<mlir::arith::XOrIOp>(loc(binary->token.span), lhs,
+                                               rhs);
+    } else if (binary->op == Operator::BitShl) {
+      op = builder.create<mlir::arith::ShLIOp>(loc(binary->token.span), lhs,
+                                               rhs);
+    } else if (binary->op == Operator::BitShr) {
+      op = builder.create<mlir::arith::ShRUIOp>(loc(binary->token.span), lhs,
+                                                rhs);
+    } else if (binary->op == Operator::And) {
+      // Only if type is i1
+      if (lhs.getType() != builder.getI1Type() ||
+          rhs.getType() != builder.getI1Type()) {
+        emitError(loc(binary->token.span), "logical and requires boolean type");
+        return mlir::failure();
+      }
+      op = builder.create<mlir::arith::AndIOp>(loc(binary->token.span), lhs,
+                                               rhs);
+    } else if (binary->op == Operator::Or) {
+      // Only if type is i1
+      if (lhs.getType() != builder.getI1Type() ||
+          rhs.getType() != builder.getI1Type()) {
+        emitError(loc(binary->token.span), "logical or requires boolean type");
+        return mlir::failure();
+      }
+      op =
+          builder.create<mlir::arith::OrIOp>(loc(binary->token.span), lhs, rhs);
     } else {
-      the_module.emitError("unsupported binary operator");
+      the_module.emitError("unsupported binary operator " +
+                           std::to_string(static_cast<int>(binary->op)));
       return mlir::failure();
     }
     return op;
@@ -635,6 +1189,8 @@ private:
                mlir_type.getIntOrFloatBitWidth() == 32;
       } else if (t->type_kind == PrimitiveType::PrimitiveTypeKind::F32) {
         return mlir::isa<mlir::Float32Type>(mlir_type);
+      } else if (t->type_kind == PrimitiveType::PrimitiveTypeKind::F64) {
+        return mlir::isa<mlir::Float64Type>(mlir_type);
       }
     }
     return false;

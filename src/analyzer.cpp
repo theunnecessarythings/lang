@@ -1,7 +1,24 @@
 #include "analyzer.hpp"
 #include "ast.hpp"
 
+#define NEW_SCOPE()                                                            \
+  llvm::ScopedHashTableScope<llvm::StringRef, Function *> function_scope(      \
+      context->function_table);                                                \
+  llvm::ScopedHashTableScope<llvm::StringRef, StructDecl *> struct_scope(      \
+      context->struct_table);                                                  \
+  llvm::ScopedHashTableScope<llvm::StringRef, EnumDecl *> enum_scope(          \
+      context->enum_table);                                                    \
+  llvm::ScopedHashTableScope<llvm::StringRef, TupleStructDecl *>               \
+      tuple_struct_scope(context->tuple_struct_table);                         \
+  llvm::ScopedHashTableScope<llvm::StringRef, UnionDecl *> union_scope(        \
+      context->union_table);                                                   \
+  llvm::ScopedHashTableScope<llvm::StringRef, TraitDecl *> trait_scope(        \
+      context->trait_table);                                                   \
+  llvm::ScopedHashTableScope<llvm::StringRef, VarDecl *> var_scope(            \
+      context->var_table);
+
 void Analyzer::analyze(Program *program) {
+  NEW_SCOPE();
   for (auto &item : program->items) {
     analyze(item.get());
   }
@@ -48,6 +65,7 @@ void Analyzer::analyze(Module *module) {
 }
 
 void Analyzer::analyze(Function *func) {
+  NEW_SCOPE();
   analyze(func->decl.get());
   analyze(func->body.get());
 }
@@ -63,18 +81,56 @@ void Analyzer::analyze(Parameter *param) {
   analyze(param->pattern.get());
   analyze(param->type.get());
 
-  if (param->trait_bound.has_value()) {
-    analyze(param->trait_bound.value().get());
+  if (!param->trait_bound.empty()) {
+    for (auto &trait : param->trait_bound) {
+      analyze(trait.get());
+    }
   }
 }
 
 void Analyzer::analyze(ImplDecl *impl) {
-  analyze(impl->type.get());
+  NEW_SCOPE();
   for (auto &trait : impl->traits) {
     analyze(trait.get());
   }
 
   for (auto &func : impl->functions) {
+    func->decl->extra.is_method = true;
+    func->decl->extra.parent_name = impl->type;
+    // check impl->type is a struct, enum or union
+    if (context->struct_table.count(impl->type)) {
+      func->decl->extra.parent_kind = AstNodeKind::StructDecl;
+    } else if (context->enum_table.count(impl->type)) {
+      func->decl->extra.parent_kind = AstNodeKind::EnumDecl;
+    } else if (context->union_table.count(impl->type)) {
+      func->decl->extra.parent_kind = AstNodeKind::UnionDecl;
+    }
+
+    if (func->decl->name == "init") {
+      // constructor so check the first parameter type is Self or parent_name
+      // delete that parameter
+      if (func->decl->parameters.size() == 0) {
+        context->diagnostics.report_error(
+            func->decl->token,
+            "constructor must have at least one parameter, self");
+      } else {
+        auto &param = func->decl->parameters[0];
+        if (param->type->kind() == AstNodeKind::IdentifierType) {
+          auto id_type = static_cast<IdentifierType *>(param->type.get());
+          if (id_type->name == "Self" || id_type->name == impl->type) {
+            func->decl->parameters.erase(func->decl->parameters.begin());
+          } else {
+            context->diagnostics.report_error(
+                param->token,
+                "first parameter of constructor must be of type Self");
+          }
+        } else {
+          context->diagnostics.report_error(
+              param->token,
+              "first parameter of constructor must be of type Self");
+        }
+      }
+    }
     analyze(func.get());
   }
 }
@@ -259,10 +315,7 @@ void Analyzer::analyze(Expression *expr) {
   }
 }
 
-void Analyzer::analyze(IfExpr *expr) {
-  // Check whether ifexpr is structured or unstructured.
-  // Structured ifexpr has an else block.
-}
+void Analyzer::analyze(IfExpr *expr) {}
 
 void Analyzer::analyze(MatchExpr *expr) {}
 
@@ -300,7 +353,7 @@ void Analyzer::analyze(RangeExpr *expr) {}
 
 void Analyzer::analyze(ComptimeExpr *expr) {}
 
-void Analyzer::analyze(BlockExpression *expr) {}
+void Analyzer::analyze(BlockExpression *expr) { NEW_SCOPE(); }
 
 void Analyzer::analyze(IdentifierExpr *expr) {}
 
