@@ -369,3 +369,9 @@ TEST_CASE("shift operator", "[lexer]") {
 TEST_CASE("code point literal with unicode code point", "[lexer]") {
   test_lexer("'💩'", {TokenKind::CharLiteral});
 }
+
+TEST_CASE("@", "[lexer]") {
+  test_lexer("@mlir(\"i32\")",
+             {TokenKind::At, TokenKind::Identifier, TokenKind::LParen,
+              TokenKind::StringLiteral, TokenKind::RParen});
+}

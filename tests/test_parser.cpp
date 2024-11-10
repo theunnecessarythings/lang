@@ -184,3 +184,7 @@ TEST_CASE("generic struct", "[parser]") {
 TEST_CASE("nested comptime", "[parser]") {
   test_repr("../examples/nested_comptime.lang");
 }
+
+TEST_CASE("mlir types", "[parser]") {
+  test_repr("../examples/mlir_types.lang");
+}
