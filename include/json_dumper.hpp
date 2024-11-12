@@ -84,6 +84,8 @@ struct JsonDumper {
   void dump(EnumDecl *node);
   void dump(ImportDecl *node);
   void dump(TraitDecl *node);
+  void dump(MLIRType *node);
+  void dump(MLIRAttribute *node);
 
   std::string token_kind_to_string(TokenKind kind);
   void dump(const TokenSpan &span);

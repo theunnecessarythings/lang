@@ -86,6 +86,9 @@ enum class AstNodeKind {
   VariantPattern,
   TopLevelDeclStmt,
 
+  MLIRAttribute,
+  MLIRType,
+
   InvalidNode,
   InvalidExpression,
   InvalidStatement,
@@ -115,8 +118,8 @@ struct TopLevelDecl : public Node {
   TopLevelDecl(Token token) : Node(std::move(token)) {}
   virtual ~TopLevelDecl() = default;
 };
-struct Type : public Node {
-  Type(Token token) : Node(std::move(token)) {}
+struct Type : public Expression {
+  Type(Token token) : Expression(std::move(token)) {}
   virtual ~Type() = default;
 };
 struct Pattern : public Node {
@@ -693,7 +696,6 @@ struct AssignOpExpr : public Expression {
 
 struct FieldAccessExpr : public Expression {
   std::unique_ptr<Expression> base;
-  // std::string field;
   using Field =
       std::variant<std::unique_ptr<LiteralExpr>,
                    std::unique_ptr<IdentifierExpr>, std::unique_ptr<CallExpr>>;
@@ -756,6 +758,24 @@ struct PrimitiveType : public Type {
       : Type(std::move(token)), type_kind(kind) {}
 
   AstNodeKind kind() const override { return AstNodeKind::PrimitiveType; }
+};
+
+struct MLIRAttribute : public Expression {
+  std::string attribute;
+
+  MLIRAttribute(Token token, std::string attribute)
+      : Expression(std::move(token)), attribute(std::move(attribute)) {}
+
+  AstNodeKind kind() const override { return AstNodeKind::MLIRAttribute; }
+};
+
+struct MLIRType : public Type {
+  std::string type;
+
+  MLIRType(Token token, std::string type)
+      : Type(std::move(token)), type(std::move(type)) {}
+
+  AstNodeKind kind() const override { return AstNodeKind::MLIRType; }
 };
 
 struct TupleType : public Type {
@@ -1077,6 +1097,8 @@ struct AstDumper {
   void dump(EnumDecl *);
   void dump(ImportDecl *);
   void dump(TraitDecl *);
+  void dump(MLIRAttribute *);
+  void dump(MLIRType *);
 
   void indent();
 

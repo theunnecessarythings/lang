@@ -1,77 +1,54 @@
+#include "LangGen.h"
+#include "MLIRGen.h"
+#include "ast.hpp"
+#include "dialect/LangDialect.h"
+#include "dialect/LangOpsDialect.cpp.inc"
+#include "json_dumper.hpp"
 #include "mlir/Conversion/ArithToLLVM/ArithToLLVM.h"
 #include "mlir/Conversion/ControlFlowToLLVM/ControlFlowToLLVM.h"
 #include "mlir/Conversion/FuncToLLVM/ConvertFuncToLLVM.h"
 #include "mlir/Conversion/MemRefToLLVM/MemRefToLLVM.h"
-#include "mlir/Dialect/Func/Extensions/AllExtensions.h"
-#include "mlir/Dialect/MemRef/IR/MemRef.h"
-#include "mlir/Target/LLVMIR/Dialect/Builtin/BuiltinToLLVMIRTranslation.h"
-#include "mlir/Target/LLVMIR/Dialect/LLVMIR/LLVMToLLVMIRTranslation.h"
-#include "mlir/Target/LLVMIR/Export.h"
-#include "mlir/Transforms/Passes.h"
-
 #include "mlir/Dialect/Affine/Passes.h"
+#include "mlir/Dialect/Func/Extensions/AllExtensions.h"
 #include "mlir/Dialect/LLVMIR/Transforms/Passes.h"
+#include "mlir/Dialect/MemRef/IR/MemRef.h"
 #include "mlir/ExecutionEngine/ExecutionEngine.h"
 #include "mlir/ExecutionEngine/OptUtils.h"
 #include "mlir/IR/AsmState.h"
+#include "mlir/IR/Builders.h"
 #include "mlir/IR/BuiltinOps.h"
+#include "mlir/IR/Dialect.h"
 #include "mlir/IR/MLIRContext.h"
 #include "mlir/IR/Verifier.h"
 #include "mlir/InitAllDialects.h"
 #include "mlir/InitAllExtensions.h"
+#include "mlir/InitAllPasses.h"
 #include "mlir/Parser/Parser.h"
+#include "mlir/Pass/Pass.h"
 #include "mlir/Pass/PassManager.h"
+#include "mlir/Support/FileUtilities.h"
 #include "mlir/Target/LLVMIR/Dialect/Builtin/BuiltinToLLVMIRTranslation.h"
 #include "mlir/Target/LLVMIR/Dialect/LLVMIR/LLVMToLLVMIRTranslation.h"
 #include "mlir/Target/LLVMIR/Export.h"
+#include "mlir/Tools/mlir-opt/MlirOptMain.h"
 #include "mlir/Transforms/Passes.h"
-
+#include "passes.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/ExecutionEngine/Orc/JITTargetMachineBuilder.h"
 #include "llvm/IR/Module.h"
 #include "llvm/Support/CommandLine.h"
 #include "llvm/Support/ErrorOr.h"
+#include "llvm/Support/InitLLVM.h"
 #include "llvm/Support/MemoryBuffer.h"
 #include "llvm/Support/SourceMgr.h"
 #include "llvm/Support/TargetSelect.h"
+#include "llvm/Support/ToolOutputFile.h"
 #include "llvm/Support/raw_ostream.h"
 #include <cassert>
 #include <memory>
 #include <string>
 #include <system_error>
 #include <utility>
-
-#include "mlir/IR/Dialect.h"
-#include "mlir/IR/MLIRContext.h"
-#include "mlir/InitAllDialects.h"
-#include "mlir/InitAllPasses.h"
-#include "mlir/Pass/Pass.h"
-#include "mlir/Pass/PassManager.h"
-#include "mlir/Support/FileUtilities.h"
-#include "mlir/Tools/mlir-opt/MlirOptMain.h"
-#include "llvm/Support/CommandLine.h"
-#include "llvm/Support/InitLLVM.h"
-#include "llvm/Support/SourceMgr.h"
-#include "llvm/Support/ToolOutputFile.h"
-
-#include "dialect/LangDialect.h"
-#include "dialect/LangOpsDialect.cpp.inc"
-
-#include "mlir/IR/AsmState.h"
-#include "mlir/IR/BuiltinOps.h"
-#include "mlir/IR/MLIRContext.h"
-#include "mlir/Parser/Parser.h"
-
-#include "llvm/ADT/StringRef.h"
-#include "llvm/Support/CommandLine.h"
-#include "llvm/Support/ErrorOr.h"
-#include "llvm/Support/MemoryBuffer.h"
-#include "llvm/Support/SourceMgr.h"
-#include "llvm/Support/raw_ostream.h"
-
-#include "MLIRGen.h"
-#include "ast.hpp"
-#include "json_dumper.hpp"
 // #include "comptime_eval_pass.hpp"
 #include "analyzer.hpp"
 #include "lexer.hpp"
@@ -96,13 +73,15 @@ static cl::opt<enum InputType>
                                     "load the input file as an MLIR file")));
 
 namespace {
-enum Action { None, DumpAST, DumpJSON, DumpMLIR, DumpMLIRAffine };
+enum Action { None, DumpAST, DumpJSON, DumpMLIR, DumpMLIRLang, DumpMLIRAffine };
 } // namespace
 static cl::opt<enum Action> emitAction(
     "emit", cl::desc("Select the kind of output desired"),
     cl::values(clEnumValN(DumpAST, "ast", "output the AST dump")),
     cl::values(clEnumValN(DumpJSON, "json", "output the AST dump")),
     cl::values(clEnumValN(DumpMLIR, "mlir", "output the MLIR dump")),
+    cl::values(clEnumValN(DumpMLIRLang, "lang",
+                          "output the MLIR lang dialect dump")),
     cl::values(clEnumValN(DumpMLIRAffine, "mlir-affine",
                           "output the MLIR dump after affine lowering")));
 
@@ -158,14 +137,16 @@ int dumpAST() {
 }
 
 int loadMLIR(llvm::SourceMgr &sourceMgr, mlir::MLIRContext &context,
-             mlir::OwningOpRef<mlir::ModuleOp> &module) {
-  // Handle '.toy' input to the compiler.
+             mlir::OwningOpRef<mlir::ModuleOp> &module, bool lang = false) {
   if (inputType != InputType::MLIR &&
       !llvm::StringRef(inputFilename).ends_with(".mlir")) {
     auto moduleAST = parseInputFile(inputFilename);
     if (!moduleAST)
       return 6;
-    module = mlirGen(context, moduleAST.get());
+    if (!lang)
+      module = mlirGen(context, moduleAST.get());
+    else
+      module = langGen(context, moduleAST.get());
     return !module ? 1 : 0;
   }
 
@@ -218,6 +199,55 @@ int runJit(mlir::ModuleOp module) {
     return -1;
   }
 
+  return 0;
+}
+
+int dumpMLIRLang() {
+  mlir::DialectRegistry registry;
+  mlir::registerAllExtensions(registry);
+
+  mlir::MLIRContext context(registry);
+  // Load our Dialect in this MLIR Context.
+  context.getOrLoadDialect<mlir::lang::LangDialect>();
+  context.getOrLoadDialect<mlir::arith::ArithDialect>();
+
+  mlir::OwningOpRef<mlir::ModuleOp> module;
+  llvm::SourceMgr sourceMgr;
+  mlir::SourceMgrDiagnosticHandler sourceMgrHandler(sourceMgr, &context);
+  if (int error = loadMLIR(sourceMgr, context, module, true))
+    return error;
+
+  mlir::PassManager pm(module.get()->getName());
+  // Apply any generic pass manager command line options and run the pipeline.
+  if (mlir::failed(mlir::applyPassManagerCLOptions(pm)))
+    return 4;
+
+  // Custom passes
+  pm.addPass(mlir::lang::createLowerToAffinePass());
+
+  pm.addPass(mlir::createLowerAffinePass());
+
+  // Add a few cleanups post lowering.
+  mlir::OpPassManager &optPM = pm.nest<mlir::func::FuncOp>();
+  optPM.addPass(mlir::createCanonicalizerPass());
+  optPM.addPass(mlir::createCSEPass());
+  optPM.addPass(mlir::affine::createLoopFusionPass());
+  optPM.addPass(mlir::affine::createAffineScalarReplacementPass());
+
+  // Add passes to lower the module to LLVM dialect.
+  pm.addPass(mlir::createConvertSCFToCFPass());
+  pm.addPass(mlir::createConvertFuncToLLVMPass());
+  pm.addPass(mlir::createCanonicalizerPass());
+  pm.addPass(mlir::createArithToLLVMConversionPass());
+  pm.addPass(mlir::createConvertControlFlowToLLVMPass());
+  pm.addPass(mlir::createConvertToLLVMPass());
+  pm.addPass(mlir::LLVM::createDIScopeForLLVMFuncOpPass());
+
+  if (mlir::failed(pm.run(*module)))
+    return 4;
+
+  module->dump();
+  runJit(module.get());
   return 0;
 }
 
@@ -311,6 +341,8 @@ int main(int argc, char **argv) {
   case Action::DumpMLIR:
   case Action::DumpMLIRAffine:
     return dumpMLIR();
+  case Action::DumpMLIRLang:
+    return dumpMLIRLang();
   default:
     llvm::errs() << "No action specified (parsing only?), use -emit=<action>\n";
   }

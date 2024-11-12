@@ -1,21 +1,24 @@
 #include "MLIRGen.h"
 #include "ast.hpp"
-#include "mlir/IR/Block.h"
-#include "mlir/IR/Diagnostics.h"
-#include "mlir/IR/Value.h"
-
 #include "lexer.hpp"
+#include "mlir/AsmParser/AsmParser.h"
 #include "mlir/Dialect/Arith/IR/Arith.h"
 #include "mlir/Dialect/ControlFlow/IR/ControlFlowOps.h"
 #include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"
 #include "mlir/Dialect/LLVMIR/LLVMTypes.h"
 #include "mlir/Dialect/SCF/IR/SCF.h"
+#include "mlir/IR/AsmState.h"
+#include "mlir/IR/Block.h"
 #include "mlir/IR/Builders.h"
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/IR/BuiltinTypes.h"
+#include "mlir/IR/Diagnostics.h"
 #include "mlir/IR/MLIRContext.h"
+#include "mlir/IR/Types.h"
+#include "mlir/IR/Value.h"
 #include "mlir/IR/Verifier.h"
+#include "mlir/Parser/Parser.h"
 #include "llvm/ADT/ScopedHashTable.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/StringMap.h"
@@ -160,7 +163,6 @@ private:
     builder.setInsertionPointToEnd(the_module.getBody());
 
     auto param_types = mlirGen(func->decl->parameters);
-
     mlir::TypeRange return_types =
         func->decl->return_type->kind() == AstNodeKind::PrimitiveType &&
                 static_cast<PrimitiveType *>(func->decl->return_type.get())
@@ -458,8 +460,8 @@ private:
         return false;
       }
       // target type is a slice and value is constant string  then make a
-      // slice value {pointer, length} from the string literal and assign it to
-      // the value
+      // slice value {pointer, length} from the string literal and assign it
+      // to the value
       if (auto op = value.getDefiningOp<mlir::LLVM::GEPOp>()) {
         auto str_len = mlir::cast<mlir::LLVM::LLVMArrayType>(op.getElemType())
                            .getNumElements();
@@ -687,7 +689,8 @@ private:
     // auto field =
     // std::get<std::unique_ptr<IdentifierExpr>>(expr->field).get(); auto
     // field_name = field->name; auto field_index =
-    // get_field_index(base.value().getType(), field_name); if (field_index < 0)
+    // get_field_index(base.value().getType(), field_name); if (field_index <
+    // 0)
     // {
     //   emitError(loc, "field not found");
     //   return mlir::failure();
@@ -707,6 +710,7 @@ private:
     //       loc, base.value(), field_index.value());
     //   return extract_value.getResult();
     // }
+    return mlir::failure();
   }
 
   llvm::FailureOr<size_t> get_field_index(mlir::Type type,

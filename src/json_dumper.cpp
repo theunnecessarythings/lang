@@ -1814,6 +1814,12 @@ void JsonDumper::dump(Expression *node) {
   case AstNodeKind::ComptimeExpr:
     dump(static_cast<ComptimeExpr *>(node));
     break;
+  case AstNodeKind::MLIRAttribute:
+    dump(static_cast<MLIRAttribute *>(node));
+    break;
+  case AstNodeKind::Type:
+    dump(static_cast<Type *>(node));
+    break;
   default:
     output_stream << "{\n";
     cur_indent++;
@@ -1889,6 +1895,9 @@ void JsonDumper::dump(Type *node) {
     break;
   case AstNodeKind::ExprType:
     dump(static_cast<ExprType *>(node));
+    break;
+  case AstNodeKind::MLIRType:
+    dump(static_cast<MLIRType *>(node));
     break;
   default:
     output_stream << "{\n";
@@ -2314,6 +2323,40 @@ void JsonDumper::dump(TraitDecl *node) {
 
   indent();
   output_stream << "\"is_pub\": " << (node->is_pub ? "true" : "false") << "\n";
+
+  cur_indent--;
+  indent();
+  output_stream << "}";
+}
+
+void JsonDumper::dump(MLIRType *type) {
+  output_stream << "{\n";
+  cur_indent++;
+
+  indent();
+  output_stream << "\"kind\": \"MLIRType\",\n";
+  dumpNodeToken(type);
+
+  indent();
+  output_stream << "\"type\": ";
+  output_stream << type->type;
+
+  cur_indent--;
+  indent();
+  output_stream << "}";
+}
+
+void JsonDumper::dump(MLIRAttribute *attr) {
+  output_stream << "{\n";
+  cur_indent++;
+
+  indent();
+  output_stream << "\"kind\": \"MLIRAttribute\",\n";
+  dumpNodeToken(attr);
+
+  indent();
+  output_stream << "\"attr\": ";
+  output_stream << attr->attribute;
 
   cur_indent--;
   indent();

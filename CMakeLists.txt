@@ -4,6 +4,11 @@ project(lang LANGUAGES CXX C)
 # Set up the project
 set(CMAKE_CXX_STANDARD 17) 
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
+set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -fuse-ld=lld")
+set(CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} -fuse-ld=lld")
+set(CMAKE_MODULE_LINKER_FLAGS "${CMAKE_MODULE_LINKER_FLAGS} -fuse-ld=lld")
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fuse-ld=lld")
+set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fuse-ld=lld")
 add_compile_options(-fexceptions)
 
 # Setup LLVM and MLIR
@@ -34,7 +39,15 @@ add_subdirectory(include)
 add_subdirectory(dialect)
 
 # Main project as a library
-add_library(liblang STATIC src/parser.cpp src/ast.cpp src/MLIRGen.cpp src/analyzer.cpp src/json_dumper.cpp)  
+add_library(liblang STATIC 
+    src/parser.cpp
+    src/ast.cpp
+    src/MLIRGen.cpp
+    src/LangGen.cpp
+    src/analyzer.cpp
+    src/lower_to_llvm.cpp
+    src/lower_to_affine.cpp
+    src/json_dumper.cpp)  
 target_include_directories(liblang PUBLIC include/)
 
 get_property(dialect_libs GLOBAL PROPERTY MLIR_DIALECT_LIBS)

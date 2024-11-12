@@ -816,6 +816,14 @@ void AstDumper::dump(VariantPattern *pattern) {
 
 void AstDumper::dump(TopLevelDeclStmt *stmt) { dump(stmt->decl.get()); }
 
+void AstDumper::dump(MLIRType *type) {
+  output_stream << "@mlir_type(" << type->type << ")";
+}
+
+void AstDumper::dump(MLIRAttribute *attr) {
+  output_stream << "@mlir_attr(" << attr->attribute << ")";
+}
+
 void AstDumper::dump(Pattern *pattern) {
   if (dynamic_cast<LiteralPattern *>(pattern)) {
     dump(static_cast<LiteralPattern *>(pattern));
@@ -897,6 +905,10 @@ void AstDumper::dump(Expression *expr) {
     dump(static_cast<BlockExpression *>(expr));
   } else if (dynamic_cast<ComptimeExpr *>(expr)) {
     dump(static_cast<ComptimeExpr *>(expr));
+  } else if (dynamic_cast<MLIRAttribute *>(expr)) {
+    dump(static_cast<MLIRAttribute *>(expr));
+  } else if (dynamic_cast<Type *>(expr)) {
+    dump(static_cast<Type *>(expr));
   }
 }
 
@@ -925,6 +937,8 @@ void AstDumper::dump(Type *type) {
     dump(static_cast<UnionType *>(type));
   } else if (dynamic_cast<ExprType *>(type)) {
     dump(static_cast<ExprType *>(type));
+  } else if (dynamic_cast<MLIRType *>(type)) {
+    dump(static_cast<MLIRType *>(type));
   }
 }
 

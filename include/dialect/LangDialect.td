@@ -2,6 +2,7 @@
 #define LANG_DIALECT
 
 include "mlir/IR/OpBase.td"
+include "mlir/IR/AttrTypeBase.td"
 
 //===----------------------------------------------------------------------===//
 // lang dialect definition.
@@ -16,7 +17,31 @@ def Lang_Dialect : Dialect {
         working inside of the LLVM source tree.
     }];
     let cppNamespace = "::mlir::lang";
+    let useDefaultTypePrinterParser = 1;
 }
+
+//===----------------------------------------------------------------------===//
+// lang dialect types.
+//===----------------------------------------------------------------------===//
+
+class Lang_Type<string name, string typeMnemonic, list<Trait> traits = []>
+    : TypeDef<Lang_Dialect, name, traits> {
+  let mnemonic = typeMnemonic;
+}
+
+def TypeValue: DialectType<Lang_Dialect, CPred<"isa<TypeValueType>($_self)">,
+                                    "Lang typevalue type">;
+
+def Lang_StructType :
+    DialectType<Lang_Dialect, CPred<"isa<StructType>($_self)">,
+                "Lang struct type">;
+
+//===----------------------------------------------------------------------===//
+// StringType
+//===----------------------------------------------------------------------===//
+
+def Lang_StringType : DialectType<Lang_Dialect, CPred<"isa<StringType>($_self)">,
+                                  "Lang string type">;
 
 //===----------------------------------------------------------------------===//
 // Base standalone operation definition.

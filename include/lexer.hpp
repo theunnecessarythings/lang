@@ -39,6 +39,7 @@ enum class TokenKind {
   SlashEqual,
   Ampersand,
   AmpersandEqual,
+  At,
 
   Tilde,
   Less,
@@ -308,6 +309,11 @@ struct Lexer {
           break;
         case ':':
           result.kind = TokenKind::Colon;
+          index += 1;
+          loop_break = true;
+          break;
+        case '@':
+          result.kind = TokenKind::At;
           index += 1;
           loop_break = true;
           break;
@@ -1121,6 +1127,8 @@ struct Lexer {
     case TokenKind::Invalid:
       return "an invalid token";
 
+    case TokenKind::At:
+      return "@";
     case TokenKind::Bang:
       return "!";
     case TokenKind::BangEqual:

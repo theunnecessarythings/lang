@@ -48,10 +48,10 @@ fn main() void {
     const peter = Person(name, age);
 
     // Print debug struct
-    // print("Name: %s, Age: %d", peter.name.ptr, peter.age);
+    print("Name: %s, Age: %d", peter.name.ptr, peter.age);
 
     // Instantiate a `Point`
-    const point: Point = Point(10.3, 0.4);
+    // const point: Point = Point(10.3, 0.4);
     // const another_point: Point = Point(5.2, 0.2);
     //
     // // Access the fields of the point

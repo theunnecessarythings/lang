@@ -166,6 +166,13 @@ std::unique_ptr<Expression> Parser::nud(const Token &token) {
   case TokenKind::NumberLiteral: {
     return parse_number_literal_expr(token);
   }
+  case TokenKind::At: {
+    if (is_peek(TokenKind::Identifier) &&
+        lexer->token_to_string(peek().value()) == "mlir_attr") {
+      return parse_mlir_attr();
+    }
+    return parse_mlir_type(false);
+  }
   case TokenKind::StringLiteral:
     return std::make_unique<LiteralExpr>(
         token, LiteralExpr::LiteralType::String, lexer->token_to_string(token));
@@ -511,13 +518,13 @@ std::unique_ptr<Expression> Parser::parse_array_expr() {
 // function = 'fn' identifier '(' params ')' type block
 std::unique_ptr<Function> Parser::parse_function(bool is_pub) {
   NEW_SCOPE();
-  auto fn_token = consume_kind(TokenKind::KeywordFn);
+  consume_kind(TokenKind::KeywordFn);
   auto name = consume_kind(TokenKind::Identifier);
   auto name_str = lexer->token_to_string(name);
   auto params = parse_params();
   auto return_type = parse_type();
   auto block = parse_block();
-  return std::make_unique<Function>(fn_token, std::move(name_str),
+  return std::make_unique<Function>(name, std::move(name_str),
                                     std::move(params), std::move(return_type),
                                     std::move(block), is_pub);
 }
@@ -816,7 +823,9 @@ std::unique_ptr<Type> Parser::parse_type() {
   // if (is_peek(TokenKind::KeywordFn)) {
   //   return parse_function_type();
   // } else
-  if (is_peek(TokenKind::LParen)) {
+  if (is_peek(TokenKind::At)) {
+    return parse_mlir_type();
+  } else if (is_peek(TokenKind::LParen)) {
     return parse_tuple_type();
   } else if (is_peek(TokenKind::LBracket)) {
     return parse_array_type();
@@ -829,13 +838,45 @@ std::unique_ptr<Type> Parser::parse_type() {
           token.value(), str_to_primitive_type.at(token_str));
     }
     if (is_peek2(TokenKind::RParen) || is_peek2(TokenKind::Comma) ||
-        is_peek2(TokenKind::LBrace)) {
+        is_peek2(TokenKind::LBrace) || is_peek2(TokenKind::Equal)) {
       auto token = consume();
       return std::make_unique<IdentifierType>(token.value(), token_str);
     }
   }
   auto expr = parse_expr(0);
   return std::make_unique<ExprType>(expr->token, std::move(expr));
+}
+
+// mlir_type = "@mlir_type(" type_str ")"
+std::unique_ptr<Type> Parser::parse_mlir_type(bool consume_at) {
+  if (consume_at)
+    consume_kind(TokenKind::At);
+  auto mlir_type = consume_kind(TokenKind::Identifier);
+  if (lexer->token_to_string(mlir_type) != "mlir_type") {
+    context->diagnostics.report_error(mlir_type,
+                                      "Expected mlir_type found " +
+                                          lexer->token_to_string(mlir_type));
+  }
+  consume_kind(TokenKind::LParen);
+  auto type_str = consume_kind(TokenKind::StringLiteral);
+  consume_kind(TokenKind::RParen);
+  return std::make_unique<MLIRType>(type_str, lexer->token_to_string(type_str));
+}
+
+// mlir_attr = "@mlir_attr(" attr_str ")"
+std::unique_ptr<MLIRAttribute> Parser::parse_mlir_attr() {
+  // consume_kind(TokenKind::At);
+  auto mlir_attr = consume_kind(TokenKind::Identifier);
+  if (lexer->token_to_string(mlir_attr) != "mlir_attr") {
+    context->diagnostics.report_error(mlir_attr,
+                                      "Expected mlir_attr found " +
+                                          lexer->token_to_string(mlir_attr));
+  }
+  consume_kind(TokenKind::LParen);
+  auto attr_str = consume_kind(TokenKind::StringLiteral);
+  consume_kind(TokenKind::RParen);
+  return std::make_unique<MLIRAttribute>(attr_str,
+                                         lexer->token_to_string(attr_str));
 }
 
 // tuple_type = '(' type (',' type)* ')'
