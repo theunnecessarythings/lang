@@ -9,6 +9,7 @@ namespace lang {
 
 std::unique_ptr<mlir::Pass> createLowerToLLVMPass();
 std::unique_ptr<mlir::Pass> createLowerToAffinePass();
+std::unique_ptr<mlir::Pass> createLiteralCastPass();
 
 } // namespace lang
 } // namespace mlir

@@ -3,6 +3,7 @@
 #include "ast.hpp"
 #include "dialect/LangDialect.h"
 #include "dialect/LangOpsDialect.cpp.inc"
+#include "include/dialect/LangOps.h"
 #include "json_dumper.hpp"
 #include "mlir/Conversion/ArithToLLVM/ArithToLLVM.h"
 #include "mlir/Conversion/ControlFlowToLLVM/ControlFlowToLLVM.h"
@@ -210,7 +211,6 @@ int dumpMLIRLang() {
   // Load our Dialect in this MLIR Context.
   context.getOrLoadDialect<mlir::lang::LangDialect>();
   context.getOrLoadDialect<mlir::arith::ArithDialect>();
-
   mlir::OwningOpRef<mlir::ModuleOp> module;
   llvm::SourceMgr sourceMgr;
   mlir::SourceMgrDiagnosticHandler sourceMgrHandler(sourceMgr, &context);
@@ -223,8 +223,9 @@ int dumpMLIRLang() {
     return 4;
 
   // Custom passes
+  mlir::OpPassManager &castPM = pm.nest<mlir::lang::FuncOp>();
+  castPM.addPass(mlir::lang::createLiteralCastPass());
   pm.addPass(mlir::lang::createLowerToAffinePass());
-
   pm.addPass(mlir::createLowerAffinePass());
 
   // Add a few cleanups post lowering.

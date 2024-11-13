@@ -1,8 +1,11 @@
 #include "dialect/LangOps.h"
 #include "dialect/LangDialect.h"
+#include "mlir/IR/DialectImplementation.h"
 #include "mlir/IR/OpImplementation.h"
 #include "mlir/IR/SymbolTable.h"
 #include "mlir/Interfaces/FunctionImplementation.h"
+#include "llvm/ADT/APInt.h"
+#include "llvm/ADT/TypeSwitch.h"
 
 #define GET_OP_CLASSES
 #include "dialect/LangOps.cpp.inc"
@@ -73,13 +76,16 @@ mlir::LogicalResult ReturnOp::verify() {
            << getNumOperands() << " operands, but enclosing function (@"
            << function.getName() << ") returns " << results.size();
 
-  for (unsigned i = 0, e = results.size(); i != e; ++i)
+  for (unsigned i = 0, e = results.size(); i != e; ++i) {
+    // if its a literal then skip -> let the pass handle it
+    if (mlir::isa<mlir::lang::ConstantOp>(getOperand(i).getDefiningOp()))
+      continue;
     if (getOperand(i).getType() != results[i])
-      return emitError() << "type of return operand " << i << " ("
+      return emitError() << "type of return operand " << i + 1 << " "
                          << getOperand(i).getType()
-                         << ") doesn't match function result type ("
-                         << results[i] << ")"
-                         << " in function @" << function.getName();
+                         << " doesn't match function result type " << results[i]
+                         << " in function " << function.getName();
+  }
 
   return success();
 }
@@ -91,6 +97,8 @@ void VarDeclOp::build(OpBuilder &builder, OperationState &state,
                      builder.getStringAttr(symName));
   if (varType) {
     state.addAttribute("var_type", TypeAttr::get(varType));
+  } else {
+    state.addAttribute("var_type", TypeAttr::get(initValue.getType()));
   }
 
   if (initValue)
@@ -111,6 +119,23 @@ mlir::LogicalResult VarDeclOp::verify() {
       auto type_value = mlir::cast<TypeValueType>(varType);
       varType = type_value.getAliasedType();
     }
+
+    // if literals then
+    if (mlir::isa<mlir::IntegerType>(varType) &&
+        mlir::isa<mlir::IntegerType>(initType)) {
+      return success();
+    }
+
+    if (mlir::isa<mlir::IntegerType>(varType) &&
+        mlir::isa<mlir::lang::IntLiteralType>(initType)) {
+      return success();
+    }
+
+    if (mlir::isa<mlir::FloatType>(varType) &&
+        mlir::isa<mlir::FloatType>(initType)) {
+      return success();
+    }
+
     if (varType != initType) {
       return emitOpError() << "type of 'init_value' (" << initType
                            << ") does not match 'var_type' (" << varType << ")";
@@ -121,4 +146,25 @@ mlir::LogicalResult VarDeclOp::verify() {
 
 void TypeConstOp::build(OpBuilder &builder, OperationState &state, Type type) {
   build(builder, state, TypeValueType::get(type), TypeAttr::get(type));
+}
+
+mlir::OpFoldResult mlir::lang::StructAccessOp::fold(FoldAdaptor adaptor) {
+  auto structAttr = mlir::dyn_cast_or_null<mlir::ArrayAttr>(adaptor.getInput());
+  if (!structAttr)
+    return nullptr;
+
+  size_t elementIndex = getIndex();
+  return structAttr[elementIndex];
+}
+
+mlir::OpFoldResult mlir::lang::ConstantOp::fold(FoldAdaptor adaptor) {
+  return getValue();
+}
+
+//===----------------------------------------------------------------------===//
+// CallOp
+//===----------------------------------------------------------------------===//
+
+mlir::FunctionType CallOp::getCalleeType() {
+  return FunctionType::get(getContext(), getOperandTypes(), getResultTypes());
 }

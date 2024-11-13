@@ -3,32 +3,34 @@
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"
 #include "mlir/IR/Dialect.h"
 #include "mlir/IR/DialectImplementation.h"
-using namespace mlir;
 
-//===----------------------------------------------------------------------===//
-// Lang dialect.
-//===----------------------------------------------------------------------===//
+#define GET_ATTRDEF_CLASSES
+#include "dialect/LangOpsAttrDefs.cpp.inc"
 
 void mlir::lang::LangDialect::initialize() {
-
   addOperations<
 #define GET_OP_LIST
 #include "dialect/LangOps.cpp.inc"
+      >();
+
+  addAttributes<
+#define GET_ATTRDEF_LIST
+#include "dialect/LangOpsAttrDefs.cpp.inc"
       >();
 
   addTypes<
 #define GET_TYPEDEF_LIST
 #include "dialect/LangOpsTypes.cpp.inc"
       >();
-  addTypes<StructType, TypeValueType, StringType>();
+  addTypes<StructType, TypeValueType, StringType, IntLiteralType>();
   getContext()->getOrLoadDialect<mlir::LLVM::LLVMDialect>();
 }
 
-Type mlir::lang::LangDialect::parseType(DialectAsmParser &parser) const {
+mlir::Type mlir::lang::LangDialect::parseType(DialectAsmParser &parser) const {
   // Attempt to parse 'typevalue' type
   mlir::StringRef type_name;
-  if (parser.parseOptionalKeyword(&type_name,
-                                  {"typevalue", "struct", "string"})) {
+  if (parser.parseOptionalKeyword(
+          &type_name, {"typevalue", "struct", "string", "int_literal"})) {
     return Type();
   }
   if (type_name == "typevalue") {
@@ -42,7 +44,13 @@ Type mlir::lang::LangDialect::parseType(DialectAsmParser &parser) const {
     return TypeValueType::get(innerType);
   }
 
-  // Attempt to parse 'struct' type
+  // Attempt to parse 'int_literal' type
+  else if (type_name == "int_literal") {
+    return IntLiteralType::get(getContext());
+  }
+
+  // Attempt to parse 'struct' type, with a string attribute name
+  // struct ::= `struct` `<` type (`,` type)* `>` string
   else if (type_name == "struct") {
     if (parser.parseLess())
       return Type();
@@ -60,7 +68,13 @@ Type mlir::lang::LangDialect::parseType(DialectAsmParser &parser) const {
     // Parse: `>`
     if (parser.parseGreater())
       return Type();
-    return StructType::get(elementTypes);
+
+    // Parse the struct name.
+    llvm::StringRef name;
+    if (parser.parseKeyword(&name))
+      return Type();
+
+    return StructType::get(elementTypes, name);
   }
 
   else if (type_name == "string") {
@@ -89,9 +103,11 @@ void mlir::lang::LangDialect::printType(Type type,
     StructType structType = mlir::cast<StructType>(type);
     printer << "struct<";
     llvm::interleaveComma(structType.getElementTypes(), printer);
-    printer << '>';
+    printer << '>' << structType.getName();
   } else if (mlir::isa<StringType>(type)) {
     printer << "string";
+  } else if (mlir::isa<IntLiteralType>(type)) {
+    printer << "int_literal";
   } else
     llvm_unreachable("unknown type in LangDialect");
 }
@@ -122,7 +138,7 @@ llvm::LogicalResult mlir::lang::StructAccessOp::verify() {
   return mlir::success();
 }
 
-OpFoldResult mlir::lang::TypeConstOp::fold(FoldAdaptor adaptor) {
+mlir::OpFoldResult mlir::lang::TypeConstOp::fold(FoldAdaptor adaptor) {
   auto typeAttr = getTypeAttr();
   if (!typeAttr)
     return {};
@@ -132,31 +148,11 @@ OpFoldResult mlir::lang::TypeConstOp::fold(FoldAdaptor adaptor) {
   return TypeAttr::get(type);
 }
 
-struct StructTypeStorage : public mlir::TypeStorage {
-  using KeyTy = llvm::ArrayRef<mlir::Type>;
-
-  StructTypeStorage(llvm::ArrayRef<mlir::Type> elementTypes)
-      : elementTypes(elementTypes) {}
-
-  bool operator==(const KeyTy &key) const { return key == elementTypes; }
-
-  static KeyTy getKey(llvm::ArrayRef<mlir::Type> elementTypes) {
-    return KeyTy(elementTypes);
-  }
-
-  static StructTypeStorage *construct(mlir::TypeStorageAllocator &allocator,
-                                      const KeyTy &key) {
-    llvm::ArrayRef<mlir::Type> elementTypes = allocator.copyInto(key);
-
-    return new (allocator.allocate<StructTypeStorage>())
-        StructTypeStorage(elementTypes);
-  }
-  llvm::ArrayRef<mlir::Type> elementTypes;
-};
-
 llvm::ArrayRef<mlir::Type> mlir::lang::StructType::getElementTypes() {
   return getImpl()->elementTypes;
 }
+
+llvm::StringRef mlir::lang::StructType::getName() { return getImpl()->name; }
 
 size_t mlir::lang::StructType::getNumElementTypes() {
   return getElementTypes().size();

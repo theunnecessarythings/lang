@@ -1274,6 +1274,9 @@ std::unique_ptr<CallExpr> Parser::parse_call_expr() {
 // return_stmt = 'return' expr? ';'?
 std::unique_ptr<ReturnExpr> Parser::parse_return_expr() {
   consume_kind(TokenKind::KeywordReturn);
+  if (is_peek(TokenKind::Semicolon)) {
+    return std::make_unique<ReturnExpr>(current_token.value(), std::nullopt);
+  }
   auto expr = parse_expr(0);
   return std::make_unique<ReturnExpr>(expr->token, std::move(expr));
 }

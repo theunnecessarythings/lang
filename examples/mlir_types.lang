@@ -1,24 +1,41 @@
+import "std/builtin/int";
+
 struct A {
-    a: @mlir_type("i32"),
+    a: @mlir_type("i64"),
+}
+
+impl C {
+    fn init(mut self: Self, other: Self) -> Self {
+        self = other;
+        return self;
+    }
+}
+
+fn test_a(a: i32, b: i32) void {
+    return;
 }
 
 pub fn main() void {
-    const a: @mlir_type("i32") = 1;
-    const b: @mlir_type("vector<4xf64>") = @mlir_attr("dense<[10.9, 20.0, 30.1, 40.1]> : vector<4xf64>");
-    const z: @mlir_type("i32") = 2;
-    const c: @mlir_type("i64") = @mlir_attr("42");
-    const d: @mlir_type("!lang.typevalue<i32>") = @mlir_type("i32");
-    const e: d = 2304;
-    const f: A = A(e);
-    const g: i32 = f.a;
-    const h: @mlir_type("tensor<2x3xf32>") = @mlir_attr("dense<[[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]]> : tensor<2x3xf32>");
-
+    const a = 1;
+    // const b: @mlir_type("vector<4xf64>") = @mlir_attr("dense<[10.9, 20.0, 30.1, 40.1]> : vector<4xf64>");
+    // const z: @mlir_type("i32") = 2;
+    // const c: @mlir_type("i64") = @mlir_attr("42");
+    // const d: @mlir_type("!lang.typevalue<i32>") = @mlir_type("i32");
+    // const e: d = 2304;
+    // const f: A = A(e);
+    // const g: i32 = f.a;
+    // const h: @mlir_type("tensor<2x3xf32>") = @mlir_attr("dense<[[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]]> : tensor<2x3xf32>");
+    
+    // const b : i64 = 2;
     const i: @mlir_type("!lang.string") = "Hello, World!";
-    print("Hello, World! -> %d", h);
-}
+    print("Hello, World! -> %s", i);
 
-fn test_a(a: i32, b: i32) i32 {
-    return 0;
+    const int_literal: IntLiteral = 42;
+
+    print("int_literal -> %d", int_literal.value);
+
+    test_a(1, 2);
+    // const ab: @mlir_type("!lang.int_literal") = 42;
 }
 
 fn empty() void {}

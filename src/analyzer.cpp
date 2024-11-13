@@ -53,6 +53,9 @@ void Analyzer::analyze(TopLevelDecl *decl) {
   case AstNodeKind::UnionDecl:
     analyze(static_cast<UnionDecl *>(decl));
     break;
+  case AstNodeKind::ImportDecl:
+    analyze(static_cast<ImportDecl *>(decl));
+    break;
   default:
     assert(false && "not a top level decl or not implemented yet");
   }
@@ -63,6 +66,8 @@ void Analyzer::analyze(Module *module) {
     analyze(item.get());
   }
 }
+
+void Analyzer::analyze(ImportDecl *decl) {}
 
 void Analyzer::analyze(Function *func) {
   NEW_SCOPE();

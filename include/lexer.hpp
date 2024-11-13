@@ -233,6 +233,7 @@ struct Lexer {
             index += 1;
             result.span.end = index;
             result.span.col_start = col_start;
+            result.span.line_no = line_no;
             col_start += 1;
             return result;
           }
@@ -372,6 +373,7 @@ struct Lexer {
           result.span.end = index;
           index += 1;
           result.span.col_start = col_start;
+          result.span.line_no = line_no;
           col_start += result.span.end - result.span.start;
           return result;
         }
@@ -992,6 +994,7 @@ struct Lexer {
 
     result.span.end = index;
     result.span.col_start = col_start;
+    result.span.line_no = line_no;
     col_start += result.span.end - result.span.start;
     return result;
   }

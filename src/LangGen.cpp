@@ -2,7 +2,7 @@
 #include "dialect/LangDialect.h"
 #include "dialect/LangOps.h"
 #include "mlir/AsmParser/AsmParser.h"
-#include "mlir/Dialect/Arith/IR/Arith.h"
+#include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "mlir/IR/Builders.h"
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/IR/Diagnostics.h"
@@ -25,7 +25,7 @@ using llvm::StringRef;
 
 class LangGenImpl {
 public:
-  mlir::lang::FuncOp *current_function;
+  mlir::lang::FuncOp *current_function = nullptr;
 
   LangGenImpl(mlir::MLIRContext &context) : builder(&context) {}
 
@@ -48,26 +48,27 @@ public:
     the_module = mlir::ModuleOp::create(builder.getUnknownLoc());
 
     for (auto &f : program->items) {
-      if (dynamic_cast<Function *>(f.get())) {
+      if (f->kind() == AstNodeKind::Function) {
         auto func = langGen(dynamic_cast<Function *>(f.get()));
         if (failed(func)) {
           return nullptr;
         }
-      } else if (dynamic_cast<TupleStructDecl *>(f.get())) {
+      } else if (f->kind() == AstNodeKind::TupleStructDecl) {
         auto tuple_struct = langGen(dynamic_cast<TupleStructDecl *>(f.get()));
         if (failed(tuple_struct)) {
           return nullptr;
         }
-      } else if (dynamic_cast<StructDecl *>(f.get())) {
+      } else if (f->kind() == AstNodeKind::StructDecl) {
         auto struct_decl = langGen(dynamic_cast<StructDecl *>(f.get()));
         if (failed(struct_decl)) {
           return nullptr;
         }
-      } else if (dynamic_cast<ImplDecl *>(f.get())) {
+      } else if (f->kind() == AstNodeKind::ImplDecl) {
         auto impl_decl = langGen(dynamic_cast<ImplDecl *>(f.get()));
         if (failed(impl_decl)) {
           return nullptr;
         }
+      } else if (f->kind() == AstNodeKind::ImportDecl) {
       } else {
         the_module.emitError("unsupported top-level item");
       }
@@ -138,6 +139,7 @@ private:
       builder.setInsertionPointToEnd(&func_op.getBody().back());
       builder.create<mlir::lang::ReturnOp>(loc(func->token.span));
     }
+    current_function = nullptr;
     return mlir::success();
   }
 
@@ -177,10 +179,24 @@ private:
 
   llvm::FailureOr<mlir::Value> langGen(ReturnExpr *expr) {
     auto loc = this->loc(expr->token.span);
+    if (!expr->value.has_value()) {
+      builder.create<mlir::lang::ReturnOp>(loc);
+      return mlir::success(mlir::Value());
+    }
     auto value = langGen(expr->value.value().get());
     if (failed(value)) {
       emitError(loc, "unsupported return value");
       return mlir::failure();
+    }
+
+    // NOTE: Assuming only one return value for now
+    auto return_type = current_function->getFunctionType().getResult(0);
+    if (value.value().getType() != return_type) {
+      // insert cast
+      value = builder
+                  .create<mlir::UnrealizedConversionCastOp>(loc, return_type,
+                                                            value.value())
+                  .getResult(0);
     }
 
     builder.create<mlir::lang::ReturnOp>(loc, value.value());
@@ -198,18 +214,12 @@ private:
       }
       fieldTypes.push_back(type.value());
     }
-    auto struct_type = mlir::lang::StructType::get(fieldTypes);
+    auto struct_type = mlir::lang::StructType::get(fieldTypes, decl->name);
     // declare struct type
     if (failed(declare(decl->name, struct_type))) {
       emitError(span, "redeclaration of struct type");
       return mlir::failure();
     }
-
-    // // Register a default contructor from the struct type
-    // if (failed(defineDefaultConstructor(fieldTypes, struct_type, decl,
-    // span))) {
-    //   return mlir::failure();
-    // }
     return mlir::success();
   }
 
@@ -222,7 +232,8 @@ private:
       }
       element_types.push_back(field_type.value());
     }
-    auto struct_type = mlir::lang::StructType::get(element_types);
+    auto struct_type =
+        mlir::lang::StructType::get(element_types, struct_decl->name);
     struct_table.insert(struct_decl->name, struct_decl);
     if (failed(declare(struct_decl->name, struct_type))) {
       return mlir::emitError(loc(struct_decl->token.span),
@@ -232,7 +243,14 @@ private:
     return mlir::success();
   }
 
-  mlir::LogicalResult langGen(ImplDecl *impl_decl) { return mlir::success(); }
+  mlir::LogicalResult langGen(ImplDecl *impl_decl) {
+    auto parent_type = type_table.lookup(impl_decl->type);
+    if (!parent_type) {
+      return mlir::emitError(loc(impl_decl->token.span),
+                             "parent type not found");
+    }
+    return mlir::success();
+  }
 
   mlir::LogicalResult langGen(BlockExpression *block) {
     for (auto &stmt : block->statements) {
@@ -253,9 +271,9 @@ private:
   }
 
   mlir::LogicalResult langGen(VarDecl *var_decl) {
-    std::optional<mlir::Type> var_type = std::nullopt;
+    mlir::Type var_type = nullptr;
     if (var_decl->type.has_value()) {
-      var_type = getType(var_decl->type.value().get());
+      var_type = getType(var_decl->type.value().get()).value();
     }
 
     // assume the name is identifier pattern for now
@@ -268,11 +286,16 @@ private:
     }
 
     std::optional<mlir::Value> init_value = std::nullopt;
-    if (var_decl->initializer.has_value())
-      init_value = langGen(var_decl->initializer.value().get());
+    if (var_decl->initializer.has_value()) {
+      auto v = langGen(var_decl->initializer.value().get());
+      if (mlir::failed(v)) {
+        return mlir::failure();
+      }
+      init_value = v.value();
+    }
 
     builder.create<mlir::lang::VarDeclOp>(loc(var_decl->token.span), var_name,
-                                          var_type.value(), init_value.value());
+                                          var_type, init_value.value());
     if (failed(declare(var_name, init_value.value()))) {
       return mlir::failure();
     }
@@ -285,11 +308,24 @@ private:
       if (primitive_type->type_kind == PrimitiveType::PrimitiveTypeKind::I32) {
         return builder.getIntegerType(32);
       } else if (primitive_type->type_kind ==
+                 PrimitiveType::PrimitiveTypeKind::I64) {
+        return builder.getIntegerType(64);
+      } else if (primitive_type->type_kind ==
+                 PrimitiveType::PrimitiveTypeKind::F32) {
+        return builder.getF32Type();
+      } else if (primitive_type->type_kind ==
+                 PrimitiveType::PrimitiveTypeKind::F64) {
+        return builder.getF64Type();
+      } else if (primitive_type->type_kind ==
+                 PrimitiveType::PrimitiveTypeKind::Bool) {
+        return builder.getIntegerType(1);
+      } else if (primitive_type->type_kind ==
+                 PrimitiveType::PrimitiveTypeKind::Char) {
+        return builder.getIntegerType(8);
+      } else if (primitive_type->type_kind ==
                  PrimitiveType::PrimitiveTypeKind::Void) {
         return builder.getNoneType();
-      }
-
-      else {
+      } else {
         mlir::emitError(loc(primitive_type->token.span), "unsupported type");
       }
     } else if (type->kind() == AstNodeKind::MLIRType) {
@@ -299,9 +335,12 @@ private:
     } else if (type->kind() == AstNodeKind::IdentifierType) {
       auto identifier_type = static_cast<IdentifierType *>(type);
       auto type_name = identifier_type->name;
-      mlir::SymbolTable symbolTable(current_function->getOperation());
-      auto type = symbolTable.lookup(type_name);
-      if (!type) {
+      mlir::Operation *op = nullptr;
+      if (current_function) {
+        mlir::SymbolTable symbolTable(current_function->getOperation());
+        op = symbolTable.lookup(type_name);
+      }
+      if (!op) {
         // search in struct table
         auto struct_type = type_table.lookup(type_name);
         if (!struct_type || !mlir::isa<mlir::lang::StructType>(struct_type)) {
@@ -310,7 +349,7 @@ private:
         }
         return struct_type;
       }
-      return type->getResult(0).getType();
+      return op->getResult(0).getType();
     }
     return mlir::emitError(loc(type->token.span), "unsupported type");
   }
@@ -362,6 +401,12 @@ private:
       if (failed(arg_value)) {
         return mlir::failure();
       }
+      // add an unrealized conversion cast
+      arg_value = builder
+                      .create<mlir::UnrealizedConversionCastOp>(
+                          loc(arg->token.span), arg_value.value().getType(),
+                          arg_value.value())
+                      .getResult(0);
       args.push_back(arg_value.value());
     }
 
@@ -384,8 +429,20 @@ private:
                                           rest_args);
       return mlir::success(mlir::Value());
     }
-    return mlir::emitError(loc(expr->token.span),
-                           "unsupported call expression");
+
+    if (!function_map.count(func_name)) {
+      return mlir::emitError(loc(expr->token.span),
+                             "function " + func_name + " not found");
+    }
+
+    auto func = function_map[func_name];
+    // call function
+    auto call_op = builder.create<mlir::lang::CallOp>(
+        loc(expr->token.span), func, mlir::ValueRange(args));
+    if (call_op.getNumResults() == 0) {
+      return mlir::success(mlir::Value());
+    }
+    return call_op.getResult(0);
   }
 
   mlir::FailureOr<mlir::Value> langGen(FieldAccessExpr *expr) {
@@ -468,7 +525,7 @@ private:
     }
 
     auto typedAttr = mlir::cast<mlir::TypedAttr>(mlir_attr);
-    auto constantOp = builder.create<mlir::arith::ConstantOp>(
+    auto constantOp = builder.create<mlir::lang::ConstantOp>(
         loc(attr->token.span), typedAttr.getType(), typedAttr);
 
     return constantOp.getResult();
@@ -476,12 +533,18 @@ private:
 
   mlir::FailureOr<mlir::Value> langGen(LiteralExpr *literal) {
     if (literal->type == LiteralExpr::LiteralType::Int) {
-      // use arith constant op for now
+      // Create an IntegerLiteral struct instance
+      auto struct_type = type_table.lookup("IntLiteral");
+      mlir::TypedAttr attr = builder.getIntegerAttr(
+          builder.getIntegerType(64), std::get<int>(literal->value));
+      auto field_value = builder
+                             .create<mlir::lang::ConstantOp>(
+                                 loc(literal->token.span), attr.getType(), attr)
+                             .getResult();
       return builder
-          .create<mlir::arith::ConstantOp>(
-              loc(literal->token.span),
-              builder.getIntegerAttr(builder.getIntegerType(32),
-                                     std::get<int>(literal->value)))
+          .create<mlir::lang::CreateStructOp>(loc(literal->token.span),
+                                              struct_type,
+                                              mlir::ValueRange{field_value})
           .getResult();
     } else if (literal->type == LiteralExpr::LiteralType::String) {
       return builder
@@ -489,6 +552,28 @@ private:
               loc(literal->token.span),
               mlir::lang::StringType::get(builder.getContext()),
               std::get<std::string>(literal->value))
+          .getResult();
+    } else if (literal->type == LiteralExpr::LiteralType::Bool) {
+      mlir::TypedAttr attr = builder.getIntegerAttr(
+          builder.getIntegerType(1), std::get<bool>(literal->value));
+      return builder
+          .create<mlir::lang::ConstantOp>(loc(literal->token.span),
+                                          attr.getType(), attr)
+          .getResult();
+
+    } else if (literal->type == LiteralExpr::LiteralType::Char) {
+      mlir::TypedAttr attr = builder.getIntegerAttr(
+          builder.getIntegerType(8), std::get<char>(literal->value));
+      return builder
+          .create<mlir::lang::ConstantOp>(loc(literal->token.span),
+                                          attr.getType(), attr)
+          .getResult();
+    } else if (literal->type == LiteralExpr::LiteralType::Float) {
+      mlir::TypedAttr attr = builder.getFloatAttr(
+          builder.getF64Type(), std::get<double>(literal->value));
+      return builder
+          .create<mlir::lang::ConstantOp>(loc(literal->token.span),
+                                          attr.getType(), attr)
           .getResult();
     }
     return mlir::emitError(loc(literal->token.span), "unsupported literal");
