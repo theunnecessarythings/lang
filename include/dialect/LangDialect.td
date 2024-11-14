@@ -43,6 +43,14 @@ def Lang_StructType :
 def Lang_StringType : DialectType<Lang_Dialect, CPred<"isa<StringType>($_self)">,
                                   "Lang string type">;
 
+class Lang_Attr<string name, string attrMnemonic,
+                list<Trait> traits = [],
+                string baseCppClass = "::mlir::Attribute">
+    : AttrDef<Lang_Dialect, name, traits, baseCppClass> {
+  let mnemonic = attrMnemonic;
+}
+def Lang_UndefAttr : Lang_Attr<"Undef", "undef">;
+
 //===----------------------------------------------------------------------===//
 // Base standalone operation definition.
 //===----------------------------------------------------------------------===//

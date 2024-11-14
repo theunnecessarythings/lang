@@ -4,8 +4,8 @@ struct A {
     a: @mlir_type("i64"),
 }
 
-impl C {
-    fn init(mut self: Self, other: Self) -> Self {
+impl A {
+    fn init(mut self: Self, other: Self) Self {
         self = other;
         return self;
     }

@@ -69,12 +69,7 @@ mlir::Type mlir::lang::LangDialect::parseType(DialectAsmParser &parser) const {
     if (parser.parseGreater())
       return Type();
 
-    // Parse the struct name.
-    llvm::StringRef name;
-    if (parser.parseKeyword(&name))
-      return Type();
-
-    return StructType::get(elementTypes, name);
+    return StructType::get(elementTypes);
   }
 
   else if (type_name == "string") {
@@ -103,7 +98,7 @@ void mlir::lang::LangDialect::printType(Type type,
     StructType structType = mlir::cast<StructType>(type);
     printer << "struct<";
     llvm::interleaveComma(structType.getElementTypes(), printer);
-    printer << '>' << structType.getName();
+    printer << '>';
   } else if (mlir::isa<StringType>(type)) {
     printer << "string";
   } else if (mlir::isa<IntLiteralType>(type)) {
@@ -151,8 +146,6 @@ mlir::OpFoldResult mlir::lang::TypeConstOp::fold(FoldAdaptor adaptor) {
 llvm::ArrayRef<mlir::Type> mlir::lang::StructType::getElementTypes() {
   return getImpl()->elementTypes;
 }
-
-llvm::StringRef mlir::lang::StructType::getName() { return getImpl()->name; }
 
 size_t mlir::lang::StructType::getNumElementTypes() {
   return getElementTypes().size();

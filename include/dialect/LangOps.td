@@ -310,4 +310,62 @@ def StringConstOp : Lang_Op<"string_const", [Pure]> {
     $value attr-dict `:` type($result)
   }];
 }
+
+
+def ImplDeclOp : Lang_Op<"impl_decl", [SymbolTable]> {
+  let summary = "Represents an 'impl' block";
+  let description = [{
+    This operation represents a 'impl' block, which can be used to define
+    methods for a type or to implement a trait for a type.
+  }];
+
+  let arguments = (ins
+    // OptionalAttr<SymbolRefAttr>:$trait, 
+    TypeAttr:$selfType                 
+  );
+
+  let regions = (region SizedRegion<1>:$region);
+
+  let assemblyFormat = [{
+    `impl` attr-dict `:`  $region`}`
+  }];
+
+  // let hasVerifier = 1;
+}
+
+def AssignOp : Lang_Op<"assign", []> {
+  let summary = "Assigns a value to a memory location";
+
+  let description = [{
+    The `assign` operation assigns a value to a specified memory location (`memref`).
+    
+    Operands:
+      1. `target` (`memref<...>`): The memory location to assign to.
+      2. `value` (`!type`): The value to assign.
+
+    Semantics:
+      This operation performs a side-effect by modifying the contents of the `memref`.
+  }];
+
+  let arguments = (ins
+    AnyType:$target,    
+    AnyType:$value       
+  );
+
+  let results = (outs AnyType:$result);
+
+}
+
+
+def UndefOp : Lang_Op<"undef", [Pure, ConstantLike]> {
+  let summary = "Creates an undefined value of LLVM dialect type.";
+  let description = [{
+    The `lang.undef` operation creates an undefined value of the specified type.
+  }];
+  let results = (outs AnyType:$res);
+  let assemblyFormat = "attr-dict `:` type($res)";
+  let hasFolder = 1;
+}
+
+
 #endif // LANG_OPS

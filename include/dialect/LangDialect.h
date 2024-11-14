@@ -55,31 +55,25 @@ public:
 };
 
 struct StructTypeStorage : public mlir::TypeStorage {
-  using KeyTy = std::pair<llvm::ArrayRef<mlir::Type>, llvm::StringRef>;
+  using KeyTy = llvm::ArrayRef<mlir::Type>;
 
-  StructTypeStorage(llvm::ArrayRef<mlir::Type> elementTypes,
-                    llvm::StringRef name)
-      : elementTypes(elementTypes), name(name) {}
+  StructTypeStorage(llvm::ArrayRef<mlir::Type> elementTypes)
+      : elementTypes(elementTypes) {}
 
-  bool operator==(const KeyTy &key) const {
-    return key == KeyTy(elementTypes, name);
-  }
+  bool operator==(const KeyTy &key) const { return key == KeyTy(elementTypes); }
 
-  static KeyTy getKey(llvm::ArrayRef<mlir::Type> elementTypes,
-                      llvm::StringRef name) {
-    return KeyTy(elementTypes, name);
+  static KeyTy getKey(llvm::ArrayRef<mlir::Type> elementTypes) {
+    return KeyTy(elementTypes);
   }
 
   static StructTypeStorage *construct(mlir::TypeStorageAllocator &allocator,
                                       const KeyTy &key) {
     // Copy the element types and name into the allocator's memory
-    auto elementTypes = allocator.copyInto(key.first);
-    auto name = allocator.copyInto(key.second);
+    auto elementTypes = allocator.copyInto(key);
     return new (allocator.allocate<StructTypeStorage>())
-        StructTypeStorage(elementTypes, name);
+        StructTypeStorage(elementTypes);
   }
   llvm::ArrayRef<mlir::Type> elementTypes;
-  llvm::StringRef name;
 };
 
 class StructType
@@ -87,18 +81,16 @@ class StructType
 public:
   using Base::Base;
 
-  static StructType get(llvm::ArrayRef<mlir::Type> elementTypes,
-                        llvm::StringRef name) {
+  static StructType get(llvm::ArrayRef<mlir::Type> elementTypes) {
     assert(!elementTypes.empty() && "expected at least 1 element type");
 
     auto *ctx = elementTypes.front().getContext();
-    return Base::get(ctx, elementTypes, name);
+    return Base::get(ctx, elementTypes);
   }
 
   llvm::ArrayRef<mlir::Type> getElementTypes();
 
   size_t getNumElementTypes();
-  llvm::StringRef getName();
   static constexpr mlir::StringLiteral name = "lang.struct";
 };
 

@@ -54,11 +54,34 @@ public:
 struct FuncOpLowering : public mlir::OpConversionPattern<mlir::lang::FuncOp> {
   using OpConversionPattern<mlir::lang::FuncOp>::OpConversionPattern;
 
-  mlir::LogicalResult matchAndRewrite(
-      mlir::lang::FuncOp op, OpAdaptor adaptor,
-      mlir::ConversionPatternRewriter &rewriter) const final override {
+  mlir::LogicalResult
+  matchAndRewrite(mlir::lang::FuncOp op, OpAdaptor adaptor,
+                  mlir::ConversionPatternRewriter &rewriter) const final {
+    LangToLLVMTypeConverter typeConverter(op.getContext());
+    auto func_type = op.getFunctionType();
+    auto input_types = func_type.getInputs();
+    auto result_types = func_type.getResults();
+    mlir::SmallVector<mlir::Type, 4> convertedInputTypes;
+    mlir::SmallVector<mlir::Type, 4> convertedResultTypes;
+    for (mlir::Type type : input_types) {
+      mlir::Type convertedType = typeConverter.convertType(type);
+      if (!convertedType) {
+        return rewriter.notifyMatchFailure(op, "failed to convert input type");
+      }
+      convertedInputTypes.push_back(convertedType);
+    }
+
+    for (mlir::Type type : result_types) {
+      mlir::Type convertedType = typeConverter.convertType(type);
+      if (!convertedType) {
+        return rewriter.notifyMatchFailure(op, "failed to convert result type");
+      }
+      convertedResultTypes.push_back(convertedType);
+    }
+    auto convertedType = mlir::FunctionType::get(
+        op.getContext(), convertedInputTypes, convertedResultTypes);
     auto func = rewriter.create<mlir::func::FuncOp>(op.getLoc(), op.getName(),
-                                                    op.getFunctionType());
+                                                    convertedType);
     rewriter.inlineRegionBefore(op.getRegion(), func.getBody(), func.end());
     rewriter.eraseOp(op);
     return mlir::success();
@@ -68,12 +91,29 @@ struct FuncOpLowering : public mlir::OpConversionPattern<mlir::lang::FuncOp> {
 struct CallOpLowering : public mlir::OpConversionPattern<mlir::lang::CallOp> {
   using OpConversionPattern<mlir::lang::CallOp>::OpConversionPattern;
 
-  mlir::LogicalResult matchAndRewrite(
-      mlir::lang::CallOp op, OpAdaptor adaptor,
-      mlir::ConversionPatternRewriter &rewriter) const final override {
+  mlir::LogicalResult
+  matchAndRewrite(mlir::lang::CallOp op, OpAdaptor adaptor,
+                  mlir::ConversionPatternRewriter &rewriter) const final {
     auto call = rewriter.create<mlir::func::CallOp>(
         op.getLoc(), op.getCalleeAttr(), op.getResultTypes(), op.getOperands());
     rewriter.replaceOp(op, call);
+    return mlir::success();
+  }
+};
+
+struct UndefOpLowering : public mlir::OpConversionPattern<mlir::lang::UndefOp> {
+  using mlir::OpConversionPattern<mlir::lang::UndefOp>::OpConversionPattern;
+
+  mlir::LogicalResult
+  matchAndRewrite(mlir::lang::UndefOp op, OpAdaptor adaptor,
+                  mlir::ConversionPatternRewriter &rewriter) const final {
+    LangToLLVMTypeConverter typeConverter(op.getContext());
+    mlir::Type type = op.getType();
+    auto new_type = typeConverter.convertType(type);
+    if (!new_type) {
+      return rewriter.notifyMatchFailure(op, "failed to convert type");
+    }
+    rewriter.replaceOpWithNewOp<mlir::LLVM::UndefOp>(op, new_type);
     return mlir::success();
   }
 };
@@ -82,9 +122,9 @@ struct ReturnOpLowering
     : public mlir::OpConversionPattern<mlir::lang::ReturnOp> {
   using mlir::OpConversionPattern<mlir::lang::ReturnOp>::OpConversionPattern;
 
-  mlir::LogicalResult matchAndRewrite(
-      mlir::lang::ReturnOp op, OpAdaptor adaptor,
-      mlir::ConversionPatternRewriter &rewriter) const final override {
+  mlir::LogicalResult
+  matchAndRewrite(mlir::lang::ReturnOp op, OpAdaptor adaptor,
+                  mlir::ConversionPatternRewriter &rewriter) const final {
     rewriter.replaceOpWithNewOp<mlir::func::ReturnOp>(op,
                                                       adaptor.getOperands());
     return mlir::success();
@@ -95,9 +135,9 @@ struct TypeConstOpLowering
     : public mlir::OpConversionPattern<mlir::lang::TypeConstOp> {
   using mlir::OpConversionPattern<mlir::lang::TypeConstOp>::OpConversionPattern;
 
-  mlir::LogicalResult matchAndRewrite(
-      mlir::lang::TypeConstOp op, OpAdaptor adaptor,
-      mlir::ConversionPatternRewriter &rewriter) const final override {
+  mlir::LogicalResult
+  matchAndRewrite(mlir::lang::TypeConstOp op, OpAdaptor adaptor,
+                  mlir::ConversionPatternRewriter &rewriter) const final {
     rewriter.eraseOp(op);
     return mlir::success();
   }
@@ -107,11 +147,44 @@ struct ConstantOpLowering
     : public mlir::OpConversionPattern<mlir::lang::ConstantOp> {
   using mlir::OpConversionPattern<mlir::lang::ConstantOp>::OpConversionPattern;
 
-  mlir::LogicalResult matchAndRewrite(
-      mlir::lang::ConstantOp op, OpAdaptor adaptor,
-      mlir::ConversionPatternRewriter &rewriter) const final override {
+  mlir::LogicalResult
+  matchAndRewrite(mlir::lang::ConstantOp op, OpAdaptor adaptor,
+                  mlir::ConversionPatternRewriter &rewriter) const final {
     rewriter.replaceOpWithNewOp<mlir::arith::ConstantOp>(
         op, adaptor.getValue().getType(), adaptor.getValue());
+    return mlir::success();
+  }
+};
+
+struct AssignOpLowering
+    : public mlir::OpConversionPattern<mlir::lang::AssignOp> {
+  using mlir::OpConversionPattern<mlir::lang::AssignOp>::OpConversionPattern;
+
+  mlir::LogicalResult
+  matchAndRewrite(mlir::lang::AssignOp op, OpAdaptor adaptor,
+                  mlir::ConversionPatternRewriter &rewriter) const final {
+    mlir::Value lhs = adaptor.getTarget();
+    mlir::Value rhs = adaptor.getValue();
+
+    // Lower to LLVM
+    LangToLLVMTypeConverter typeConverter(op.getContext());
+    mlir::Type lhsType = lhs.getType();
+    mlir::Type rhsType = rhs.getType();
+    mlir::Type convertedLhsType = typeConverter.convertType(lhsType);
+    mlir::Type convertedRhsType = typeConverter.convertType(rhsType);
+
+    if (!convertedLhsType || !convertedRhsType) {
+      return rewriter.notifyMatchFailure(op, "failed to convert types");
+    }
+    if (convertedRhsType != convertedLhsType) {
+      // Insert a cast if types differ
+      rhs = rewriter
+                .create<mlir::UnrealizedConversionCastOp>(op.getLoc(),
+                                                          convertedLhsType, rhs)
+                .getResult(0);
+    }
+    // replace lhs with rhs
+    rewriter.replaceOp(op, rhs);
     return mlir::success();
   }
 };
@@ -121,9 +194,9 @@ struct StructAccessOpLowering
   using mlir::OpConversionPattern<
       mlir::lang::StructAccessOp>::OpConversionPattern;
 
-  mlir::LogicalResult matchAndRewrite(
-      mlir::lang::StructAccessOp op, OpAdaptor adaptor,
-      mlir::ConversionPatternRewriter &rewriter) const final override {
+  mlir::LogicalResult
+  matchAndRewrite(mlir::lang::StructAccessOp op, OpAdaptor adaptor,
+                  mlir::ConversionPatternRewriter &rewriter) const final {
     auto typeConverter = LangToLLVMTypeConverter(getContext());
     mlir::Type convertedStructType =
         typeConverter.convertType(op.getInput().getType());
@@ -160,7 +233,7 @@ struct ResolveCastPattern
 
   mlir::LogicalResult
   matchAndRewrite(mlir::UnrealizedConversionCastOp castOp, OpAdaptor adaptor,
-                  mlir::ConversionPatternRewriter &rewriter) const override {
+                  mlir::ConversionPatternRewriter &rewriter) const final {
     LangToLLVMTypeConverter typeConverter(castOp.getContext());
     if (castOp.getNumOperands() != 1) {
       return rewriter.notifyMatchFailure(castOp, "expected one operand");
@@ -218,9 +291,9 @@ struct CreateStructOpLowering
                          mlir::MLIRContext *context)
       : OpConversionPattern<mlir::lang::CreateStructOp>(typeConverter,
                                                         context) {}
-  mlir::LogicalResult matchAndRewrite(
-      mlir::lang::CreateStructOp op, OpAdaptor adaptor,
-      mlir::ConversionPatternRewriter &rewriter) const final override {
+  mlir::LogicalResult
+  matchAndRewrite(mlir::lang::CreateStructOp op, OpAdaptor adaptor,
+                  mlir::ConversionPatternRewriter &rewriter) const final {
     const LangToLLVMTypeConverter *converter =
         static_cast<const LangToLLVMTypeConverter *>(this->getTypeConverter());
     mlir::Type convertedType = converter->convertType(op.getType());
@@ -272,9 +345,9 @@ struct VarDeclOpLowering
                     mlir::MLIRContext *context)
       : OpConversionPattern<mlir::lang::VarDeclOp>(typeConverter, context) {}
 
-  mlir::LogicalResult matchAndRewrite(
-      mlir::lang::VarDeclOp op, OpAdaptor adaptor,
-      mlir::ConversionPatternRewriter &rewriter) const final override {
+  mlir::LogicalResult
+  matchAndRewrite(mlir::lang::VarDeclOp op, OpAdaptor adaptor,
+                  mlir::ConversionPatternRewriter &rewriter) const final {
 
     mlir::Type varType = op.getVarType().value_or(mlir::Type());
 
@@ -335,7 +408,7 @@ struct StringConstantOpLowering
 
   mlir::LogicalResult
   matchAndRewrite(mlir::lang::StringConstOp op, OpAdaptor adaptor,
-                  mlir::ConversionPatternRewriter &rewriter) const override {
+                  mlir::ConversionPatternRewriter &rewriter) const final {
     auto loc = op.getLoc();
     mlir::StringRef value = op.getValue();
 
@@ -385,7 +458,7 @@ struct PrintOpLowering : public mlir::OpConversionPattern<mlir::lang::PrintOp> {
 
   mlir::LogicalResult
   matchAndRewrite(mlir::lang::PrintOp op, OpAdaptor adaptor,
-                  mlir::ConversionPatternRewriter &rewriter) const override {
+                  mlir::ConversionPatternRewriter &rewriter) const final {
 
     // Get the printf function
     auto module = op->getParentOfType<mlir::ModuleOp>();
@@ -525,11 +598,11 @@ void LangToAffineLoweringPass::runOnOperation() {
 
   mlir::RewritePatternSet patterns(&getContext());
   patterns.add<CreateStructOpLowering>(typeConverter, &getContext());
-  patterns
-      .add<FuncOpLowering, CallOpLowering, ReturnOpLowering, VarDeclOpLowering,
-           TypeConstOpLowering, StructAccessOpLowering, ResolveCastPattern,
-           StringConstantOpLowering, ConstantOpLowering, PrintOpLowering>(
-          &getContext());
+  patterns.add<FuncOpLowering, CallOpLowering, ReturnOpLowering,
+               VarDeclOpLowering, TypeConstOpLowering, StructAccessOpLowering,
+               ResolveCastPattern, AssignOpLowering, StringConstantOpLowering,
+               ConstantOpLowering, UndefOpLowering, PrintOpLowering>(
+      &getContext());
 
   // Apply partial conversion.
   if (failed(

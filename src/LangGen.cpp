@@ -2,7 +2,6 @@
 #include "dialect/LangDialect.h"
 #include "dialect/LangOps.h"
 #include "mlir/AsmParser/AsmParser.h"
-#include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "mlir/IR/Builders.h"
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/IR/Diagnostics.h"
@@ -128,9 +127,30 @@ private:
     }
 
     // Generate function body.
-    if (failed(langGen(func->body.get()))) {
-      func_op.erase();
-      return mlir::failure();
+    if (func->decl->extra.is_method && func->decl->name == "init") {
+      auto create_self = [this, &func]() {
+        // Create a new struct instance
+        auto struct_type = type_table.lookup("Self");
+        if (!struct_type) {
+          emitError(loc(func->token.span), "Self not found");
+          return;
+        }
+        auto struct_val = builder.create<mlir::lang::UndefOp>(
+            loc(func->token.span), struct_type);
+        if (failed(declare("self", struct_val))) {
+          emitError(loc(func->token.span), "redeclaration of self");
+        }
+      };
+      if (failed(langGen(func->body.get(), create_self))) {
+        func_op.erase();
+        return mlir::failure();
+      }
+    } else {
+
+      if (failed(langGen(func->body.get()))) {
+        func_op.erase();
+        return mlir::failure();
+      }
     }
 
     if (func_op.getBody().back().getOperations().empty() ||
@@ -214,7 +234,7 @@ private:
       }
       fieldTypes.push_back(type.value());
     }
-    auto struct_type = mlir::lang::StructType::get(fieldTypes, decl->name);
+    auto struct_type = mlir::lang::StructType::get(fieldTypes);
     // declare struct type
     if (failed(declare(decl->name, struct_type))) {
       emitError(span, "redeclaration of struct type");
@@ -232,8 +252,7 @@ private:
       }
       element_types.push_back(field_type.value());
     }
-    auto struct_type =
-        mlir::lang::StructType::get(element_types, struct_decl->name);
+    auto struct_type = mlir::lang::StructType::get(element_types);
     struct_table.insert(struct_decl->name, struct_decl);
     if (failed(declare(struct_decl->name, struct_type))) {
       return mlir::emitError(loc(struct_decl->token.span),
@@ -244,15 +263,35 @@ private:
   }
 
   mlir::LogicalResult langGen(ImplDecl *impl_decl) {
+    NEW_SCOPE()
     auto parent_type = type_table.lookup(impl_decl->type);
     if (!parent_type) {
       return mlir::emitError(loc(impl_decl->token.span),
                              "parent type not found");
     }
+    auto struct_type = mlir::dyn_cast<mlir::lang::StructType>(parent_type);
+    if (failed(declare("Self", struct_type))) {
+      return mlir::emitError(loc(impl_decl->token.span),
+                             "redeclaration of Self");
+    }
+    builder.create<mlir::lang::ImplDeclOp>(loc(impl_decl->token.span),
+                                           struct_type);
+    for (auto &method : impl_decl->functions) {
+      auto func = langGen(method.get());
+      if (failed(func)) {
+        return mlir::failure();
+      }
+    }
+
     return mlir::success();
   }
 
-  mlir::LogicalResult langGen(BlockExpression *block) {
+  mlir::LogicalResult langGen(BlockExpression *block,
+                              std::function<void()> callback = nullptr) {
+    NEW_SCOPE()
+    if (callback) {
+      callback();
+    }
     for (auto &stmt : block->statements) {
       if (failed(langGen(stmt.get()))) {
         return mlir::failure();
@@ -335,6 +374,7 @@ private:
     } else if (type->kind() == AstNodeKind::IdentifierType) {
       auto identifier_type = static_cast<IdentifierType *>(type);
       auto type_name = identifier_type->name;
+
       mlir::Operation *op = nullptr;
       if (current_function) {
         mlir::SymbolTable symbolTable(current_function->getOperation());
@@ -351,7 +391,8 @@ private:
       }
       return op->getResult(0).getType();
     }
-    return mlir::emitError(loc(type->token.span), "unsupported type");
+    return mlir::emitError(loc(type->token.span),
+                           "unsupported type " + to_string(type->kind()));
   }
 
   mlir::FailureOr<mlir::Value> langGen(Expression *expr) {
@@ -373,9 +414,34 @@ private:
       return langGen(e);
     } else if (auto e = dynamic_cast<IdentifierExpr *>(expr)) {
       return langGen(e);
+    } else if (auto e = dynamic_cast<AssignExpr *>(expr)) {
+      return langGen(e);
     }
     return mlir::emitError(loc(expr->token.span),
                            "unsupported expression " + to_string(expr->kind()));
+  }
+
+  mlir::FailureOr<mlir::Value> langGen(AssignExpr *expr) {
+    auto lhs = langGen(expr->lhs.get());
+    if (failed(lhs)) {
+      return mlir::failure();
+    }
+    auto rhs = langGen(expr->rhs.get());
+    if (failed(rhs)) {
+      return mlir::failure();
+    }
+    auto lhs_type = lhs.value().getType();
+    auto rhs_type = rhs.value().getType();
+    if (lhs_type != rhs_type) {
+      rhs = builder
+                .create<mlir::UnrealizedConversionCastOp>(loc(expr->token.span),
+                                                          lhs_type, rhs.value())
+                .getResult(0);
+    }
+    return builder
+        .create<mlir::lang::AssignOp>(loc(expr->token.span), lhs_type,
+                                      lhs.value(), rhs.value())
+        .getResult();
   }
 
   mlir::FailureOr<mlir::Value> langGen(IdentifierExpr *expr) {

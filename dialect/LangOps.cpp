@@ -161,10 +161,10 @@ mlir::OpFoldResult mlir::lang::ConstantOp::fold(FoldAdaptor adaptor) {
   return getValue();
 }
 
-//===----------------------------------------------------------------------===//
-// CallOp
-//===----------------------------------------------------------------------===//
-
 mlir::FunctionType CallOp::getCalleeType() {
   return FunctionType::get(getContext(), getOperandTypes(), getResultTypes());
+}
+
+mlir::OpFoldResult mlir::lang::UndefOp::fold(FoldAdaptor) {
+  return mlir::lang::UndefAttr::get(getContext());
 }
