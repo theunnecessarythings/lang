@@ -1108,5 +1108,12 @@ struct AstDumper {
 
   std::string to_string() const { return output_stream.str(); }
 
+  template <typename T> std::string dump(T *node) {
+    dump(node);
+    auto str = to_string();
+    output_stream.str("");
+    return str;
+  }
+
   AstDumper(bool skip_import = false) : skip_import(skip_import) {}
 };

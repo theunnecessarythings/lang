@@ -1,4 +1,3 @@
-
 #include "dialect/LangDialect.h"
 #include "dialect/LangOps.h"
 #include "mlir/Conversion/LLVMCommon/TypeConverter.h"
@@ -27,62 +26,87 @@
 
 class LangToLLVMTypeConverter : public mlir::LLVMTypeConverter {
 public:
-  explicit LangToLLVMTypeConverter(mlir::MLIRContext *ctx)
-      : LLVMTypeConverter(ctx) {}
+  LangToLLVMTypeConverter(mlir::MLIRContext *ctx) : LLVMTypeConverter(ctx) {
+    addConversion(
+        [&](mlir::lang::StructType struct_type) -> std::optional<mlir::Type> {
+          mlir::MLIRContext *ctx = struct_type.getContext();
+          mlir::SmallVector<mlir::Type, 4> elementTypes;
+          for (mlir::Type fieldType : struct_type.getElementTypes()) {
+            elementTypes.push_back(convertType(fieldType));
+          }
+          auto llvm_struct_type = mlir::LLVM::LLVMStructType::getIdentified(
+              ctx, struct_type.getName());
+          if (mlir::failed(
+                  llvm_struct_type.setBody(elementTypes, /*isPacked=*/false))) {
+            return std::nullopt;
+          }
+          return llvm_struct_type;
+        });
 
-  mlir::Type convertType(mlir::Type type) const {
-    if (auto IntLiteralType =
-            mlir::dyn_cast<mlir::lang::IntLiteralType>(type)) {
-      // NOTE: int literal type set to 64 bits for now
-      return mlir::IntegerType::get(type.getContext(), 64);
-    }
-    if (auto structType = mlir::dyn_cast<mlir::lang::StructType>(type)) {
-      mlir::SmallVector<mlir::Type, 4> elementTypes;
-      for (mlir::Type fieldType : structType.getElementTypes()) {
-        mlir::Type convertedType = this->convertType(fieldType);
-        if (!convertedType)
-          return nullptr;
-        elementTypes.push_back(convertedType);
-      }
-      return mlir::LLVM::LLVMStructType::getLiteral(type.getContext(),
-                                                    elementTypes);
-    }
-    return LLVMTypeConverter::convertType(type);
+    addConversion([](mlir::lang::IntLiteralType int_literal_type)
+                      -> std::optional<mlir::Type> {
+      return mlir::IntegerType::get(int_literal_type.getContext(), 64);
+      // int_literal_type.getWidth());
+    });
+
+    addConversion([](mlir::lang::PointerType ptr_type) {
+      return mlir::LLVM::LLVMPointerType::get(ptr_type.getContext());
+    });
+
+    addConversion(
+        [](mlir::lang::StringType string_type) -> std::optional<mlir::Type> {
+          return mlir::LLVM::LLVMPointerType::get(string_type.getContext());
+        });
   }
 };
 
 struct FuncOpLowering : public mlir::OpConversionPattern<mlir::lang::FuncOp> {
   using OpConversionPattern<mlir::lang::FuncOp>::OpConversionPattern;
 
+  FuncOpLowering(mlir::TypeConverter &typeConverter, mlir::MLIRContext *context)
+      : OpConversionPattern<mlir::lang::FuncOp>(typeConverter, context) {}
+
   mlir::LogicalResult
   matchAndRewrite(mlir::lang::FuncOp op, OpAdaptor adaptor,
                   mlir::ConversionPatternRewriter &rewriter) const final {
-    LangToLLVMTypeConverter typeConverter(op.getContext());
     auto func_type = op.getFunctionType();
     auto input_types = func_type.getInputs();
     auto result_types = func_type.getResults();
-    mlir::SmallVector<mlir::Type, 4> convertedInputTypes;
+    mlir::TypeConverter::SignatureConversion signatureConversion(
+        input_types.size());
     mlir::SmallVector<mlir::Type, 4> convertedResultTypes;
-    for (mlir::Type type : input_types) {
-      mlir::Type convertedType = typeConverter.convertType(type);
+
+    for (const auto &type : llvm::enumerate(input_types)) {
+      mlir::Type convertedType = getTypeConverter()->convertType(type.value());
       if (!convertedType) {
         return rewriter.notifyMatchFailure(op, "failed to convert input type");
       }
-      convertedInputTypes.push_back(convertedType);
+      signatureConversion.addInputs(type.index(), convertedType);
     }
 
     for (mlir::Type type : result_types) {
-      mlir::Type convertedType = typeConverter.convertType(type);
+      mlir::Type convertedType = getTypeConverter()->convertType(type);
       if (!convertedType) {
         return rewriter.notifyMatchFailure(op, "failed to convert result type");
       }
       convertedResultTypes.push_back(convertedType);
     }
-    auto convertedType = mlir::FunctionType::get(
-        op.getContext(), convertedInputTypes, convertedResultTypes);
-    auto func = rewriter.create<mlir::func::FuncOp>(op.getLoc(), op.getName(),
-                                                    convertedType);
-    rewriter.inlineRegionBefore(op.getRegion(), func.getBody(), func.end());
+
+    auto convertedFuncType = mlir::FunctionType::get(
+        op.getContext(), signatureConversion.getConvertedTypes(),
+        convertedResultTypes);
+
+    auto newFuncOp = rewriter.create<mlir::func::FuncOp>(
+        op.getLoc(), op.getName(), convertedFuncType);
+
+    rewriter.inlineRegionBefore(op.getBody(), newFuncOp.getBody(),
+                                newFuncOp.end());
+
+    if (failed(rewriter.convertRegionTypes(&newFuncOp.getRegion(),
+                                           *this->getTypeConverter(),
+                                           &signatureConversion))) {
+      return rewriter.notifyMatchFailure(op, "failed to convert region types");
+    }
     rewriter.eraseOp(op);
     return mlir::success();
   }
@@ -104,16 +128,31 @@ struct CallOpLowering : public mlir::OpConversionPattern<mlir::lang::CallOp> {
 struct UndefOpLowering : public mlir::OpConversionPattern<mlir::lang::UndefOp> {
   using mlir::OpConversionPattern<mlir::lang::UndefOp>::OpConversionPattern;
 
+  UndefOpLowering(mlir::TypeConverter &typeConverter,
+                  mlir::MLIRContext *context)
+      : OpConversionPattern<mlir::lang::UndefOp>(typeConverter, context) {}
+
   mlir::LogicalResult
   matchAndRewrite(mlir::lang::UndefOp op, OpAdaptor adaptor,
                   mlir::ConversionPatternRewriter &rewriter) const final {
-    LangToLLVMTypeConverter typeConverter(op.getContext());
     mlir::Type type = op.getType();
-    auto new_type = typeConverter.convertType(type);
+    auto new_type = this->getTypeConverter()->convertType(type);
     if (!new_type) {
       return rewriter.notifyMatchFailure(op, "failed to convert type");
     }
-    rewriter.replaceOpWithNewOp<mlir::LLVM::UndefOp>(op, new_type);
+    // rewriter.replaceOpWithNewOp<mlir::LLVM::UndefOp>(op, new_type);
+    // allocate an llvm struct
+    auto llvmStructType = mlir::dyn_cast<mlir::LLVM::LLVMStructType>(new_type);
+    if (!llvmStructType) {
+      return rewriter.notifyMatchFailure(
+          op, "converted type is not an LLVM struct");
+    }
+    auto one_val = rewriter.create<mlir::arith::ConstantOp>(
+        op.getLoc(), rewriter.getI64Type(), rewriter.getI64IntegerAttr(1));
+    auto alloca_op = rewriter.create<mlir::LLVM::AllocaOp>(
+        op.getLoc(), mlir::LLVM::LLVMPointerType::get(op.getContext()),
+        llvmStructType, one_val);
+    rewriter.replaceOp(op, alloca_op);
     return mlir::success();
   }
 };
@@ -160,31 +199,49 @@ struct AssignOpLowering
     : public mlir::OpConversionPattern<mlir::lang::AssignOp> {
   using mlir::OpConversionPattern<mlir::lang::AssignOp>::OpConversionPattern;
 
+  AssignOpLowering(mlir::TypeConverter &typeConverter,
+                   mlir::MLIRContext *context)
+      : OpConversionPattern<mlir::lang::AssignOp>(typeConverter, context) {}
+
   mlir::LogicalResult
   matchAndRewrite(mlir::lang::AssignOp op, OpAdaptor adaptor,
                   mlir::ConversionPatternRewriter &rewriter) const final {
     mlir::Value lhs = adaptor.getTarget();
     mlir::Value rhs = adaptor.getValue();
 
-    // Lower to LLVM
-    LangToLLVMTypeConverter typeConverter(op.getContext());
-    mlir::Type lhsType = lhs.getType();
-    mlir::Type rhsType = rhs.getType();
-    mlir::Type convertedLhsType = typeConverter.convertType(lhsType);
-    mlir::Type convertedRhsType = typeConverter.convertType(rhsType);
+    // Ensure types are convertible
+    mlir::Type convertedLhsType =
+        this->getTypeConverter()->convertType(lhs.getType());
+    mlir::Type convertedRhsType =
+        this->getTypeConverter()->convertType(rhs.getType());
 
     if (!convertedLhsType || !convertedRhsType) {
       return rewriter.notifyMatchFailure(op, "failed to convert types");
     }
-    if (convertedRhsType != convertedLhsType) {
-      // Insert a cast if types differ
-      rhs = rewriter
-                .create<mlir::UnrealizedConversionCastOp>(op.getLoc(),
-                                                          convertedLhsType, rhs)
-                .getResult(0);
+    if (lhs.getDefiningOp<mlir::UnrealizedConversionCastOp>()) {
+      auto original_lhs =
+          lhs.getDefiningOp<mlir::UnrealizedConversionCastOp>().getOperand(0);
+      if (mlir::isa<mlir::LLVM::LLVMPointerType>(original_lhs.getType())) {
+        lhs = original_lhs;
+      }
     }
-    // replace lhs with rhs
-    rewriter.replaceOp(op, rhs);
+    if (rhs.getDefiningOp<mlir::UnrealizedConversionCastOp>()) {
+      auto original_rhs =
+          rhs.getDefiningOp<mlir::UnrealizedConversionCastOp>().getOperand(0);
+      if (mlir::isa<mlir::LLVM::LLVMPointerType>(original_rhs.getType())) {
+        rhs = original_rhs;
+      }
+    }
+    // Store the value in the lhs
+    if (auto memRefType = mlir::dyn_cast<mlir::MemRefType>(convertedLhsType)) {
+      auto storeOp = rewriter.create<mlir::memref::StoreOp>(
+          op.getLoc(), rhs, lhs, mlir::ValueRange{});
+      rewriter.replaceOp(op, storeOp);
+    } else {
+      rewriter.create<mlir::LLVM::StoreOp>(op.getLoc(), rhs, lhs);
+      rewriter.eraseOp(op);
+    }
+
     return mlir::success();
   }
 };
@@ -194,12 +251,18 @@ struct StructAccessOpLowering
   using mlir::OpConversionPattern<
       mlir::lang::StructAccessOp>::OpConversionPattern;
 
+  StructAccessOpLowering(mlir::TypeConverter &typeConverter,
+                         mlir::MLIRContext *context)
+      : OpConversionPattern<mlir::lang::StructAccessOp>(typeConverter,
+                                                        context) {}
+
   mlir::LogicalResult
   matchAndRewrite(mlir::lang::StructAccessOp op, OpAdaptor adaptor,
                   mlir::ConversionPatternRewriter &rewriter) const final {
-    auto typeConverter = LangToLLVMTypeConverter(getContext());
+    auto input = adaptor.getInput();
+
     mlir::Type convertedStructType =
-        typeConverter.convertType(op.getInput().getType());
+        this->getTypeConverter()->convertType(input.getType());
     if (!convertedStructType)
       return rewriter.notifyMatchFailure(op,
                                          "Failed to convert input struct type");
@@ -216,9 +279,27 @@ struct StructAccessOpLowering
     if (fieldIndex < 0 || static_cast<unsigned>(fieldIndex) >= numFields)
       return rewriter.notifyMatchFailure(op, "Field index out of bounds");
 
-    mlir::Value extractedValue = rewriter.create<mlir::LLVM::ExtractValueOp>(
-        op.getLoc(), llvmStructType.getBody()[fieldIndex], adaptor.getInput(),
-        fieldIndex);
+    if (adaptor.getInput().getDefiningOp<mlir::UnrealizedConversionCastOp>()) {
+      input = adaptor.getInput()
+                  .getDefiningOp<mlir::UnrealizedConversionCastOp>()
+                  .getInputs()[0];
+    }
+
+    // mlir::Value extractedValue = rewriter.create<mlir::LLVM::ExtractValueOp>(
+    //     op.getLoc(), llvmStructType.getBody()[fieldIndex],
+    //     adaptor.getInput(), fieldIndex);
+
+    auto zero_val = rewriter.create<mlir::arith::ConstantOp>(
+        op.getLoc(), rewriter.getI64Type(), rewriter.getI64IntegerAttr(0));
+    auto index_val = rewriter.create<mlir::arith::ConstantOp>(
+        op.getLoc(), rewriter.getI64Type(),
+        rewriter.getI64IntegerAttr(fieldIndex));
+
+    auto gep = rewriter.create<mlir::LLVM::GEPOp>(
+        op.getLoc(), mlir::LLVM::LLVMPointerType::get(op.getContext()),
+        llvmStructType, input, mlir::ValueRange{zero_val, index_val});
+    auto extractedValue = rewriter.create<mlir::LLVM::LoadOp>(
+        op.getLoc(), llvmStructType.getBody()[fieldIndex], gep);
 
     rewriter.replaceOp(op, extractedValue);
 
@@ -231,18 +312,35 @@ struct ResolveCastPattern
   using mlir::OpConversionPattern<
       mlir::UnrealizedConversionCastOp>::OpConversionPattern;
 
+  ResolveCastPattern(mlir::TypeConverter &typeConverter,
+                     mlir::MLIRContext *context)
+      : OpConversionPattern<mlir::UnrealizedConversionCastOp>(typeConverter,
+                                                              context) {}
+
   mlir::LogicalResult
   matchAndRewrite(mlir::UnrealizedConversionCastOp castOp, OpAdaptor adaptor,
                   mlir::ConversionPatternRewriter &rewriter) const final {
-    LangToLLVMTypeConverter typeConverter(castOp.getContext());
     if (castOp.getNumOperands() != 1) {
       return rewriter.notifyMatchFailure(castOp, "expected one operand");
     }
     mlir::Value original = castOp.getOperand(0);
     mlir::Type originalType = original.getType();
-    mlir::Type convertedType = typeConverter.convertType(originalType);
+    mlir::Type convertedType =
+        this->getTypeConverter()->convertType(originalType);
     mlir::Type targetType = castOp.getType(0);
 
+    llvm::errs() << "originalType: " << originalType << "\n";
+    llvm::errs() << "convertedType: " << convertedType << "\n";
+    llvm::errs() << "targetType: " << targetType << "\n";
+
+    if (mlir::isa<mlir::LLVM::LLVMPointerType>(convertedType) &&
+        mlir::isa<mlir::LLVM::LLVMStructType>(targetType)) {
+      // Load the value from the pointer
+      auto loadOp = rewriter.create<mlir::LLVM::LoadOp>(castOp.getLoc(),
+                                                        targetType, original);
+      rewriter.replaceOp(castOp, loadOp.getResult());
+      return mlir::success();
+    }
     // if targetType and convertedType are the same, we can erase the cast
     if (targetType == convertedType) {
       rewriter.replaceOp(castOp, original);
@@ -294,22 +392,22 @@ struct CreateStructOpLowering
   mlir::LogicalResult
   matchAndRewrite(mlir::lang::CreateStructOp op, OpAdaptor adaptor,
                   mlir::ConversionPatternRewriter &rewriter) const final {
-    const LangToLLVMTypeConverter *converter =
-        static_cast<const LangToLLVMTypeConverter *>(this->getTypeConverter());
-    mlir::Type convertedType = converter->convertType(op.getType());
+    mlir::Type convertedType =
+        this->getTypeConverter()->convertType(op.getType());
     if (!convertedType) {
       llvm::errs() << "Failed to convert type: " << op.getType() << "\n";
       return rewriter.notifyMatchFailure(op, "Failed to convert result type");
     }
+    auto one_val = rewriter.create<mlir::arith::ConstantOp>(
+        op.getLoc(), rewriter.getI64Type(), rewriter.getI64IntegerAttr(1));
+    auto zero_val = rewriter.create<mlir::arith::ConstantOp>(
+        op.getLoc(), rewriter.getI64Type(), rewriter.getI64IntegerAttr(0));
+    auto ptr_type = mlir::LLVM::LLVMPointerType::get(op.getContext());
+    auto alloca_op = rewriter.create<mlir::LLVM::AllocaOp>(
+        op.getLoc(), ptr_type, convertedType, one_val);
 
-    // Create an 'undef' value of the target struct type
-    mlir::Value llvmUndef =
-        rewriter.create<mlir::LLVM::UndefOp>(op.getLoc(), convertedType);
-
-    // Insert each field into the struct using LLVM::InsertValueOp
-    mlir::Value structValue = llvmUndef;
+    // Insert each field into the struct using LLVM::StoreOp
     for (auto it : llvm::enumerate(adaptor.getFields())) {
-      unsigned index = it.index();
       mlir::Value field = it.value();
 
       // Optionally, convert the field type if necessary
@@ -318,21 +416,16 @@ struct CreateStructOpLowering
       if (!convertedFieldType)
         return rewriter.notifyMatchFailure(op, "Failed to convert field type");
 
-      if (convertedFieldType != fieldType) {
-        // Insert a cast if types differ
-        field = rewriter
-                    .create<mlir::UnrealizedConversionCastOp>(
-                        op.getLoc(), convertedFieldType, field)
-                    .getResult(0);
-      }
-
+      auto index_val = rewriter.create<mlir::arith::ConstantOp>(
+          op.getLoc(), rewriter.getI64Type(),
+          rewriter.getI64IntegerAttr(it.index()));
       // Insert the field into the struct
-      structValue = rewriter.create<mlir::LLVM::InsertValueOp>(
-          op.getLoc(), convertedType, structValue, field, index);
+      auto gep_op = rewriter.create<mlir::LLVM::GEPOp>(
+          op.getLoc(), ptr_type, convertedType, alloca_op,
+          mlir::ValueRange{zero_val, index_val});
+      rewriter.create<mlir::LLVM::StoreOp>(op.getLoc(), field, gep_op);
     }
-
-    // Replace the original operation with the constructed struct
-    rewriter.replaceOp(op, structValue);
+    rewriter.replaceOp(op, alloca_op);
     return mlir::success();
   }
 };
@@ -387,7 +480,7 @@ struct VarDeclOpLowering
     }
 
     if (mlir::isa<mlir::IntegerType, mlir::FloatType, mlir::VectorType,
-                  mlir::TensorType>(varType)) {
+                  mlir::TensorType, mlir::lang::IntLiteralType>(varType)) {
       if (!adaptor.getInitValue()) {
         auto zero = rewriter.getZeroAttr(varType);
         rewriter.replaceOpWithNewOp<mlir::arith::ConstantOp>(op, varType, zero);
@@ -456,6 +549,10 @@ struct StringConstantOpLowering
 struct PrintOpLowering : public mlir::OpConversionPattern<mlir::lang::PrintOp> {
   using OpConversionPattern<mlir::lang::PrintOp>::OpConversionPattern;
 
+  PrintOpLowering(mlir::TypeConverter &typeConverter,
+                  mlir::MLIRContext *context)
+      : OpConversionPattern<mlir::lang::PrintOp>(typeConverter, context) {}
+
   mlir::LogicalResult
   matchAndRewrite(mlir::lang::PrintOp op, OpAdaptor adaptor,
                   mlir::ConversionPatternRewriter &rewriter) const final {
@@ -466,8 +563,6 @@ struct PrintOpLowering : public mlir::OpConversionPattern<mlir::lang::PrintOp> {
 
     // Get the format string
     auto format_str = op.getFormatAttr().getValue();
-
-    auto operands = adaptor.getOperands();
 
     // Create a global string in the LLVM dialect
     static int formatStringCounter = 0;
@@ -481,22 +576,15 @@ struct PrintOpLowering : public mlir::OpConversionPattern<mlir::lang::PrintOp> {
     mlir::SmallVector<mlir::Type, 4> argTypes;
     argTypes.push_back(format_str_val.getType());
 
-    LangToLLVMTypeConverter typeConverter(rewriter.getContext());
     for (mlir::Value operand : adaptor.getOperands()) {
-      mlir::Type llvmType = typeConverter.convertType(operand.getType());
+      mlir::Type llvmType =
+          this->getTypeConverter()->convertType(operand.getType());
       if (!llvmType)
         return op.emitError("failed to convert operand type");
-
-      if (auto castOp =
-              operand.getDefiningOp<mlir::UnrealizedConversionCastOp>()) {
-        operand = castOp.getResult(0);
-      }
-
       args.push_back(operand);
       argTypes.push_back(llvmType);
     }
 
-    args.append(operands.begin(), operands.end());
     auto i32Ty = rewriter.getIntegerType(32);
     auto funcType = mlir::LLVM::LLVMFunctionType::get(i32Ty, argTypes,
                                                       /*isVarArg=*/true);
@@ -583,6 +671,20 @@ struct LangToAffineLoweringPass
 };
 } // namespace
 
+namespace {
+struct ResolveCastPatternPass
+    : public mlir::PassWrapper<ResolveCastPatternPass,
+                               mlir::OperationPass<mlir::ModuleOp>> {
+  MLIR_DEFINE_EXPLICIT_INTERNAL_INLINE_TYPE_ID(ResolveCastPatternPass)
+
+  void getDependentDialects(mlir::DialectRegistry &registry) const override {
+    registry.insert<mlir::affine::AffineDialect, mlir::func::FuncDialect,
+                    mlir::memref::MemRefDialect>();
+  }
+  void runOnOperation() final;
+};
+} // namespace
+
 void LangToAffineLoweringPass::runOnOperation() {
   mlir::ConversionTarget target(getContext());
   LangToLLVMTypeConverter typeConverter(&getContext());
@@ -597,18 +699,48 @@ void LangToAffineLoweringPass::runOnOperation() {
   target.addIllegalOp<mlir::UnrealizedConversionCastOp>();
 
   mlir::RewritePatternSet patterns(&getContext());
-  patterns.add<CreateStructOpLowering>(typeConverter, &getContext());
-  patterns.add<FuncOpLowering, CallOpLowering, ReturnOpLowering,
-               VarDeclOpLowering, TypeConstOpLowering, StructAccessOpLowering,
-               ResolveCastPattern, AssignOpLowering, StringConstantOpLowering,
-               ConstantOpLowering, UndefOpLowering, PrintOpLowering>(
-      &getContext());
+  patterns.add<CreateStructOpLowering, FuncOpLowering, AssignOpLowering,
+               ResolveCastPattern, UndefOpLowering, PrintOpLowering,
+               StructAccessOpLowering>(typeConverter, &getContext());
+
+  patterns
+      .add<CallOpLowering, ReturnOpLowering, VarDeclOpLowering,
+           TypeConstOpLowering, StringConstantOpLowering, ConstantOpLowering>(
+          &getContext());
 
   // Apply partial conversion.
-  if (failed(
-          applyPartialConversion(getOperation(), target, std::move(patterns))))
+  if (failed(mlir::applyPartialConversion(getOperation(), target,
+                                          std::move(patterns))))
     signalPassFailure();
 }
+
+void ResolveCastPatternPass::runOnOperation() {
+  mlir::ConversionTarget target(getContext());
+  LangToLLVMTypeConverter typeConverter(&getContext());
+
+  target
+      .addLegalDialect<mlir::affine::AffineDialect, mlir::BuiltinDialect,
+                       mlir::arith::ArithDialect, mlir::func::FuncDialect,
+                       mlir::memref::MemRefDialect, mlir::LLVM::LLVMDialect>();
+
+  // Mark all operations illegal.
+  target.addIllegalDialect<mlir::lang::LangDialect>();
+  target.addIllegalOp<mlir::UnrealizedConversionCastOp>();
+
+  mlir::RewritePatternSet patterns(&getContext());
+  patterns.add<ResolveCastPattern>(typeConverter, &getContext());
+
+  // Apply partial conversion.
+  if (failed(mlir::applyPartialConversion(getOperation(), target,
+                                          std::move(patterns))))
+    signalPassFailure();
+}
+
 std::unique_ptr<mlir::Pass> mlir::lang::createLowerToAffinePass() {
   return std::make_unique<LangToAffineLoweringPass>();
+}
+
+std::unique_ptr<mlir::Pass>
+mlir::lang::createUnrealizedConversionCastResolverPass() {
+  return std::make_unique<ResolveCastPatternPass>();
 }

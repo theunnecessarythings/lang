@@ -226,6 +226,7 @@ int dumpMLIRLang() {
   mlir::OpPassManager &castPM = pm.nest<mlir::lang::FuncOp>();
   castPM.addPass(mlir::lang::createLiteralCastPass());
   pm.addPass(mlir::lang::createLowerToAffinePass());
+  pm.addPass(mlir::lang::createUnrealizedConversionCastResolverPass());
   pm.addPass(mlir::createLowerAffinePass());
 
   // Add a few cleanups post lowering.

@@ -6,6 +6,17 @@
 
 #define GET_ATTRDEF_CLASSES
 #include "dialect/LangOpsAttrDefs.cpp.inc"
+//===----------------------------------------------------------------------===//
+// Lang dialect.
+//===----------------------------------------------------------------------===//
+template <> struct mlir::FieldParser<llvm::APInt> {
+  static FailureOr<llvm::APInt> parse(AsmParser &parser) {
+    llvm::APInt value;
+    if (parser.parseInteger(value))
+      return failure();
+    return value;
+  }
+};
 
 void mlir::lang::LangDialect::initialize() {
   addOperations<
@@ -22,15 +33,16 @@ void mlir::lang::LangDialect::initialize() {
 #define GET_TYPEDEF_LIST
 #include "dialect/LangOpsTypes.cpp.inc"
       >();
-  addTypes<StructType, TypeValueType, StringType, IntLiteralType>();
+  addTypes<StructType, TypeValueType, StringType, PointerType,
+           IntLiteralType>();
   getContext()->getOrLoadDialect<mlir::LLVM::LLVMDialect>();
 }
 
 mlir::Type mlir::lang::LangDialect::parseType(DialectAsmParser &parser) const {
   // Attempt to parse 'typevalue' type
   mlir::StringRef type_name;
-  if (parser.parseOptionalKeyword(
-          &type_name, {"typevalue", "struct", "string", "int_literal"})) {
+  if (parser.parseOptionalKeyword(&type_name, {"typevalue", "struct", "string",
+                                               "int_literal", "ptr"})) {
     return Type();
   }
   if (type_name == "typevalue") {
@@ -47,6 +59,10 @@ mlir::Type mlir::lang::LangDialect::parseType(DialectAsmParser &parser) const {
   // Attempt to parse 'int_literal' type
   else if (type_name == "int_literal") {
     return IntLiteralType::get(getContext());
+  }
+
+  else if (type_name == "ptr") {
+    return PointerType::get(getContext());
   }
 
   // Attempt to parse 'struct' type, with a string attribute name
@@ -69,7 +85,12 @@ mlir::Type mlir::lang::LangDialect::parseType(DialectAsmParser &parser) const {
     if (parser.parseGreater())
       return Type();
 
-    return StructType::get(elementTypes);
+    // Parse the struct name.
+    llvm::StringRef name;
+    if (parser.parseKeyword(&name))
+      return Type();
+
+    return StructType::get(elementTypes, name);
   }
 
   else if (type_name == "string") {
@@ -98,11 +119,13 @@ void mlir::lang::LangDialect::printType(Type type,
     StructType structType = mlir::cast<StructType>(type);
     printer << "struct<";
     llvm::interleaveComma(structType.getElementTypes(), printer);
-    printer << '>';
+    printer << '>' << structType.getName();
   } else if (mlir::isa<StringType>(type)) {
     printer << "string";
   } else if (mlir::isa<IntLiteralType>(type)) {
     printer << "int_literal";
+  } else if (mlir::isa<PointerType>(type)) {
+    printer << "ptr";
   } else
     llvm_unreachable("unknown type in LangDialect");
 }
@@ -146,6 +169,8 @@ mlir::OpFoldResult mlir::lang::TypeConstOp::fold(FoldAdaptor adaptor) {
 llvm::ArrayRef<mlir::Type> mlir::lang::StructType::getElementTypes() {
   return getImpl()->elementTypes;
 }
+
+llvm::StringRef mlir::lang::StructType::getName() { return getImpl()->name; }
 
 size_t mlir::lang::StructType::getNumElementTypes() {
   return getElementTypes().size();

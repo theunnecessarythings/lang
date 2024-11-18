@@ -90,9 +90,24 @@ private:
   llvm::ScopedHashTable<mlir::lang::StructType, StringRef> struct_name_table;
   llvm::StringMap<mlir::lang::FuncOp> function_map;
 
+  AstDumper dumper;
+
   mlir::Location loc(const TokenSpan &loc) {
     return mlir::FileLineColLoc::get(builder.getStringAttr("temp.lang"),
                                      loc.line_no, loc.col_start);
+  }
+
+  std::string mangleFunctionName(llvm::StringRef name,
+                                 llvm::ArrayRef<mlir::Type> params) {
+    std::string mangled_name = name.str();
+    llvm::raw_string_ostream rso(mangled_name);
+    for (auto &param : params) {
+      // mangled_name += "_";
+      // mangled_name += dumper.dump<Type>(param.get()->type.get());
+      rso << "_";
+      rso << param;
+    }
+    return rso.str();
   }
 
   mlir::LogicalResult langGen(Function *func) {
@@ -109,11 +124,24 @@ private:
             ? mlir::TypeRange()
             : mlir::TypeRange(getType(func->decl->return_type.get()).value());
 
-    auto func_type = builder.getFunctionType(param_types.value(), return_types);
-    auto func_op = builder.create<mlir::lang::FuncOp>(
-        loc(func->token.span), func->decl->name, func_type);
+    // if function return type is a StructType, then add it as a function
+    // parameter and remove the return type
+    bool has_struct_return_type =
+        return_types.size() == 1 &&
+        mlir::isa<mlir::lang::StructType>(return_types[0]);
+    if (has_struct_return_type) {
+      param_types->push_back(
+          mlir::lang::PointerType::get(builder.getContext()));
+      return_types = mlir::TypeRange();
+    }
 
-    function_map[func->decl->name] = func_op;
+    // auto func_name = mangleFunctionName(func->decl.get());
+    auto func_name = mangleFunctionName(func->decl->name, param_types.value());
+    auto func_type = builder.getFunctionType(param_types.value(), return_types);
+    auto func_op = builder.create<mlir::lang::FuncOp>(loc(func->token.span),
+                                                      func_name, func_type);
+
+    function_map[func_name] = func_op;
     current_function = &func_op;
 
     auto entry_block = func_op.addEntryBlock();
@@ -159,6 +187,19 @@ private:
       builder.setInsertionPointToEnd(&func_op.getBody().back());
       builder.create<mlir::lang::ReturnOp>(loc(func->token.span));
     }
+
+    if (has_struct_return_type) {
+      // remove the return operand and store it in the last argument
+      auto return_val = func_op.getBody().back().getTerminator()->getOperand(0);
+      auto struct_val = func_op.getBody().back().getArgument(
+          func_op.getBody().back().getNumArguments() - 1);
+      auto return_op = func_op.getBody().back().getTerminator();
+      builder.create<mlir::lang::AssignOp>(
+          loc(func->token.span), struct_val.getType(), struct_val, return_val);
+      return_op->erase();
+      builder.create<mlir::lang::ReturnOp>(loc(func->token.span));
+    }
+
     current_function = nullptr;
     return mlir::success();
   }
@@ -166,10 +207,6 @@ private:
   llvm::LogicalResult
   declare_parameters(std::vector<std::unique_ptr<Parameter>> &params,
                      mlir::ArrayRef<mlir::BlockArgument> args) {
-    if (params.size() != args.size()) {
-      the_module.emitError("parameter size mismatch");
-      return mlir::failure();
-    }
 
     for (int i = 0; i < (int)params.size(); i++) {
       // Assume identifier pattern
@@ -210,14 +247,14 @@ private:
     }
 
     // NOTE: Assuming only one return value for now
-    auto return_type = current_function->getFunctionType().getResult(0);
-    if (value.value().getType() != return_type) {
-      // insert cast
-      value = builder
-                  .create<mlir::UnrealizedConversionCastOp>(loc, return_type,
-                                                            value.value())
-                  .getResult(0);
-    }
+    // auto return_type = current_function->getFunctionType().getResult(0);
+    // if (value.value().getType() != return_type) {
+    //   // insert cast
+    //   value = builder
+    //               .create<mlir::UnrealizedConversionCastOp>(loc, return_type,
+    //                                                         value.value())
+    //               .getResult(0);
+    // }
 
     builder.create<mlir::lang::ReturnOp>(loc, value.value());
     return value;
@@ -234,7 +271,7 @@ private:
       }
       fieldTypes.push_back(type.value());
     }
-    auto struct_type = mlir::lang::StructType::get(fieldTypes);
+    auto struct_type = mlir::lang::StructType::get(fieldTypes, decl->name);
     // declare struct type
     if (failed(declare(decl->name, struct_type))) {
       emitError(span, "redeclaration of struct type");
@@ -252,7 +289,8 @@ private:
       }
       element_types.push_back(field_type.value());
     }
-    auto struct_type = mlir::lang::StructType::get(element_types);
+    auto struct_type =
+        mlir::lang::StructType::get(element_types, struct_decl->name);
     struct_table.insert(struct_decl->name, struct_decl);
     if (failed(declare(struct_decl->name, struct_type))) {
       return mlir::emitError(loc(struct_decl->token.span),
@@ -432,12 +470,13 @@ private:
     }
     auto lhs_type = lhs.value().getType();
     auto rhs_type = rhs.value().getType();
-    if (lhs_type != rhs_type) {
-      rhs = builder
-                .create<mlir::UnrealizedConversionCastOp>(loc(expr->token.span),
-                                                          lhs_type, rhs.value())
-                .getResult(0);
-    }
+    // if (lhs_type != rhs_type) {
+    //   rhs = builder
+    //             .create<mlir::UnrealizedConversionCastOp>(loc(expr->token.span),
+    //                                                       lhs_type,
+    //                                                       rhs.value())
+    //             .getResult(0);
+    // }
     return builder
         .create<mlir::lang::AssignOp>(loc(expr->token.span), lhs_type,
                                       lhs.value(), rhs.value())
@@ -462,22 +501,34 @@ private:
 
     // get arguments
     llvm::SmallVector<mlir::Value, 4> args;
+    llvm::SmallVector<mlir::Type, 4> argTypes;
     for (auto &arg : expr->arguments) {
       auto arg_value = langGen(arg.get());
       if (failed(arg_value)) {
         return mlir::failure();
       }
-      // add an unrealized conversion cast
-      arg_value = builder
-                      .create<mlir::UnrealizedConversionCastOp>(
-                          loc(arg->token.span), arg_value.value().getType(),
-                          arg_value.value())
-                      .getResult(0);
       args.push_back(arg_value.value());
+      argTypes.push_back(arg_value.value().getType());
+    }
+    auto func_name = mangleFunctionName(expr->callee, argTypes);
+    // if return type is a struct type, then create a struct instance
+    // and pass it as an argument
+    auto func_op = function_map[expr->callee];
+    if (func_op) {
+      auto func_type = func_op.getFunctionType();
+      mlir::Type return_type = nullptr;
+      if (func_type && func_type.getNumResults() == 1) {
+        return_type = func_type.getResult(0);
+      }
+      if (return_type && mlir::isa<mlir::lang::StructType>(return_type)) {
+        auto struct_type = mlir::cast<mlir::lang::StructType>(return_type);
+        auto struct_instance = builder.create<mlir::lang::UndefOp>(
+            loc(expr->token.span), struct_type);
+        args.push_back(struct_instance.getResult());
+      }
     }
 
-    auto &func_name = expr->callee;
-    if (func_name == "print") {
+    if (expr->callee == "print") {
       if (args.size() < 1)
         return mlir::emitError(loc(expr->token.span),
                                "print function expects 1 argument");
@@ -489,7 +540,8 @@ private:
                                "print function expects a string argument");
       auto format_str =
           std::get<std::string>(static_cast<LiteralExpr *>(arg0)->value);
-      format_str = format_str.substr(1, format_str.size() - 2) + '\n';
+      format_str = format_str.substr(1, format_str.size() - 2) + '\n' + '\0';
+      args.front().getDefiningOp()->erase();
       mlir::ValueRange rest_args = llvm::ArrayRef(args).drop_front();
       builder.create<mlir::lang::PrintOp>(loc(expr->token.span), format_str,
                                           rest_args);
@@ -600,18 +652,19 @@ private:
   mlir::FailureOr<mlir::Value> langGen(LiteralExpr *literal) {
     if (literal->type == LiteralExpr::LiteralType::Int) {
       // Create an IntegerLiteral struct instance
-      auto struct_type = type_table.lookup("IntLiteral");
+      // auto struct_type = type_table.lookup("IntLiteral");
       mlir::TypedAttr attr = builder.getIntegerAttr(
           builder.getIntegerType(64), std::get<int>(literal->value));
       auto field_value = builder
                              .create<mlir::lang::ConstantOp>(
                                  loc(literal->token.span), attr.getType(), attr)
                              .getResult();
-      return builder
-          .create<mlir::lang::CreateStructOp>(loc(literal->token.span),
-                                              struct_type,
-                                              mlir::ValueRange{field_value})
-          .getResult();
+      return field_value;
+      // return builder
+      //     .create<mlir::lang::CreateStructOp>(loc(literal->token.span),
+      //                                         struct_type,
+      //                                         mlir::ValueRange{field_value})
+      //     .getResult();
     } else if (literal->type == LiteralExpr::LiteralType::String) {
       return builder
           .create<mlir::lang::StringConstOp>(
