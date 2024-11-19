@@ -824,6 +824,29 @@ void AstDumper::dump(MLIRAttribute *attr) {
   output_stream << "@mlir_attr(" << attr->attribute << ")";
 }
 
+void AstDumper::dump(MLIROp *op) {
+  output_stream << "@mlir_op(" << op->op << ", [";
+  for (auto &operand : op->operands) {
+    dump(operand.get());
+    if (&operand != &op->operands.back())
+      output_stream << ", ";
+  }
+  output_stream << "], [";
+  for (auto &attr : op->attributes) {
+    dump(attr.get());
+    if (&attr != &op->attributes.back())
+      output_stream << ", ";
+  }
+  output_stream << "], [";
+  for (auto &result : op->result_types) {
+    dump(result.get());
+    if (&result != &op->result_types.back())
+      output_stream << ", ";
+  }
+  output_stream << "])";
+  output_stream << ")";
+}
+
 void AstDumper::dump(Pattern *pattern) {
   if (dynamic_cast<LiteralPattern *>(pattern)) {
     dump(static_cast<LiteralPattern *>(pattern));
@@ -948,7 +971,7 @@ void AstDumper::indent() {
 }
 
 std::string &to_string(AstNodeKind kind) {
-  static std::array<std::string, 84> names = {
+  static std::array<std::string, 85> names = {
       "Program",
       "Module",
       "Expression",
@@ -1028,6 +1051,7 @@ std::string &to_string(AstNodeKind kind) {
 
       "MLIRAttribute",
       "MLIRType",
+      "MLIROp",
 
       "InvalidNode",
       "InvalidExpression",

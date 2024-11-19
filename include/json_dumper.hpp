@@ -86,6 +86,7 @@ struct JsonDumper {
   void dump(TraitDecl *node);
   void dump(MLIRType *node);
   void dump(MLIRAttribute *node);
+  void dump(MLIROp *node);
 
   std::string token_kind_to_string(TokenKind kind);
   void dump(const TokenSpan &span);
@@ -257,6 +258,12 @@ private:
       return "VariantPattern";
     case AstNodeKind::TopLevelDeclStmt:
       return "TopLevelDeclStmt";
+    case AstNodeKind::MLIRType:
+      return "MLIRType";
+    case AstNodeKind::MLIRAttribute:
+      return "MLIRAttribute";
+    case AstNodeKind::MLIROp:
+      return "MLIROp";
     default:
       return "Unknown";
     }

@@ -98,6 +98,7 @@ struct Parser {
   parse_continue_expr(bool consume_continue = true);
   std::unique_ptr<Type> parse_mlir_type(bool consume_at = true);
   std::unique_ptr<MLIRAttribute> parse_mlir_attr();
+  std::unique_ptr<MLIROp> parse_mlir_op();
   std::variant<int, double>
   parse_number_literal(const std::basic_string<char> &bytes);
   Operator token_to_operator(const Token &op);

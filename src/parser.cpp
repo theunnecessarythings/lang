@@ -170,6 +170,9 @@ std::unique_ptr<Expression> Parser::nud(const Token &token) {
     if (is_peek(TokenKind::Identifier) &&
         lexer->token_to_string(peek().value()) == "mlir_attr") {
       return parse_mlir_attr();
+    } else if (is_peek(TokenKind::Identifier) &&
+               lexer->token_to_string(peek().value()) == "mlir_op") {
+      return parse_mlir_op();
     }
     return parse_mlir_type(false);
   }
@@ -877,6 +880,56 @@ std::unique_ptr<MLIRAttribute> Parser::parse_mlir_attr() {
   consume_kind(TokenKind::RParen);
   return std::make_unique<MLIRAttribute>(attr_str,
                                          lexer->token_to_string(attr_str));
+}
+
+// eg: @mlir_op("addi", [lhs, rhs], [attr1], ["i32"])
+std::unique_ptr<MLIROp> Parser::parse_mlir_op() {
+  // consume_kind(TokenKind::At);
+  auto mlir_op = consume_kind(TokenKind::Identifier);
+  if (lexer->token_to_string(mlir_op) != "mlir_op") {
+    context->diagnostics.report_error(
+        mlir_op, "Expected mlir_op found " + lexer->token_to_string(mlir_op));
+  }
+  consume_kind(TokenKind::LParen);
+  auto op_str = consume_kind(TokenKind::StringLiteral);
+  std::vector<std::unique_ptr<Expression>> operands;
+  std::vector<std::unique_ptr<MLIRAttribute>> attributes;
+  std::vector<std::unique_ptr<Type>> result_types;
+
+  consume_kind(TokenKind::Comma);
+  consume_kind(TokenKind::LBracket);
+  while (!is_peek(TokenKind::RBracket)) {
+    auto operand = parse_expr(0);
+    operands.emplace_back(std::move(operand));
+    if (is_peek(TokenKind::Comma)) {
+      consume();
+    }
+  }
+  consume_kind(TokenKind::RBracket);
+  consume_kind(TokenKind::Comma);
+  consume_kind(TokenKind::LBracket);
+  while (!is_peek(TokenKind::RBracket)) {
+    auto attr = parse_mlir_attr();
+    attributes.emplace_back(std::move(attr));
+    if (is_peek(TokenKind::Comma)) {
+      consume();
+    }
+  }
+  consume_kind(TokenKind::RBracket);
+  consume_kind(TokenKind::Comma);
+  consume_kind(TokenKind::LBracket);
+  while (!is_peek(TokenKind::RBracket)) {
+    auto type = parse_mlir_type();
+    result_types.emplace_back(std::move(type));
+    if (is_peek(TokenKind::Comma)) {
+      consume();
+    }
+  }
+  consume_kind(TokenKind::RBracket);
+  consume_kind(TokenKind::RParen);
+  return std::make_unique<MLIROp>(op_str, lexer->token_to_string(op_str),
+                                  std::move(operands), std::move(attributes),
+                                  std::move(result_types));
 }
 
 // tuple_type = '(' type (',' type)* ')'

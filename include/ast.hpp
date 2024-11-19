@@ -88,6 +88,7 @@ enum class AstNodeKind {
 
   MLIRAttribute,
   MLIRType,
+  MLIROp,
 
   InvalidNode,
   InvalidExpression,
@@ -778,6 +779,23 @@ struct MLIRType : public Type {
   AstNodeKind kind() const override { return AstNodeKind::MLIRType; }
 };
 
+struct MLIROp : public Expression {
+  std::string op;
+  std::vector<std::unique_ptr<Expression>> operands;
+  std::vector<std::unique_ptr<MLIRAttribute>> attributes;
+  std::vector<std::unique_ptr<Type>> result_types;
+
+  MLIROp(Token token, std::string op,
+         std::vector<std::unique_ptr<Expression>> operands,
+         std::vector<std::unique_ptr<MLIRAttribute>> attributes,
+         std::vector<std::unique_ptr<Type>> result_types)
+      : Expression(std::move(token)), op(std::move(op)),
+        operands(std::move(operands)), attributes(std::move(attributes)),
+        result_types(std::move(result_types)) {}
+
+  AstNodeKind kind() const override { return AstNodeKind::MLIROp; }
+};
+
 struct TupleType : public Type {
   std::vector<std::unique_ptr<Type>> elements;
 
@@ -1099,6 +1117,7 @@ struct AstDumper {
   void dump(TraitDecl *);
   void dump(MLIRAttribute *);
   void dump(MLIRType *);
+  void dump(MLIROp *);
 
   void indent();
 

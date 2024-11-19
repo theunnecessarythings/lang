@@ -1817,6 +1817,9 @@ void JsonDumper::dump(Expression *node) {
   case AstNodeKind::MLIRAttribute:
     dump(static_cast<MLIRAttribute *>(node));
     break;
+  case AstNodeKind::MLIROp:
+    dump(static_cast<MLIROp *>(node));
+    break;
   case AstNodeKind::Type:
     dump(static_cast<Type *>(node));
     break;
@@ -2357,6 +2360,65 @@ void JsonDumper::dump(MLIRAttribute *attr) {
   indent();
   output_stream << "\"attr\": ";
   output_stream << attr->attribute;
+
+  cur_indent--;
+  indent();
+  output_stream << "}";
+}
+
+void JsonDumper::dump(MLIROp *op) {
+  output_stream << "{\n";
+  cur_indent++;
+
+  indent();
+  output_stream << "\"kind\": \"MLIROp\",\n";
+  dumpNodeToken(op);
+
+  indent();
+  output_stream << "\"op\": ";
+  output_stream << op->op << ",\n";
+
+  indent();
+  output_stream << "\"operands\": [\n";
+  cur_indent++;
+  for (size_t i = 0; i < op->operands.size(); ++i) {
+    indent();
+    dump(op->operands[i].get());
+    if (i + 1 != op->operands.size())
+      output_stream << ",";
+    output_stream << "\n";
+  }
+  cur_indent--;
+  indent();
+  output_stream << "],\n";
+
+  indent();
+  output_stream << "\"result_types\": [\n";
+  cur_indent++;
+  for (size_t i = 0; i < op->result_types.size(); ++i) {
+    indent();
+    dump(op->result_types[i].get());
+    if (i + 1 != op->result_types.size())
+      output_stream << ",";
+    output_stream << "\n";
+  }
+  cur_indent--;
+  indent();
+  output_stream << "],\n";
+
+  indent();
+  output_stream << "\"attributes\": [\n";
+  cur_indent++;
+  for (size_t i = 0; i < op->attributes.size(); ++i) {
+    indent();
+    dump(op->attributes[i].get());
+    if (i + 1 != op->attributes.size())
+      output_stream << ",";
+    output_stream << "\n";
+  }
+  cur_indent--;
+  indent();
+  output_stream << "]\n";
 
   cur_indent--;
   indent();

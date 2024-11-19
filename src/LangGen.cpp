@@ -302,18 +302,25 @@ private:
 
   mlir::LogicalResult langGen(ImplDecl *impl_decl) {
     NEW_SCOPE()
+    mlir::OpBuilder::InsertionGuard guard(builder);
+
     auto parent_type = type_table.lookup(impl_decl->type);
     if (!parent_type) {
-      return mlir::emitError(loc(impl_decl->token.span),
-                             "parent type not found");
+      // check if its an mlir type
+      parent_type = mlir::parseType(impl_decl->type, builder.getContext());
+      if (!parent_type) {
+        return mlir::emitError(loc(impl_decl->token.span),
+                               "parent type not found");
+      }
+      type_table.insert(impl_decl->type, parent_type);
     }
-    auto struct_type = mlir::dyn_cast<mlir::lang::StructType>(parent_type);
-    if (failed(declare("Self", struct_type))) {
+    // auto struct_type = mlir::dyn_cast<mlir::lang::StructType>(parent_type);
+    if (failed(declare("Self", parent_type))) {
       return mlir::emitError(loc(impl_decl->token.span),
                              "redeclaration of Self");
     }
     builder.create<mlir::lang::ImplDeclOp>(loc(impl_decl->token.span),
-                                           struct_type);
+                                           parent_type);
     for (auto &method : impl_decl->functions) {
       auto func = langGen(method.get());
       if (failed(func)) {
@@ -420,12 +427,12 @@ private:
       }
       if (!op) {
         // search in struct table
-        auto struct_type = type_table.lookup(type_name);
-        if (!struct_type || !mlir::isa<mlir::lang::StructType>(struct_type)) {
+        auto type = type_table.lookup(type_name);
+        if (!type) {
           return mlir::emitError(loc(identifier_type->token.span),
                                  "unknown type");
         }
-        return struct_type;
+        return type;
       }
       return op->getResult(0).getType();
     }
@@ -454,9 +461,50 @@ private:
       return langGen(e);
     } else if (auto e = dynamic_cast<AssignExpr *>(expr)) {
       return langGen(e);
+    } else if (auto e = dynamic_cast<MLIROp *>(expr)) {
+      return langGen(e);
+    } else if (auto e = dynamic_cast<BinaryExpr *>(expr)) {
+      return langGen(e);
     }
     return mlir::emitError(loc(expr->token.span),
                            "unsupported expression " + to_string(expr->kind()));
+  }
+
+  mlir::FailureOr<mlir::Value> langGen(BinaryExpr *expr) {
+    auto lhs = langGen(expr->lhs.get());
+    if (failed(lhs)) {
+      return mlir::failure();
+    }
+    auto rhs = langGen(expr->rhs.get());
+    if (failed(rhs)) {
+      return mlir::failure();
+    }
+    static std::array<llvm::StringRef, 22> op_fns = {
+        "add",          "sub",           "mul",
+        "div",          "mod",           "and",
+        "or",           "not",           "eq",
+        "ne",           "less_than",     "less_equal",
+        "greater_than", "greater_equal", "bit_and",
+        "bit_or",       "bit_xor",       "bit_shl",
+        "bit_shr",      "bit_not",       "pow",
+        "invalid",
+    };
+    std::string fn_name = "";
+    llvm::raw_string_ostream stream(fn_name);
+    stream << op_fns[static_cast<int>(expr->op)] << "_" << lhs.value().getType()
+           << "_" << rhs.value().getType();
+    fn_name = stream.str();
+
+    if (!function_map.count(fn_name)) {
+      return mlir::emitError(loc(expr->token.span),
+                             "function " + fn_name + " not found");
+    }
+    auto func = function_map[fn_name];
+
+    auto call_op = builder.create<mlir::lang::CallOp>(
+        loc(expr->token.span), func,
+        mlir::ValueRange{lhs.value(), rhs.value()});
+    return call_op.getResult(0);
   }
 
   mlir::FailureOr<mlir::Value> langGen(AssignExpr *expr) {
@@ -469,14 +517,6 @@ private:
       return mlir::failure();
     }
     auto lhs_type = lhs.value().getType();
-    auto rhs_type = rhs.value().getType();
-    // if (lhs_type != rhs_type) {
-    //   rhs = builder
-    //             .create<mlir::UnrealizedConversionCastOp>(loc(expr->token.span),
-    //                                                       lhs_type,
-    //                                                       rhs.value())
-    //             .getResult(0);
-    // }
     return builder
         .create<mlir::lang::AssignOp>(loc(expr->token.span), lhs_type,
                                       lhs.value(), rhs.value())
@@ -648,6 +688,71 @@ private:
 
     return constantOp.getResult();
   }
+
+  mlir::FailureOr<mlir::Value> langGen(MLIROp *op) {
+    llvm::StringRef op_name = op->op;
+    op_name = op_name.trim('"');
+    llvm::SmallVector<mlir::Value, 4> operands;
+    llvm::SmallVector<mlir::Type, 4> operand_types;
+    llvm::SmallVector<mlir::Attribute, 4> attributes;
+    llvm::SmallVector<mlir::Type, 4> result_types;
+
+    for (auto &operand : op->operands) {
+      auto operand_value = langGen(operand.get());
+      if (failed(operand_value)) {
+        return mlir::failure();
+      }
+      operands.push_back(operand_value.value());
+      operand_types.push_back(operand_value.value().getType());
+    }
+
+    for (auto &attr : op->attributes) {
+      llvm::StringRef attribute = attr->attribute;
+      auto mlir_attr =
+          mlir::parseAttribute(attribute.trim('"'), builder.getContext());
+      if (!mlir_attr) {
+        return mlir::emitError(loc(attr->token.span),
+                               "failed to parse attribute");
+      }
+      attributes.push_back(mlir_attr);
+    }
+
+    for (auto &result : op->result_types) {
+      auto result_type = getType(result.get());
+      if (failed(result_type)) {
+        return mlir::failure();
+      }
+      result_types.push_back(result_type.value());
+    }
+    mlir::OperationState state(loc(op->token.span), op_name);
+    state.addOperands(operands);
+    state.addTypes(result_types);
+    // state.addAttributes(attributes);
+    auto mlir_op = mlir::Operation::create(state);
+    builder.insert(mlir_op);
+    return mlir_op->getResult(0);
+  }
+
+  // mlir::FailureOr<mlir::Value> langGen(MLIROp *op) {
+  //   llvm::StringRef op_name = op->op;
+  //   op_name = op_name.trim('"');
+  //   llvm::SmallVector<mlir::Value, 4> operands;
+  //   llvm::SmallVector<mlir::Type, 4> operand_types;
+  //
+  //   for (auto &operand : op->operands) {
+  //     auto operand_value = langGen(operand.get());
+  //     if (failed(operand_value)) {
+  //       return mlir::failure();
+  //     }
+  //     operands.push_back(operand_value.value());
+  //   }
+  //
+  //   return builder
+  //       .create<mlir::lang::MlirOperationOp>(
+  //           loc(op->token.span), mlir::TypeRange(builder.getNoneType()),
+  //           mlir::ValueRange(operands), op_name)
+  //       .getResults()[0];
+  // }
 
   mlir::FailureOr<mlir::Value> langGen(LiteralExpr *literal) {
     if (literal->type == LiteralExpr::LiteralType::Int) {

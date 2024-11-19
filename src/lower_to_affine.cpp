@@ -24,6 +24,8 @@
 #include <memory>
 #include <utility>
 
+#include "mlir/AsmParser/AsmParser.h"
+
 class LangToLLVMTypeConverter : public mlir::LLVMTypeConverter {
 public:
   LangToLLVMTypeConverter(mlir::MLIRContext *ctx) : LLVMTypeConverter(ctx) {
