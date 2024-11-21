@@ -1,4 +1,5 @@
 #include "LangGen.h"
+#include "ast.hpp"
 #include "dialect/LangDialect.h"
 #include "dialect/LangOps.h"
 #include "mlir/AsmParser/AsmParser.h"
@@ -11,6 +12,7 @@
 #include "llvm/ADT/StringRef.h"
 #include <cassert>
 #include <memory>
+#include <variant>
 
 using llvm::StringRef;
 
@@ -77,7 +79,9 @@ public:
       the_module.emitError("module verification error");
       return nullptr;
     }
-
+    llvm::errs() << "Module verification succeeded\n";
+    the_module.dump();
+    llvm::errs() << "\n";
     return the_module;
   }
 
@@ -331,6 +335,30 @@ private:
     return mlir::success();
   }
 
+  // mlir::FailureOr<mlir::Value> langGen(BlockExpression *block,
+  //                                      std::function<void()> callback =
+  //                                      nullptr, bool func = false) {
+  //   NEW_SCOPE()
+  //   if (callback)
+  //     callback();
+  //   mlir::scf::ExecuteRegionOp region_op;
+  //   if (!func) {
+  //     region_op = builder.create<mlir::scf::ExecuteRegionOp>(
+  //         loc(block->token.span), mlir::TypeRange(builder.getNoneType()));
+  //     auto &blk = region_op.getRegion().emplaceBlock();
+  //     builder.setInsertionPointToStart(&blk);
+  //   }
+  //   for (auto &stmt : block->statements) {
+  //     if (failed(langGen(stmt.get()))) {
+  //       return mlir::failure();
+  //     }
+  //   }
+  //   if (func) {
+  //     return mlir::success(mlir::Value());
+  //   }
+  //   return region_op->getResult(0);
+  // }
+
   mlir::LogicalResult langGen(BlockExpression *block,
                               std::function<void()> callback = nullptr) {
     NEW_SCOPE()
@@ -465,9 +493,197 @@ private:
       return langGen(e);
     } else if (auto e = dynamic_cast<BinaryExpr *>(expr)) {
       return langGen(e);
+    } else if (auto e = dynamic_cast<IfExpr *>(expr)) {
+      return langGen(e);
+    } else if (auto e = dynamic_cast<YieldExpr *>(expr)) {
+      return langGen(e);
     }
     return mlir::emitError(loc(expr->token.span),
                            "unsupported expression " + to_string(expr->kind()));
+  }
+
+  mlir::FailureOr<mlir::Value> langGen(YieldExpr *expr) {
+    auto value = langGen(expr->value.get());
+    if (failed(value)) {
+      return mlir::failure();
+    }
+    return builder
+        .create<mlir::lang::YieldOp>(loc(expr->token.span), value.value())
+        .getResult();
+  }
+
+  mlir::FailureOr<mlir::Value> langGen(IfExpr *expr) {
+    auto cond = langGen(expr->condition.get());
+    if (failed(cond))
+      return mlir::failure();
+    bool terminated_by_return = false;
+    bool terminated_by_yield = false;
+    bool non_terminating = false;
+    bool can_use_scf_if_op = canUseSCFIfOp(
+        expr, terminated_by_return, terminated_by_yield, non_terminating);
+    auto loc = this->loc(expr->token.span);
+    auto then_builder = [&](mlir::OpBuilder builder, mlir::Location loc) {
+      if (failed(langGen(expr->then_block.get()))) {
+        llvm::errs() << "failed then block\n";
+      }
+      if (isNonTerminatingBlock(expr->then_block.get())) {
+        auto lastStmt = expr->then_block->statements.back().get();
+        if (auto exprStmt = dynamic_cast<ExprStmt *>(lastStmt)) {
+          if (exprStmt->expr->kind() == AstNodeKind::IfExpr) {
+            auto nestedIfResult = builder.getBlock()->back().getResult(0);
+            builder.create<mlir::lang::YieldOp>(loc, nestedIfResult);
+          } else {
+            builder.create<mlir::lang::YieldOp>(loc);
+          }
+        } else {
+          builder.create<mlir::lang::YieldOp>(loc);
+        }
+      }
+    };
+    auto else_builder = [&](mlir::OpBuilder builder, mlir::Location loc) {
+      if (failed(langGen(expr->else_block.value().get())))
+        llvm::errs() << "failed else block\n";
+      if (isNonTerminatingBlock(expr->else_block.value().get())) {
+        auto lastStmt = expr->else_block.value()->statements.back().get();
+        if (auto exprStmt = dynamic_cast<ExprStmt *>(lastStmt)) {
+          if (exprStmt->expr->kind() == AstNodeKind::IfExpr) {
+            auto nestedIfResult = builder.getBlock()->back().getResult(0);
+            builder.create<mlir::lang::YieldOp>(loc, nestedIfResult);
+          } else {
+            builder.create<mlir::lang::YieldOp>(loc);
+          }
+        } else {
+          builder.create<mlir::lang::YieldOp>(loc);
+        }
+      }
+    };
+    if (expr->else_block.has_value()) {
+      auto if_op = builder.create<mlir::lang::IfOp>(loc, cond.value(),
+                                                    then_builder, else_builder);
+      if_op->setAttr("terminated_by_return",
+                     builder.getBoolAttr(terminated_by_return));
+      if_op->setAttr("terminated_by_yield",
+                     builder.getBoolAttr(terminated_by_yield));
+      if_op->setAttr("can_use_scf_if_op",
+                     builder.getBoolAttr(can_use_scf_if_op));
+      if_op->setAttr("non_terminating", builder.getBoolAttr(non_terminating));
+      return if_op.getResult();
+    }
+    auto if_op =
+        builder.create<mlir::lang::IfOp>(loc, cond.value(), then_builder);
+    if_op->setAttr("terminated_by_return",
+                   builder.getBoolAttr(terminated_by_return));
+    if_op->setAttr("terminated_by_yield",
+                   builder.getBoolAttr(terminated_by_yield));
+    if_op->setAttr("can_use_scf_if_op", builder.getBoolAttr(can_use_scf_if_op));
+    if_op->setAttr("non_terminating", builder.getBoolAttr(non_terminating));
+    return if_op.getResult();
+  }
+
+  bool canUseSCFIfOp(IfExpr *expr, bool &terminated_by_return,
+                     bool &terminated_by_yield, bool &non_terminating) {
+    bool has_else = expr->else_block.has_value();
+    // 1. Has no else, but then is a non-terminating block
+    if (!has_else) {
+      non_terminating = isNonTerminatingBlock(expr->then_block.get());
+      return non_terminating;
+    }
+    // 3. Both then and else are non-terminating blocks (no return or yield)
+    non_terminating = isNonTerminatingBlock(expr->then_block.get()) &&
+                      isNonTerminatingBlock(expr->else_block.value().get());
+    // 4. Both then and else are terminated by a return in all paths
+    terminated_by_return = isTerminatedByReturn(expr->then_block.get()) &&
+                           isTerminatedByReturn(expr->else_block.value().get());
+    // 5. Both then and else are terminated by a yield in all paths
+    // (different from above)
+    terminated_by_yield = isTerminatedByYield(expr->then_block.get()) &&
+                          isTerminatedByYield(expr->else_block.value().get());
+    return non_terminating || terminated_by_return || terminated_by_yield;
+  }
+
+  bool isTerminatedByYield(BlockExpression *block) {
+    // Check the block is terminated by a yield in all paths
+    if (block->statements.empty()) {
+      return false;
+    }
+    auto last_stmt = block->statements.back().get();
+    if (last_stmt->kind() == AstNodeKind::ExprStmt) {
+      auto expr = dynamic_cast<ExprStmt *>(last_stmt);
+      if (expr->expr->kind() == AstNodeKind::YieldExpr) {
+        return true;
+      }
+    } else if (auto if_expr = dynamic_cast<IfExpr *>(last_stmt)) {
+      if (!if_expr->else_block.has_value()) {
+        return false;
+      }
+      // TODO:
+      return isTerminatedByYield(if_expr->then_block.get()) &&
+             isTerminatedByYield(if_expr->else_block.value().get());
+    } else if (auto block_expr = dynamic_cast<BlockExpression *>(last_stmt)) {
+      return isTerminatedByYield(block_expr);
+    }
+    return false;
+  }
+
+  bool isTerminatedByReturn(BlockExpression *block) {
+    // check if the block is terminated by a return in all paths
+    if (block->statements.empty()) {
+      return false;
+    }
+    for (auto &stmt : block->statements) {
+      if (stmt->kind() == AstNodeKind::ExprStmt) {
+        auto expr = dynamic_cast<ExprStmt *>(stmt.get());
+        if (expr->expr->kind() == AstNodeKind::ReturnExpr) {
+          return true;
+        }
+      } else if (auto if_expr = dynamic_cast<IfExpr *>(stmt.get())) {
+        // check if either branches are terminated by a return
+        if (isTerminatedByReturn(if_expr->then_block.get())) {
+          return true;
+        }
+        if (isTerminatedByReturn(if_expr->else_block.value().get())) {
+          return true;
+        }
+      } else if (auto block_expr =
+                     dynamic_cast<BlockExpression *>(stmt.get())) {
+        if (isTerminatedByReturn(block_expr)) {
+          return true;
+        }
+      }
+    }
+    return false;
+  }
+
+  // recursively check if the block is non-terminating (i.e the last statement
+  // in a block is not a return or yield)
+  bool isNonTerminatingBlock(BlockExpression *block) {
+    if (block->statements.empty()) {
+      return true;
+    }
+    for (auto &stmt : block->statements) {
+      if (stmt->kind() == AstNodeKind::ExprStmt) {
+        auto expr = dynamic_cast<ExprStmt *>(stmt.get());
+        if (expr->expr->kind() == AstNodeKind::ReturnExpr ||
+            expr->expr->kind() == AstNodeKind::YieldExpr) {
+          return false;
+        }
+      } else if (auto expr = dynamic_cast<IfExpr *>(stmt.get())) {
+        // check if both branches are non-terminating
+        // then_block
+        if (!isNonTerminatingBlock(expr->then_block.get()))
+          return false;
+        // else_block
+        if (expr->else_block.has_value())
+          if (expr->else_block.value())
+            if (!isNonTerminatingBlock(expr->else_block.value().get()))
+              return false;
+      } else if (auto block = dynamic_cast<BlockExpression *>(stmt.get())) {
+        if (!isNonTerminatingBlock(block)) {
+          return false;
+        }
+      }
+    }
+    return true;
   }
 
   mlir::FailureOr<mlir::Value> langGen(BinaryExpr *expr) {
@@ -480,14 +696,11 @@ private:
       return mlir::failure();
     }
     static std::array<llvm::StringRef, 22> op_fns = {
-        "add",          "sub",           "mul",
-        "div",          "mod",           "and",
-        "or",           "not",           "eq",
-        "ne",           "less_than",     "less_equal",
-        "greater_than", "greater_equal", "bit_and",
-        "bit_or",       "bit_xor",       "bit_shl",
-        "bit_shr",      "bit_not",       "pow",
-        "invalid",
+        "add",       "sub",        "mul",          "div",           "mod",
+        "and",       "or",         "not",          "equal",         "not_equal",
+        "less_than", "less_equal", "greater_than", "greater_equal", "bit_and",
+        "bit_or",    "bit_xor",    "bit_shl",      "bit_shr",       "bit_not",
+        "pow",       "invalid",
     };
     std::string fn_name = "";
     llvm::raw_string_ostream stream(fn_name);
@@ -694,7 +907,7 @@ private:
     op_name = op_name.trim('"');
     llvm::SmallVector<mlir::Value, 4> operands;
     llvm::SmallVector<mlir::Type, 4> operand_types;
-    llvm::SmallVector<mlir::Attribute, 4> attributes;
+    llvm::SmallVector<mlir::NamedAttribute, 4> named_attributes;
     llvm::SmallVector<mlir::Type, 4> result_types;
 
     for (auto &operand : op->operands) {
@@ -707,27 +920,28 @@ private:
     }
 
     for (auto &attr : op->attributes) {
-      llvm::StringRef attribute = attr->attribute;
+      llvm::StringRef name = attr.first;
+      llvm::StringRef attribute = attr.second;
       auto mlir_attr =
           mlir::parseAttribute(attribute.trim('"'), builder.getContext());
       if (!mlir_attr) {
-        return mlir::emitError(loc(attr->token.span),
+        return mlir::emitError(loc(op->token.span),
                                "failed to parse attribute");
       }
-      attributes.push_back(mlir_attr);
+      auto named_attr =
+          mlir::NamedAttribute(builder.getStringAttr(name), mlir_attr);
+      named_attributes.push_back(named_attr);
     }
 
     for (auto &result : op->result_types) {
-      auto result_type = getType(result.get());
-      if (failed(result_type)) {
-        return mlir::failure();
-      }
-      result_types.push_back(result_type.value());
+      llvm::StringRef type = result;
+      auto result_type = mlir::parseType(type.trim('"'), builder.getContext());
+      result_types.push_back(result_type);
     }
     mlir::OperationState state(loc(op->token.span), op_name);
     state.addOperands(operands);
     state.addTypes(result_types);
-    // state.addAttributes(attributes);
+    state.addAttributes(named_attributes);
     auto mlir_op = mlir::Operation::create(state);
     builder.insert(mlir_op);
     return mlir_op->getResult(0);

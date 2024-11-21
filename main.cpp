@@ -211,6 +211,7 @@ int dumpMLIRLang() {
   // Load our Dialect in this MLIR Context.
   context.getOrLoadDialect<mlir::lang::LangDialect>();
   context.getOrLoadDialect<mlir::arith::ArithDialect>();
+  context.getOrLoadDialect<mlir::scf::SCFDialect>();
   mlir::OwningOpRef<mlir::ModuleOp> module;
   llvm::SourceMgr sourceMgr;
   mlir::SourceMgrDiagnosticHandler sourceMgrHandler(sourceMgr, &context);

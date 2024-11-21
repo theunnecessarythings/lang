@@ -241,6 +241,8 @@ std::unique_ptr<Expression> Parser::nud(const Token &token) {
     return parse_break_expr(false);
   case TokenKind::KeywordContinue:
     return parse_continue_expr(false);
+  case TokenKind::KeywordYield:
+    return parse_yield_expr(false);
   case TokenKind::KeywordComptime: {
     auto expr = parse_expr(0);
     return std::make_unique<ComptimeExpr>(token, std::move(expr));
@@ -893,8 +895,8 @@ std::unique_ptr<MLIROp> Parser::parse_mlir_op() {
   consume_kind(TokenKind::LParen);
   auto op_str = consume_kind(TokenKind::StringLiteral);
   std::vector<std::unique_ptr<Expression>> operands;
-  std::vector<std::unique_ptr<MLIRAttribute>> attributes;
-  std::vector<std::unique_ptr<Type>> result_types;
+  std::unordered_map<std::string, std::string> attributes;
+  std::vector<std::string> result_types;
 
   consume_kind(TokenKind::Comma);
   consume_kind(TokenKind::LBracket);
@@ -907,20 +909,22 @@ std::unique_ptr<MLIROp> Parser::parse_mlir_op() {
   }
   consume_kind(TokenKind::RBracket);
   consume_kind(TokenKind::Comma);
-  consume_kind(TokenKind::LBracket);
-  while (!is_peek(TokenKind::RBracket)) {
-    auto attr = parse_mlir_attr();
-    attributes.emplace_back(std::move(attr));
+  consume_kind(TokenKind::LBrace);
+  while (!is_peek(TokenKind::RBrace)) {
+    auto name = consume_kind(TokenKind::Identifier);
+    consume_kind(TokenKind::Colon);
+    auto attr = consume_kind(TokenKind::StringLiteral);
+    attributes[lexer->token_to_string(name)] = lexer->token_to_string(attr);
     if (is_peek(TokenKind::Comma)) {
       consume();
     }
   }
-  consume_kind(TokenKind::RBracket);
+  consume_kind(TokenKind::RBrace);
   consume_kind(TokenKind::Comma);
   consume_kind(TokenKind::LBracket);
   while (!is_peek(TokenKind::RBracket)) {
-    auto type = parse_mlir_type();
-    result_types.emplace_back(std::move(type));
+    auto str = consume_kind(TokenKind::StringLiteral);
+    result_types.emplace_back(std::move(lexer->token_to_string(str)));
     if (is_peek(TokenKind::Comma)) {
       consume();
     }
@@ -1243,19 +1247,30 @@ std::unique_ptr<IfExpr> Parser::parse_if_expr(bool consume_if) {
     consume_kind(TokenKind::KeywordIf);
   auto token = current_token.value();
   auto condition = parse_expr(0);
-  IfExpr::Branch then_branch;
+  std::unique_ptr<BlockExpression> then_branch;
   if (is_peek(TokenKind::LBrace)) {
     then_branch = parse_block();
   } else {
-    then_branch = parse_expr(0);
+    auto expr = parse_expr(0);
+    auto token = expr->token;
+    auto expr_stmt = std::make_unique<ExprStmt>(expr->token, std::move(expr));
+    std::vector<std::unique_ptr<Statement>> stmts;
+    stmts.emplace_back(std::move(expr_stmt));
+    then_branch = std::make_unique<BlockExpression>(token, std::move(stmts));
   }
-  std::optional<IfExpr::Branch> else_branch = std::nullopt;
+  std::optional<std::unique_ptr<BlockExpression>> else_branch = std::nullopt;
   if (is_peek(TokenKind::KeywordElse)) {
     consume();
     if (is_peek(TokenKind::LBrace))
       else_branch = parse_block();
-    else
-      else_branch = parse_expr(0);
+    else {
+      auto expr = parse_expr(0);
+      auto token = expr->token;
+      auto expr_stmt = std::make_unique<ExprStmt>(expr->token, std::move(expr));
+      std::vector<std::unique_ptr<Statement>> stmts;
+      stmts.emplace_back(std::move(expr_stmt));
+      else_branch = std::make_unique<BlockExpression>(token, std::move(stmts));
+    }
   }
   return std::make_unique<IfExpr>(token, std::move(condition),
                                   std::move(then_branch),
@@ -1369,6 +1384,10 @@ std::unique_ptr<Statement> Parser::parse_stmt() {
     consume_kind(TokenKind::Semicolon);
     return std::make_unique<ExprStmt>(continue_expr->token,
                                       std::move(continue_expr));
+  } else if (is_peek(TokenKind::KeywordYield)) {
+    auto yield_expr = parse_yield_expr();
+    consume_kind(TokenKind::Semicolon);
+    return std::make_unique<ExprStmt>(yield_expr->token, std::move(yield_expr));
   } else if (is_peek(TokenKind::KeywordMatch)) {
     auto match_expr = parse_match_expr();
     return std::make_unique<ExprStmt>(match_expr->token, std::move(match_expr));
@@ -1408,6 +1427,12 @@ std::unique_ptr<Statement> Parser::parse_stmt() {
   } else {
     auto token = peek().value();
     auto expr = parse_expr(0);
+    if (expr->kind() != AstNodeKind::BlockExpression &&
+        !is_peek(TokenKind::Semicolon)) {
+      // if not block expression, then it is an implicit yield
+      expr = std::make_unique<YieldExpr>(token, std::nullopt, std::move(expr));
+      return std::make_unique<ExprStmt>(token, std::move(expr));
+    }
     // if block statement then no need for semicolon
     if (token.kind != TokenKind::LBrace)
       consume_kind(TokenKind::Semicolon);
@@ -1458,6 +1483,21 @@ std::unique_ptr<BreakExpr> Parser::parse_break_expr(bool consume_break) {
     expr = parse_expr(0);
   }
   return std::make_unique<BreakExpr>(token, std::move(label), std::move(expr));
+}
+
+// yield_expr = 'yield' (':' identifier)? expr;
+std::unique_ptr<YieldExpr> Parser::parse_yield_expr(bool consume_yield) {
+  if (consume_yield)
+    consume_kind(TokenKind::KeywordYield);
+  auto token = current_token.value();
+  std::optional<std::string> label = std::nullopt;
+  if (is_peek(TokenKind::Colon)) {
+    consume();
+    auto name = consume_kind(TokenKind::Identifier);
+    label = lexer->token_to_string(name);
+  }
+  auto expr = parse_expr(0);
+  return std::make_unique<YieldExpr>(token, std::move(label), std::move(expr));
 }
 
 // continue_expr = 'continue' (':' identifier)? (expr)?;

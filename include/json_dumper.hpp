@@ -87,6 +87,7 @@ struct JsonDumper {
   void dump(MLIRType *node);
   void dump(MLIRAttribute *node);
   void dump(MLIROp *node);
+  void dump(YieldExpr *node);
 
   std::string token_kind_to_string(TokenKind kind);
   void dump(const TokenSpan &span);
@@ -264,6 +265,8 @@ private:
       return "MLIRAttribute";
     case AstNodeKind::MLIROp:
       return "MLIROp";
+    case AstNodeKind::YieldExpr:
+      return "YieldExpr";
     default:
       return "Unknown";
     }

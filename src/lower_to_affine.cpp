@@ -16,9 +16,11 @@
 
 #include "mlir/Dialect/Affine/IR/AffineOps.h"
 #include "mlir/Dialect/Arith/IR/Arith.h"
+#include "mlir/Dialect/ControlFlow/IR/ControlFlowOps.h"
 #include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"
 #include "mlir/Dialect/MemRef/IR/MemRef.h"
+#include "mlir/Dialect/SCF/IR/SCF.h"
 #include "mlir/Pass/Pass.h"
 #include "mlir/Transforms/DialectConversion.h"
 #include <memory>
@@ -109,7 +111,16 @@ struct FuncOpLowering : public mlir::OpConversionPattern<mlir::lang::FuncOp> {
                                            &signatureConversion))) {
       return rewriter.notifyMatchFailure(op, "failed to convert region types");
     }
+    llvm::SmallVector<mlir::Location, 4> locations(result_types.size(),
+                                                   rewriter.getUnknownLoc());
+    auto return_block =
+        rewriter.createBlock(&newFuncOp.getBody(), newFuncOp.getBody().end(),
+                             newFuncOp.getResultTypes(), locations);
+    rewriter.setInsertionPointToStart(return_block);
+    rewriter.create<mlir::func::ReturnOp>(op.getLoc(),
+                                          return_block->getArguments());
     rewriter.eraseOp(op);
+    op.emitWarning() << "\nfunc op =>\n";
     return mlir::success();
   }
 };
@@ -123,6 +134,132 @@ struct CallOpLowering : public mlir::OpConversionPattern<mlir::lang::CallOp> {
     auto call = rewriter.create<mlir::func::CallOp>(
         op.getLoc(), op.getCalleeAttr(), op.getResultTypes(), op.getOperands());
     rewriter.replaceOp(op, call);
+    return mlir::success();
+  }
+};
+
+struct IfOpLowering : public mlir::OpConversionPattern<mlir::lang::IfOp> {
+  using OpConversionPattern<mlir::lang::IfOp>::OpConversionPattern;
+
+  mlir::LogicalResult
+  matchAndRewrite(mlir::lang::IfOp op, OpAdaptor adaptor,
+                  mlir::ConversionPatternRewriter &rewriter) const final {
+    auto scf_if_attr = op->getAttrOfType<mlir::BoolAttr>("can_use_scf_if_op");
+    auto terminated_by_return =
+        op->getAttrOfType<mlir::BoolAttr>("terminated_by_return");
+
+    if (!scf_if_attr || !scf_if_attr.getValue()) {
+      return generate_unstructured_if(rewriter, op, adaptor.getCondition());
+    }
+
+    auto result_type =
+        op.getResult() ? op.getResult().getType() : mlir::TypeRange();
+    auto if_op = rewriter.create<mlir::scf::IfOp>(op.getLoc(), result_type,
+                                                  adaptor.getCondition());
+
+    rewriter.inlineRegionBefore(op.getThenRegion(), if_op.getThenRegion(),
+                                if_op.getThenRegion().end());
+    if (!op.getElseRegion().empty()) {
+      rewriter.inlineRegionBefore(op.getElseRegion(), if_op.getElseRegion(),
+                                  if_op.getElseRegion().end());
+    }
+    rewriter.replaceOp(op, if_op);
+    if (terminated_by_return.getValue()) {
+      rewriter.setInsertionPointAfter(op);
+      auto branch_op = rewriter.create<mlir::cf::BranchOp>(
+          op.getLoc(), if_op.getResults(),
+          &op->getParentOfType<mlir::func::FuncOp>().getBlocks().back());
+
+      // erase everything after the branch op in the parent block
+      auto it = std::next(mlir::Block::iterator(branch_op));
+      auto block = branch_op->getBlock();
+      while (it != block->end()) {
+        auto next = std::next(it);
+        rewriter.eraseOp(&*it);
+        it = next;
+      }
+    }
+
+    return mlir::success();
+  }
+
+  llvm::LogicalResult
+  generate_unstructured_if(mlir::ConversionPatternRewriter &rewriter,
+                           mlir::lang::IfOp op, mlir::Value condition) const {
+    auto loc = op.getLoc();
+
+    // Get the parent block and function
+    auto *currentBlock = rewriter.getInsertionBlock();
+    auto *parentRegion = currentBlock->getParent();
+
+    // Create the blocks for the 'then', 'else', and continuation ('merge')
+    // blocks
+    auto *thenBlock = rewriter.createBlock(
+        parentRegion, std::next(currentBlock->getIterator()));
+    mlir::Block *elseBlock = nullptr;
+    if (!op.getElseRegion().empty()) {
+      elseBlock = rewriter.createBlock(parentRegion,
+                                       std::next(currentBlock->getIterator()));
+    }
+    // Create the merge block by splitting the current block
+    auto *mergeBlock = rewriter.splitBlock(currentBlock, op->getIterator());
+
+    // Insert the conditional branch
+    rewriter.setInsertionPointToEnd(currentBlock);
+    if (elseBlock) {
+      rewriter.create<mlir::cf::CondBranchOp>(loc, op.getCondition(), thenBlock,
+                                              elseBlock);
+    } else {
+      rewriter.create<mlir::cf::CondBranchOp>(loc, op.getCondition(), thenBlock,
+                                              mergeBlock);
+    }
+
+    // move the contents of the then region to the new block
+    rewriter.mergeBlocks(&op.getThenRegion().front(), thenBlock);
+
+    // If 'then' block does not end with a return, branch to the merge block
+    if (thenBlock->empty() ||
+        !mlir::isa<mlir::lang::ReturnOp, mlir::func::ReturnOp>(
+            thenBlock->back())) {
+      rewriter.setInsertionPointToEnd(thenBlock);
+      rewriter.create<mlir::cf::BranchOp>(loc, mergeBlock);
+    }
+    // Build the 'else' block if it exists
+    if (elseBlock) {
+      // move the contents of the else region to the new block
+      rewriter.mergeBlocks(&op.getElseRegion().front(), elseBlock);
+
+      // If 'else' block does not end with a return, branch to the merge
+      // block
+      if (elseBlock->empty() ||
+          !mlir::isa<mlir::lang::ReturnOp, mlir::func::ReturnOp>(
+              elseBlock->back())) {
+        rewriter.setInsertionPointToEnd(elseBlock);
+        rewriter.create<mlir::cf::BranchOp>(loc, mergeBlock);
+      }
+    }
+
+    // Continue building from the merge block
+    rewriter.setInsertionPointToStart(mergeBlock);
+    rewriter.eraseOp(op);
+
+    return mlir::success();
+  }
+};
+
+struct YieldOpLowering : public mlir::OpConversionPattern<mlir::lang::YieldOp> {
+  using OpConversionPattern<mlir::lang::YieldOp>::OpConversionPattern;
+
+  mlir::LogicalResult
+  matchAndRewrite(mlir::lang::YieldOp op, OpAdaptor adaptor,
+                  mlir::ConversionPatternRewriter &rewriter) const final {
+    if (!mlir::isa<mlir::scf::IfOp>(op->getParentOp())) {
+      rewriter.eraseOp(op);
+      return mlir::success();
+    }
+    auto yield_op =
+        rewriter.create<mlir::scf::YieldOp>(op.getLoc(), adaptor.getOperands());
+    rewriter.replaceOp(op, yield_op);
     return mlir::success();
   }
 };
@@ -166,8 +303,24 @@ struct ReturnOpLowering
   mlir::LogicalResult
   matchAndRewrite(mlir::lang::ReturnOp op, OpAdaptor adaptor,
                   mlir::ConversionPatternRewriter &rewriter) const final {
-    rewriter.replaceOpWithNewOp<mlir::func::ReturnOp>(op,
+    if (mlir::isa<mlir::scf::IfOp>(op->getParentOp())) {
+      rewriter.replaceOpWithNewOp<mlir::scf::YieldOp>(op,
                                                       adaptor.getOperands());
+      return mlir::success();
+    }
+    // rewriter.replaceOpWithNewOp<mlir::func::ReturnOp>(op,
+    //                                                   adaptor.getOperands());
+    rewriter.setInsertionPointAfter(op);
+    auto branch_op = rewriter.create<mlir::cf::BranchOp>(
+        op.getLoc(),
+        &op->getParentOfType<mlir::func::FuncOp>().getBlocks().back(),
+        adaptor.getOperands());
+
+    // rewriter.replaceOp(op, branch_op);
+    rewriter.eraseOp(op);
+
+    llvm::errs() << "return op =>\n";
+    branch_op->getParentOfType<mlir::func::FuncOp>().dump();
     return mlir::success();
   }
 };
@@ -287,7 +440,8 @@ struct StructAccessOpLowering
                   .getInputs()[0];
     }
 
-    // mlir::Value extractedValue = rewriter.create<mlir::LLVM::ExtractValueOp>(
+    // mlir::Value extractedValue =
+    // rewriter.create<mlir::LLVM::ExtractValueOp>(
     //     op.getLoc(), llvmStructType.getBody()[fieldIndex],
     //     adaptor.getInput(), fieldIndex);
 
@@ -628,8 +782,8 @@ private:
     return mlir::SymbolRefAttr::get(context, "printf");
   }
 
-  /// Return a value representing an access into a global string with the given
-  /// name, creating the string if necessary.
+  /// Return a value representing an access into a global string with the
+  /// given name, creating the string if necessary.
   static mlir::Value getOrCreateGlobalString(mlir::Location loc,
                                              mlir::OpBuilder &builder,
                                              mlir::StringRef name,
@@ -694,6 +848,7 @@ void LangToAffineLoweringPass::runOnOperation() {
   target
       .addLegalDialect<mlir::affine::AffineDialect, mlir::BuiltinDialect,
                        mlir::arith::ArithDialect, mlir::func::FuncDialect,
+                       mlir::scf::SCFDialect, mlir::cf::ControlFlowDialect,
                        mlir::memref::MemRefDialect, mlir::LLVM::LLVMDialect>();
 
   // Mark all operations illegal.
@@ -705,25 +860,28 @@ void LangToAffineLoweringPass::runOnOperation() {
                ResolveCastPattern, UndefOpLowering, PrintOpLowering,
                StructAccessOpLowering>(typeConverter, &getContext());
 
-  patterns
-      .add<CallOpLowering, ReturnOpLowering, VarDeclOpLowering,
-           TypeConstOpLowering, StringConstantOpLowering, ConstantOpLowering>(
-          &getContext());
+  patterns.add<IfOpLowering, CallOpLowering, ReturnOpLowering,
+               VarDeclOpLowering, TypeConstOpLowering, StringConstantOpLowering,
+               ConstantOpLowering, YieldOpLowering>(&getContext());
 
   // Apply partial conversion.
   if (failed(mlir::applyPartialConversion(getOperation(), target,
-                                          std::move(patterns))))
+                                          std::move(patterns)))) {
+
+    llvm::errs() << "Partial conversion failed for\n";
+    getOperation().dump();
     signalPassFailure();
+  }
 }
 
 void ResolveCastPatternPass::runOnOperation() {
   mlir::ConversionTarget target(getContext());
   LangToLLVMTypeConverter typeConverter(&getContext());
 
-  target
-      .addLegalDialect<mlir::affine::AffineDialect, mlir::BuiltinDialect,
-                       mlir::arith::ArithDialect, mlir::func::FuncDialect,
-                       mlir::memref::MemRefDialect, mlir::LLVM::LLVMDialect>();
+  target.addLegalDialect<mlir::affine::AffineDialect, mlir::BuiltinDialect,
+                         mlir::arith::ArithDialect, mlir::func::FuncDialect,
+                         mlir::scf::SCFDialect, mlir::memref::MemRefDialect,
+                         mlir::LLVM::LLVMDialect>();
 
   // Mark all operations illegal.
   target.addIllegalDialect<mlir::lang::LangDialect>();

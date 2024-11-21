@@ -95,6 +95,7 @@ enum class TokenKind {
   KeywordVar,
   KeywordComptime,
   KeywordModule,
+  KeywordYield,
 
   Eof,
   Invalid,
@@ -187,6 +188,7 @@ struct Lexer {
       {"var", TokenKind::KeywordVar},
       {"comptime", TokenKind::KeywordComptime},
       {"module", TokenKind::KeywordModule},
+      {"yield", TokenKind::KeywordYield},
   };
 
   Lexer(std::basic_string<char> source, int file_id)
@@ -1281,6 +1283,8 @@ struct Lexer {
       return "comptime";
     case TokenKind::KeywordModule:
       return "module";
+    case TokenKind::KeywordYield:
+      return "yield";
     }
     return "invalid token";
   }

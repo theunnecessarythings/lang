@@ -847,20 +847,9 @@ private:
 
     // Build the 'then' block
     builder.setInsertionPointToStart(thenBlock);
-    if (std::holds_alternative<std::unique_ptr<BlockExpression>>(
-            expr->then_block)) {
-      if (failed(mlirGen(
-              std::get<std::unique_ptr<BlockExpression>>(expr->then_block)
-                  .get()))) {
-        emitError(loc, "error in then block");
-        return mlir::failure();
-      }
-    } else {
-      if (failed(mlirGen(
-              std::get<std::unique_ptr<Expression>>(expr->then_block).get()))) {
-        emitError(loc, "error in then block");
-        return mlir::failure();
-      }
+    if (failed(mlirGen(expr->then_block.get()))) {
+      emitError(loc, "error in then block");
+      return mlir::failure();
     }
 
     // If 'then' block does not end with a return, branch to the merge block
@@ -873,21 +862,9 @@ private:
     // Build the 'else' block if it exists
     if (elseBlock) {
       builder.setInsertionPointToStart(elseBlock);
-      if (std::holds_alternative<std::unique_ptr<BlockExpression>>(
-              expr->else_block.value())) {
-        if (failed(mlirGen(std::get<std::unique_ptr<BlockExpression>>(
-                               expr->else_block.value())
-                               .get()))) {
-          emitError(loc, "error in else block");
-          return mlir::failure();
-        }
-      } else {
-        if (failed(mlirGen(
-                std::get<std::unique_ptr<Expression>>(expr->else_block.value())
-                    .get()))) {
-          emitError(loc, "error in else block");
-          return mlir::failure();
-        }
+      if (failed(mlirGen(expr->else_block.value().get()))) {
+        emitError(loc, "error in else block");
+        return mlir::failure();
       }
 
       // If 'else' block does not end with a return, branch to the merge
@@ -929,40 +906,17 @@ private:
 
     // Emit the "then" block
     builder.setInsertionPointToStart(&ifOp.getThenRegion().front());
-    if (std::holds_alternative<std::unique_ptr<BlockExpression>>(
-            expr->then_block)) {
-      if (mlir::failed(mlirGen(
-              std::get<std::unique_ptr<BlockExpression>>(expr->then_block)
-                  .get()))) {
-        emitError(span, "error in then block");
-        return mlir::failure();
-      }
-    } else {
-      if (failed(mlirGen(
-              std::get<std::unique_ptr<Expression>>(expr->then_block).get()))) {
-        emitError(span, "error in then block");
-        return mlir::failure();
-      }
+    if (mlir::failed(mlirGen(expr->then_block.get()))) {
+      emitError(span, "error in then block");
+      return mlir::failure();
     }
 
     if (with_else_region) {
       // Emit the "else" block
       builder.setInsertionPointToStart(&ifOp.getElseRegion().front());
-      if (std::holds_alternative<std::unique_ptr<BlockExpression>>(
-              expr->else_block.value())) {
-        if (mlir::failed(mlirGen(std::get<std::unique_ptr<BlockExpression>>(
-                                     expr->else_block.value())
-                                     .get()))) {
-          emitError(span, "error in else block");
-          return mlir::failure();
-        }
-      } else {
-        if (failed(mlirGen(
-                std::get<std::unique_ptr<Expression>>(expr->else_block.value())
-                    .get()))) {
-          emitError(span, "error in else block");
-          return mlir::failure();
-        }
+      if (mlir::failed(mlirGen(expr->else_block.value().get()))) {
+        emitError(span, "error in else block");
+        return mlir::failure();
       }
     }
 

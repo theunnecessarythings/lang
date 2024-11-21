@@ -99,6 +99,7 @@ struct Parser {
   std::unique_ptr<Type> parse_mlir_type(bool consume_at = true);
   std::unique_ptr<MLIRAttribute> parse_mlir_attr();
   std::unique_ptr<MLIROp> parse_mlir_op();
+  std::unique_ptr<YieldExpr> parse_yield_expr(bool consume_yield = true);
   std::variant<int, double>
   parse_number_literal(const std::basic_string<char> &bytes);
   Operator token_to_operator(const Token &op);

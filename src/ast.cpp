@@ -276,22 +276,10 @@ void AstDumper::dump(TopLevelVarDecl *decl) { dump(decl->var_decl.get()); }
 void AstDumper::dump(IfExpr *expr) {
   output_stream << "if ";
   dump(expr->condition.get());
-  if (std::holds_alternative<std::unique_ptr<BlockExpression>>(
-          expr->then_block)) {
-    dump(std::get<std::unique_ptr<BlockExpression>>(expr->then_block).get());
-  } else {
-    dump(std::get<std::unique_ptr<Expression>>(expr->then_block).get());
-  }
+  dump(expr->then_block.get());
   if (expr->else_block.has_value()) {
     output_stream << "else ";
-    if (std::holds_alternative<std::unique_ptr<BlockExpression>>(
-            expr->else_block.value())) {
-      dump(std::get<std::unique_ptr<BlockExpression>>(expr->else_block.value())
-               .get());
-    } else {
-      dump(std::get<std::unique_ptr<Expression>>(expr->else_block.value())
-               .get());
-    }
+    dump(expr->else_block.value().get());
   }
 }
 
@@ -371,6 +359,14 @@ void AstDumper::dump(BreakExpr *expr) {
   if (expr->value.has_value()) {
     dump(expr->value.value().get());
   }
+}
+
+void AstDumper::dump(YieldExpr *expr) {
+  output_stream << "yield ";
+  if (expr->label.has_value()) {
+    output_stream << ":" << expr->label.value();
+  }
+  dump(expr->value.get());
 }
 
 void AstDumper::dump(ContinueExpr *expr) {
@@ -831,15 +827,17 @@ void AstDumper::dump(MLIROp *op) {
     if (&operand != &op->operands.back())
       output_stream << ", ";
   }
-  output_stream << "], [";
+  output_stream << "], {";
+  int i = 0;
   for (auto &attr : op->attributes) {
-    dump(attr.get());
-    if (&attr != &op->attributes.back())
+    output_stream << attr.first << ": " << attr.second;
+    if (i != (int)op->attributes.size() - 1)
       output_stream << ", ";
+    i++;
   }
-  output_stream << "], [";
+  output_stream << "}, [";
   for (auto &result : op->result_types) {
-    dump(result.get());
+    output_stream << result;
     if (&result != &op->result_types.back())
       output_stream << ", ";
   }
@@ -932,6 +930,8 @@ void AstDumper::dump(Expression *expr) {
     dump(static_cast<MLIRAttribute *>(expr));
   } else if (dynamic_cast<Type *>(expr)) {
     dump(static_cast<Type *>(expr));
+  } else if (dynamic_cast<YieldExpr *>(expr)) {
+    dump(static_cast<YieldExpr *>(expr));
   }
 }
 
@@ -971,7 +971,7 @@ void AstDumper::indent() {
 }
 
 std::string &to_string(AstNodeKind kind) {
-  static std::array<std::string, 85> names = {
+  static std::array<std::string, 86> names = {
       "Program",
       "Module",
       "Expression",
@@ -1048,6 +1048,7 @@ std::string &to_string(AstNodeKind kind) {
       "RangePattern",
       "VariantPattern",
       "TopLevelDeclStmt",
+      "YieldExpr",
 
       "MLIRAttribute",
       "MLIRType",

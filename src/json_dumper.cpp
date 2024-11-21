@@ -519,14 +519,13 @@ void JsonDumper::dump(IfExpr *node) {
 
   indent();
   output_stream << "\"then_block\": ";
-  std::visit([this](auto &arg) { this->dump(arg.get()); }, node->then_block);
+  dump(node->then_block.get());
   output_stream << ",\n";
 
   indent();
   output_stream << "\"else_block\": ";
   if (node->else_block) {
-    std::visit([this](auto &arg) { this->dump(arg.get()); },
-               node->else_block.value());
+    dump(node->else_block->get());
   } else {
     output_stream << "null";
   }
@@ -720,6 +719,32 @@ void JsonDumper::dump(DeferStmt *node) {
   indent();
   output_stream << "\"body\": ";
   std::visit([this](auto &arg) { this->dump(arg.get()); }, node->body);
+  output_stream << "\n";
+
+  cur_indent--;
+  indent();
+  output_stream << "}";
+}
+void JsonDumper::dump(YieldExpr *node) {
+  output_stream << "{\n";
+  cur_indent++;
+
+  indent();
+  output_stream << "\"kind\": \"YieldExpr\",\n";
+  dumpNodeToken(node);
+
+  indent();
+  output_stream << "\"label\": ";
+  if (node->label) {
+    output_stream << "\"" << *node->label << "\"";
+  } else {
+    output_stream << "null";
+  }
+  output_stream << ",\n";
+
+  indent();
+  output_stream << "\"value\": ";
+  dump(node->value.get());
   output_stream << "\n";
 
   cur_indent--;
@@ -1823,6 +1848,9 @@ void JsonDumper::dump(Expression *node) {
   case AstNodeKind::Type:
     dump(static_cast<Type *>(node));
     break;
+  case AstNodeKind::YieldExpr:
+    dump(static_cast<YieldExpr *>(node));
+    break;
   default:
     output_stream << "{\n";
     cur_indent++;
@@ -2397,7 +2425,7 @@ void JsonDumper::dump(MLIROp *op) {
   cur_indent++;
   for (size_t i = 0; i < op->result_types.size(); ++i) {
     indent();
-    dump(op->result_types[i].get());
+    output_stream << (op->result_types[i]);
     if (i + 1 != op->result_types.size())
       output_stream << ",";
     output_stream << "\n";
@@ -2409,12 +2437,22 @@ void JsonDumper::dump(MLIROp *op) {
   indent();
   output_stream << "\"attributes\": [\n";
   cur_indent++;
-  for (size_t i = 0; i < op->attributes.size(); ++i) {
+  int i = 0;
+  for (auto &attr : op->attributes) {
     indent();
-    dump(op->attributes[i].get());
-    if (i + 1 != op->attributes.size())
+    output_stream << "{\n";
+    cur_indent++;
+    indent();
+    output_stream << "\"name\": \"" << attr.first << "\",\n";
+    indent();
+    output_stream << "\"value\": " << attr.second << "\n";
+    cur_indent--;
+    indent();
+    output_stream << "}";
+    if (i + 1 != (int)op->attributes.size())
       output_stream << ",";
     output_stream << "\n";
+    ++i;
   }
   cur_indent--;
   indent();

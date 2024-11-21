@@ -66,29 +66,30 @@ void FuncOp::print(OpAsmPrinter &p) {
       getArgAttrsAttrName(), getResAttrsAttrName());
 }
 
-mlir::LogicalResult ReturnOp::verify() {
-  auto function = cast<FuncOp>((*this)->getParentOp());
-
-  // The operand number and types must match the function signature.
-  const auto &results = function.getFunctionType().getResults();
-  if (getNumOperands() != results.size())
-    return emitOpError("has ")
-           << getNumOperands() << " operands, but enclosing function (@"
-           << function.getName() << ") returns " << results.size();
-
-  for (unsigned i = 0, e = results.size(); i != e; ++i) {
-    // if its a literal then skip -> let the pass handle it
-    if (mlir::isa<mlir::lang::ConstantOp>(getOperand(i).getDefiningOp()))
-      continue;
-    if (getOperand(i).getType() != results[i])
-      return emitError() << "type of return operand " << i + 1 << " "
-                         << getOperand(i).getType()
-                         << " doesn't match function result type " << results[i]
-                         << " in function " << function.getName();
-  }
-
-  return success();
-}
+// mlir::LogicalResult ReturnOp::verify() {
+//   auto function = cast<FuncOp>((*this)->getParentOp());
+//
+//   // The operand number and types must match the function signature.
+//   const auto results = function.getFunctionType().getResults();
+//   if (getNumOperands() != results.size())
+//     return emitOpError("has ")
+//            << getNumOperands() << " operands, but enclosing function (@"
+//            << function.getName() << ") returns " << results.size();
+//
+//   for (unsigned i = 0, e = results.size(); i != e; ++i) {
+//     // if its a literal then skip -> let the pass handle it
+//     if (mlir::isa<mlir::lang::ConstantOp>(getOperand(i).getDefiningOp()))
+//       continue;
+//     if (getOperand(i).getType() != results[i])
+//       return emitError() << "type of return operand " << i + 1 << " "
+//                          << getOperand(i).getType()
+//                          << " doesn't match function result type " <<
+//                          results[i]
+//                          << " in function " << function.getName();
+//   }
+//
+//   return success();
+// }
 
 void VarDeclOp::build(OpBuilder &builder, OperationState &state,
                       StringRef symName, Type varType = nullptr,
@@ -167,4 +168,61 @@ mlir::FunctionType CallOp::getCalleeType() {
 
 mlir::OpFoldResult mlir::lang::UndefOp::fold(FoldAdaptor) {
   return mlir::lang::UndefAttr::get(getContext());
+}
+
+mlir::LogicalResult
+IfOp::inferReturnTypes(MLIRContext *ctx, std::optional<Location> loc,
+                       IfOp::Adaptor adaptor,
+                       SmallVectorImpl<Type> &inferredReturnTypes) {
+  if (adaptor.getRegions().empty())
+    return failure();
+  Region *r = &adaptor.getThenRegion();
+  if (r->empty())
+    return failure();
+  Block &b = r->front();
+  if (b.empty())
+    return failure();
+  if (mlir::isa<mlir::lang::YieldOp>(b.back())) {
+    if (b.back().getNumOperands() == 0)
+      return success();
+    inferredReturnTypes.push_back(b.back().getOperand(0).getType());
+    return success();
+  }
+  if (mlir::isa<mlir::lang::ReturnOp>(b.back())) {
+    if (b.back().getNumOperands() == 0)
+      return success();
+    inferredReturnTypes.push_back(b.back().getOperand(0).getType());
+    return success();
+  }
+  return failure();
+}
+
+void IfOp::build(OpBuilder &builder, OperationState &result, Value cond,
+                 function_ref<void(OpBuilder &, Location)> thenBuilder,
+                 function_ref<void(OpBuilder &, Location)> elseBuilder) {
+  assert(thenBuilder && "the builder callback for 'then' must be present");
+  result.addOperands(cond);
+
+  // Build then region.
+  OpBuilder::InsertionGuard guard(builder);
+  Region *thenRegion = result.addRegion();
+  builder.createBlock(thenRegion);
+  thenBuilder(builder, result.location);
+
+  // Build else region.
+  Region *elseRegion = result.addRegion();
+  if (elseBuilder) {
+    builder.createBlock(elseRegion);
+    elseBuilder(builder, result.location);
+  }
+
+  // Infer result types.
+  SmallVector<Type> inferredReturnTypes;
+  MLIRContext *ctx = builder.getContext();
+  auto attrDict = DictionaryAttr::get(ctx, result.attributes);
+  if (succeeded(inferReturnTypes(ctx, std::nullopt, result.operands, attrDict,
+                                 /*properties=*/nullptr, result.regions,
+                                 inferredReturnTypes))) {
+    result.addTypes(inferredReturnTypes);
+  }
 }

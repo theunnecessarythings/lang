@@ -85,6 +85,7 @@ enum class AstNodeKind {
   RangePattern,
   VariantPattern,
   TopLevelDeclStmt,
+  YieldExpr,
 
   MLIRAttribute,
   MLIRType,
@@ -437,22 +438,32 @@ struct TopLevelVarDecl : public TopLevelDecl {
   AstNodeKind kind() const override { return AstNodeKind::TopLevelVarDecl; }
 };
 
+struct YieldExpr : public Expression {
+  std::unique_ptr<Expression> value;
+  std::optional<std::string> label;
+
+  YieldExpr(Token token, std::optional<std::string> label,
+            std::unique_ptr<Expression> value)
+      : Expression(std::move(token)), value(std::move(value)),
+        label(std::move(label)) {}
+
+  AstNodeKind kind() const override { return AstNodeKind::YieldExpr; }
+};
+
 struct IfExprData {
   bool structured = true;
 };
 
 struct IfExpr : public Expression {
-  using Branch = std::variant<std::unique_ptr<BlockExpression>,
-                              std::unique_ptr<Expression>>;
-
   std::unique_ptr<Expression> condition;
-  Branch then_block;
-  std::optional<Branch> else_block;
+  std::unique_ptr<BlockExpression> then_block;
+  std::optional<std::unique_ptr<BlockExpression>> else_block;
 
   IfExprData extra;
 
-  IfExpr(Token token, std::unique_ptr<Expression> condition, Branch then_block,
-         std::optional<Branch> else_block)
+  IfExpr(Token token, std::unique_ptr<Expression> condition,
+         std::unique_ptr<BlockExpression> then_block,
+         std::optional<std::unique_ptr<BlockExpression>> else_block)
       : Expression(std::move(token)), condition(std::move(condition)),
         then_block(std::move(then_block)), else_block(std::move(else_block)) {}
 
@@ -782,13 +793,13 @@ struct MLIRType : public Type {
 struct MLIROp : public Expression {
   std::string op;
   std::vector<std::unique_ptr<Expression>> operands;
-  std::vector<std::unique_ptr<MLIRAttribute>> attributes;
-  std::vector<std::unique_ptr<Type>> result_types;
+  std::unordered_map<std::string, std::string> attributes;
+  std::vector<std::string> result_types;
 
   MLIROp(Token token, std::string op,
          std::vector<std::unique_ptr<Expression>> operands,
-         std::vector<std::unique_ptr<MLIRAttribute>> attributes,
-         std::vector<std::unique_ptr<Type>> result_types)
+         std::unordered_map<std::string, std::string> attributes,
+         std::vector<std::string> result_types)
       : Expression(std::move(token)), op(std::move(op)),
         operands(std::move(operands)), attributes(std::move(attributes)),
         result_types(std::move(result_types)) {}
@@ -1118,6 +1129,7 @@ struct AstDumper {
   void dump(MLIRAttribute *);
   void dump(MLIRType *);
   void dump(MLIROp *);
+  void dump(YieldExpr *);
 
   void indent();
 

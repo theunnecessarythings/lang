@@ -139,7 +139,7 @@ def CallOp : Lang_Op<"call",
 }
 
 
-def ReturnOp : Lang_Op<"return", [Pure, HasParent<"FuncOp">,
+def ReturnOp : Lang_Op<"return", [Pure, 
                                 MemRefsNormalizable, ReturnLike, Terminator]> {
   let summary = "Function return operation";
   let description = [{
@@ -154,7 +154,7 @@ def ReturnOp : Lang_Op<"return", [Pure, HasParent<"FuncOp">,
   }]>];
 
   let assemblyFormat = "attr-dict ($operands^ `:` type($operands))?";
-  let hasVerifier = 1;
+  // let hasVerifier = 1;
 }
 
 def VarDeclOp : Lang_Op<"var_decl", [IsolatedFromAbove, Symbol]> {
@@ -365,6 +365,43 @@ def UndefOp : Lang_Op<"undef", [Pure, ConstantLike]> {
   let results = (outs AnyType:$res);
   let assemblyFormat = "attr-dict `:` type($res)";
   let hasFolder = 1;
+}
+
+def IfOp : Lang_Op<"if", [InferTypeOpAdaptor, InferTypeOpInterface]> {
+  let summary = "Conditional branch operation";
+  let description = [{
+    The `lang.if` operation is used to conditionally branch based on a
+    predicate. The operation contains a region that is executed if the
+    predicate is true, and an optional else region that is executed if the
+    predicate is false.
+  }];
+
+  
+  let arguments = (ins I1:$condition);
+  let results = (outs Optional<AnyType>:$result);
+  let regions = (region SizedRegion<1>:$thenRegion,
+                        MaxSizedRegion<1>:$elseRegion);
+
+  let builders = [
+    OpBuilder<(ins "Value":$cond,
+      CArg<"function_ref<void(OpBuilder &, Location)>",
+           "nullptr">:$thenBuilder,
+      CArg<"function_ref<void(OpBuilder &, Location)>",
+           "nullptr">:$elseBuilder)>,
+  ];
+
+}
+
+
+def YieldOp : Lang_Op<"yield", [Pure, Terminator]> {
+  let summary = "loop yield and termination operation";
+  let description = [{
+    The `lang.yield` operation is used to yield control flow from a loop.
+    The operation may optionally contain a list of values to yield.
+  }];
+
+  let builders = [OpBuilder<(ins), [{ /* nothing to do */ }]>];
+  let arguments = (ins Optional<AnyType>:$result);
 }
 
 
