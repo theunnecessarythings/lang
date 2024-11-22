@@ -51,41 +51,41 @@ fn fib(n: i64) i64 {
     
 }
 
-// fn test_a(arg0: i64, arg1: i64) void {
-//     print("arg0 -> %d", arg0);
-//     print("arg1 -> %d", arg1);
-// }
-//
-// fn test_a(arg0: f64, arg1: f64) void {
-//     print("arg0 -> %f", arg0);
-//     print("arg1 -> %f", arg1);
-// }
-//
-// fn test_op() void {
-//     const a = 64;
-//     const b = 69;
-//     print("a -> %d", a);
-//     print("b -> %d", b);
-//     const sum = @mlir_op("arith.addi", [a, b], [], [@mlir_type("i64")]);
-//
-//     print("sum -> %d", sum);
-//
-//     const sum_b = a + b;
-//     print("sum_b -> %d", sum_b);
-//
-//     const sub = a - b;
-//     print("sub -> %d", sub);
-//     
-//     const mul = a * b;
-//     print("mul -> %d", mul);
-//
-//     const div = a / b;
-//     print("div -> %d", div);
-//
-//     // test a complex operation involving multiple operations and constants
-//     const complex = a * b + a - b / a + 420;
-//     print("complex -> %d", complex);
-// }
+fn test_a(arg0: i64, arg1: i64) void {
+    print("arg0 -> %d", arg0);
+    print("arg1 -> %d", arg1);
+}
+
+fn test_a(arg0: f64, arg1: f64) void {
+    print("arg0 -> %f", arg0);
+    print("arg1 -> %f", arg1);
+}
+
+fn test_op() void {
+    const a = 64;
+    const b = 69;
+    print("a -> %d", a);
+    print("b -> %d", b);
+    const sum = @mlir_op("arith.addi", [a, b], {}, ["i64"]);
+
+    print("sum -> %d", sum);
+
+    const sum_b = a + b;
+    print("sum_b -> %d", sum_b);
+
+    const sub = a - b;
+    print("sub -> %d", sub);
+    
+    const mul = a * b;
+    print("mul -> %d", mul);
+
+    const div = a / b;
+    print("div -> %d", div);
+
+    // test a complex operation involving multiple operations and constants
+    const complex = a * b + a - b / a + 420;
+    print("complex -> %d", complex);
+}
 
 // fn test_a_f64(arg0: f64) void {
 //     print("arg0 -> %f", arg0);

@@ -1,5 +1,6 @@
 #include "LangGen.h"
 #include "ast.hpp"
+#include "compiler.hpp"
 #include "dialect/LangDialect.h"
 #include "dialect/LangOps.h"
 #include "mlir/AsmParser/AsmParser.h"
@@ -12,7 +13,6 @@
 #include "llvm/ADT/StringRef.h"
 #include <cassert>
 #include <memory>
-#include <variant>
 
 using llvm::StringRef;
 
@@ -28,7 +28,8 @@ class LangGenImpl {
 public:
   mlir::lang::FuncOp *current_function = nullptr;
 
-  LangGenImpl(mlir::MLIRContext &context) : builder(&context) {}
+  LangGenImpl(mlir::MLIRContext &context, Context &ctx)
+      : compiler_context(ctx), builder(&context) {}
 
   llvm::LogicalResult declare(llvm::StringRef var, mlir::Value value) {
     if (symbol_table.count(var))
@@ -79,13 +80,11 @@ public:
       the_module.emitError("module verification error");
       return nullptr;
     }
-    llvm::errs() << "Module verification succeeded\n";
-    the_module.dump();
-    llvm::errs() << "\n";
     return the_module;
   }
 
 private:
+  Context &compiler_context;
   mlir::ModuleOp the_module;
   mlir::OpBuilder builder;
   llvm::ScopedHashTable<StringRef, mlir::Value> symbol_table;
@@ -97,8 +96,11 @@ private:
   AstDumper dumper;
 
   mlir::Location loc(const TokenSpan &loc) {
-    return mlir::FileLineColLoc::get(builder.getStringAttr("temp.lang"),
-                                     loc.line_no, loc.col_start);
+    return mlir::FileLineColLoc::get(
+        builder.getContext(),
+        compiler_context.source_mgr.getBufferInfo(loc.file_id + 1)
+            .Buffer->getBufferIdentifier(),
+        loc.line_no, loc.col_start);
   }
 
   std::string mangleFunctionName(llvm::StringRef name,
@@ -1020,6 +1022,6 @@ private:
 
 // The public API for codegen.
 mlir::OwningOpRef<mlir::ModuleOp> langGen(mlir::MLIRContext &context,
-                                          Program *program) {
-  return LangGenImpl(context).langGen(program);
+                                          Program *program, Context &ctx) {
+  return LangGenImpl(context, ctx).langGen(program);
 }

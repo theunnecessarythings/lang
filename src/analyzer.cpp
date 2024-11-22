@@ -115,9 +115,9 @@ void Analyzer::analyze(ImplDecl *impl) {
       // constructor so check the first parameter type is Self or parent_name
       // delete that parameter
       if (func->decl->parameters.size() == 0) {
-        context->diagnostics.report_error(
-            func->decl->token,
-            "constructor must have at least one parameter, self");
+        context->report_error(
+            "constructor must have at least one parameter, self",
+            &func->decl->token);
       } else {
         auto &param = func->decl->parameters[0];
         if (param->type->kind() == AstNodeKind::IdentifierType) {
@@ -125,14 +125,14 @@ void Analyzer::analyze(ImplDecl *impl) {
           if (id_type->name == "Self" || id_type->name == impl->type) {
             func->decl->parameters.erase(func->decl->parameters.begin());
           } else {
-            context->diagnostics.report_error(
-                param->token,
-                "first parameter of constructor must be of type Self");
+            context->report_error(
+                "first parameter of constructor must be of type Self",
+                &param->token);
           }
         } else {
-          context->diagnostics.report_error(
-              param->token,
-              "first parameter of constructor must be of type Self");
+          context->report_error(
+              "first parameter of constructor must be of type Self",
+              &param->token);
         }
       }
     }

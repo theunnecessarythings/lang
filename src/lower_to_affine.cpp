@@ -120,7 +120,6 @@ struct FuncOpLowering : public mlir::OpConversionPattern<mlir::lang::FuncOp> {
     rewriter.create<mlir::func::ReturnOp>(op.getLoc(),
                                           return_block->getArguments());
     rewriter.eraseOp(op);
-    op.emitWarning() << "\nfunc op =>\n";
     return mlir::success();
   }
 };
@@ -308,19 +307,13 @@ struct ReturnOpLowering
                                                       adaptor.getOperands());
       return mlir::success();
     }
-    // rewriter.replaceOpWithNewOp<mlir::func::ReturnOp>(op,
-    //                                                   adaptor.getOperands());
     rewriter.setInsertionPointAfter(op);
-    auto branch_op = rewriter.create<mlir::cf::BranchOp>(
+    rewriter.create<mlir::cf::BranchOp>(
         op.getLoc(),
         &op->getParentOfType<mlir::func::FuncOp>().getBlocks().back(),
         adaptor.getOperands());
 
-    // rewriter.replaceOp(op, branch_op);
     rewriter.eraseOp(op);
-
-    llvm::errs() << "return op =>\n";
-    branch_op->getParentOfType<mlir::func::FuncOp>().dump();
     return mlir::success();
   }
 };
@@ -869,7 +862,6 @@ void LangToAffineLoweringPass::runOnOperation() {
                                           std::move(patterns)))) {
 
     llvm::errs() << "Partial conversion failed for\n";
-    getOperation().dump();
     signalPassFailure();
   }
 }

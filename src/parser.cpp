@@ -1,7 +1,7 @@
 #include "parser.hpp"
 #include "ast.hpp"
-#include "compiler.hpp"
 #include "lexer.hpp"
+#include "llvm/Support/raw_ostream.h"
 #include <fstream>
 #include <memory>
 #include <optional>
@@ -47,18 +47,17 @@ Token Parser::get_error_token(TokenSpan &span) {
 }
 
 Token Parser::unexpected_token_error(TokenKind &expected, Token &found) {
-  context->diagnostics.report_error(found,
-                                    "Expected " + Lexer::lexeme(expected) +
-                                        ", got " + Lexer::lexeme(found.kind));
+  context->report_error("Expected " + Lexer::lexeme(expected) + ", got " +
+                            Lexer::lexeme(found.kind),
+                        &found);
   skip_to_next_stmt();
-  return get_error_token(found.span);
+  throw std::runtime_error("Unexpected token");
 }
 
 Token Parser::invalid_token_error(Token &found) {
-  context->diagnostics.report_error(found, "Invalid token " +
-                                               Lexer::lexeme(found.kind));
+  context->report_error("Invalid token " + Lexer::lexeme(found.kind), &found);
   skip_to_next_stmt();
-  return get_error_token(found.span);
+  throw std::runtime_error("Invalid token");
 }
 
 std::optional<Token> Parser::consume() {
@@ -248,8 +247,7 @@ std::unique_ptr<Expression> Parser::nud(const Token &token) {
     return std::make_unique<ComptimeExpr>(token, std::move(expr));
   }
   default:
-    context->diagnostics.report_error(token, "Invalid token " +
-                                                 Lexer::lexeme(token.kind));
+    context->report_error("Invalid token " + Lexer::lexeme(token.kind), &token);
     return std::make_unique<InvalidExpression>(token);
   }
 }
@@ -288,9 +286,9 @@ std::unique_ptr<Expression> Parser::led(std::unique_ptr<Expression> left,
         return std::make_unique<FieldAccessExpr>(op, std::move(left),
                                                  std::move(expr));
       }
-      context->diagnostics.report_error(
-          number.value(), "Expected integer literal found " +
-                              lexer->token_to_string(number.value()));
+      context->report_error("Expected integer literal found " +
+                                lexer->token_to_string(number.value()),
+                            &number.value());
       return std::make_unique<InvalidExpression>(op);
     } else {
       auto right_expr =
@@ -328,8 +326,8 @@ std::unique_ptr<Program> Parser::parse_single_source(std::string &path) {
   // Try to open the file
   std::ifstream file(path);
   if (!file.is_open()) {
-    context->diagnostics.report_error(current_token.value(),
-                                      "Could not open file " + path);
+    context->report_error("Could not open file " + path,
+                          &current_token.value());
     std::vector<std::unique_ptr<TopLevelDecl>> top_level_decls;
     return std::make_unique<Program>(current_token.value(),
                                      std::move(top_level_decls));
@@ -337,8 +335,14 @@ std::unique_ptr<Program> Parser::parse_single_source(std::string &path) {
   // Read contents of the file into a string
   std::string source((std::istreambuf_iterator<char>(file)),
                      std::istreambuf_iterator<char>());
-  int file_id = context->source_manager->add_path(path, source);
-  std::unique_ptr<Lexer> lexer = std::make_unique<Lexer>(source, file_id);
+  static int file_id = 0;
+  llvm::ErrorOr<std::unique_ptr<llvm::MemoryBuffer>> fileOrErr =
+      llvm::MemoryBuffer::getFileOrSTDIN(path);
+  if (std::error_code ec = fileOrErr.getError()) {
+    llvm::errs() << "Could not open input file: " << ec.message() << "\n";
+  }
+  context->source_mgr.AddNewSourceBuffer(std::move(*fileOrErr), llvm::SMLoc());
+  std::unique_ptr<Lexer> lexer = std::make_unique<Lexer>(source, file_id++);
   std::unique_ptr<Parser> parser =
       std::make_unique<Parser>(std::move(lexer), context);
   auto program = parser->parse_program();
@@ -388,6 +392,16 @@ void Parser::skip_to_next_stmt() {
   }
 }
 
+bool isFileLoaded(llvm::SourceMgr &sourceMgr, const std::string &filePath) {
+  for (unsigned i = 1; i <= sourceMgr.getNumBuffers(); ++i) {
+    llvm::StringRef bufferIdentifier =
+        sourceMgr.getMemoryBuffer(i)->getBufferIdentifier();
+    if (bufferIdentifier == filePath)
+      return true;
+  }
+  return false;
+}
+
 // import_decl -> 'import' (ident ('.' ident)* ('as' ident)?)*
 // eg: import std.io, std.math.rand as rand, std.fs
 std::unique_ptr<ImportDecl> Parser::parse_import_decl() {
@@ -408,7 +422,7 @@ std::unique_ptr<ImportDecl> Parser::parse_import_decl() {
 
     // Import the parsed path
     path += ".lang";
-    if (!context->source_manager->contains_path(path)) {
+    if (isFileLoaded(context->source_mgr, path)) {
       auto tree = parse_single_source(path);
       for (auto &decl : tree->items) {
         top_level_decls.emplace_back(std::move(decl));
@@ -469,9 +483,9 @@ std::unique_ptr<TopLevelDecl> Parser::parse_top_level_decl() {
     return trait_decl;
   } else {
     auto token = consume();
-    context->diagnostics.report_error(token.value(),
-                                      "Expected top level decl found " +
-                                          Lexer::lexeme(token->kind));
+    context->report_error("Expected top level decl found " +
+                              Lexer::lexeme(token->kind),
+                          &token.value());
     skip_to_next_top_level_decl();
     return std::make_unique<InvalidTopLevelDecl>(token.value());
   }
@@ -577,8 +591,8 @@ std::unique_ptr<Parameter> Parser::parse_param() {
   }
   if (is_peek(TokenKind::KeywordMut)) {
     if (is_comptime) {
-      context->diagnostics.report_error(current_token.value(),
-                                        "Comptime parameter cannot be mutable");
+      context->report_error("Comptime parameter cannot be mutable",
+                            &current_token.value());
     }
     consume();
     is_mut = true;
@@ -858,9 +872,9 @@ std::unique_ptr<Type> Parser::parse_mlir_type(bool consume_at) {
     consume_kind(TokenKind::At);
   auto mlir_type = consume_kind(TokenKind::Identifier);
   if (lexer->token_to_string(mlir_type) != "mlir_type") {
-    context->diagnostics.report_error(mlir_type,
-                                      "Expected mlir_type found " +
-                                          lexer->token_to_string(mlir_type));
+    context->report_error("Expected mlir_type found " +
+                              lexer->token_to_string(mlir_type),
+                          &mlir_type);
   }
   consume_kind(TokenKind::LParen);
   auto type_str = consume_kind(TokenKind::StringLiteral);
@@ -873,9 +887,9 @@ std::unique_ptr<MLIRAttribute> Parser::parse_mlir_attr() {
   // consume_kind(TokenKind::At);
   auto mlir_attr = consume_kind(TokenKind::Identifier);
   if (lexer->token_to_string(mlir_attr) != "mlir_attr") {
-    context->diagnostics.report_error(mlir_attr,
-                                      "Expected mlir_attr found " +
-                                          lexer->token_to_string(mlir_attr));
+    context->report_error("Expected mlir_attr found " +
+                              lexer->token_to_string(mlir_attr),
+                          &mlir_attr);
   }
   consume_kind(TokenKind::LParen);
   auto attr_str = consume_kind(TokenKind::StringLiteral);
@@ -889,8 +903,8 @@ std::unique_ptr<MLIROp> Parser::parse_mlir_op() {
   // consume_kind(TokenKind::At);
   auto mlir_op = consume_kind(TokenKind::Identifier);
   if (lexer->token_to_string(mlir_op) != "mlir_op") {
-    context->diagnostics.report_error(
-        mlir_op, "Expected mlir_op found " + lexer->token_to_string(mlir_op));
+    context->report_error(
+        "Expected mlir_op found " + lexer->token_to_string(mlir_op), &mlir_op);
   }
   consume_kind(TokenKind::LParen);
   auto op_str = consume_kind(TokenKind::StringLiteral);
@@ -1231,8 +1245,8 @@ Parser::parse_range_pattern(std::unique_ptr<Pattern> start_pattern) {
   // Parse the end pattern
   auto end_pattern = parse_single_pattern();
   if (!end_pattern) {
-    context->diagnostics.report_error(
-        range_type.value(), "Expected a pattern after range operator");
+    context->report_error("Expected a pattern after range operator",
+                          &range_type.value());
     return std::make_unique<InvalidPattern>(range_type.value());
   }
 
@@ -1541,25 +1555,21 @@ Parser::parse_number_literal(const std::basic_string<char> &bytes) {
     case 'B':
     case 'O':
     case 'X':
-      // return {.failure = {.upper_case_base = 1}};
-      context->diagnostics.report_error(current_token.value(),
-                                        "Upper case base not allowed");
+      context->report_error("Upper case base not allowed",
+                            &current_token.value());
       break;
     case '.':
     case 'e':
     case 'E':
       break;
     default:
-      // return {.failure = {.leading_zero}};
-      context->diagnostics.report_error(current_token.value(),
-                                        "Leading zero not allowed");
+      context->report_error("Leading zero not allowed", &current_token.value());
       break;
     }
   }
   if (bytes.size() == 2 && base != 10) {
-    // return {.failure = {.digit_after_base}};
-    context->diagnostics.report_error(current_token.value(),
-                                      "Digit after base not allowed");
+    context->report_error("Digit after base not allowed",
+                          &current_token.value());
   }
 
   uint64_t x = 0;
@@ -1574,19 +1584,15 @@ Parser::parse_number_literal(const std::basic_string<char> &bytes) {
     switch (c) {
     case '_':
       if (i == 2 && base != 10) {
-        // return {.failure = {.invalid_underscore_after_special = i}};
-        context->diagnostics.report_error(current_token.value(),
-                                          "Invalid underscore after special");
+        context->report_error("Invalid underscore after special",
+                              &current_token.value());
       }
       if (special != 0) {
-        // return {.failure = {.invalid_underscore_after_special = i}};
-        context->diagnostics.report_error(current_token.value(),
-                                          "Invalid underscore after special");
+        context->report_error("Invalid underscore after special",
+                              &current_token.value());
       }
       if (underscore) {
-        // return {.failure = {.repeated_underscore = i}};
-        context->diagnostics.report_error(current_token.value(),
-                                          "Repeated underscore");
+        context->report_error("Repeated underscore", &current_token.value());
       }
       underscore = true;
       ++i;
@@ -1596,14 +1602,11 @@ Parser::parse_number_literal(const std::basic_string<char> &bytes) {
       if (base == 10) {
         floating = true;
         if (exponent) {
-          // return {.failure = {.duplicate_exponent = i}};
-          context->diagnostics.report_error(current_token.value(),
-                                            "Duplicate exponent");
+          context->report_error("Duplicate exponent", &current_token.value());
         }
         if (underscore) {
-          // return {.failure = {.exponent_after_underscore = i}};
-          context->diagnostics.report_error(current_token.value(),
-                                            "Exponent after underscore");
+          context->report_error("Exponent after underscore",
+                                &current_token.value());
         }
         special = c;
         exponent = true;
@@ -1616,14 +1619,11 @@ Parser::parse_number_literal(const std::basic_string<char> &bytes) {
       if (base == 16) {
         floating = true;
         if (exponent) {
-          // return {.failure = {.duplicate_exponent = i}};
-          context->diagnostics.report_error(current_token.value(),
-                                            "Duplicate exponent");
+          context->report_error("Duplicate exponent", &current_token.value());
         }
         if (underscore) {
-          // return {.failure = {.exponent_after_underscore = i}};
-          context->diagnostics.report_error(current_token.value(),
-                                            "Exponent after underscore");
+          context->report_error("Exponent after underscore",
+                                &current_token.value());
         }
         special = c;
         exponent = true;
@@ -1634,20 +1634,15 @@ Parser::parse_number_literal(const std::basic_string<char> &bytes) {
     case '.':
       floating = true;
       if (base != 10 && base != 16) {
-        // return {.failure = {.invalid_float_base = 2}};
-        context->diagnostics.report_error(current_token.value(),
-                                          "Invalid float base");
+        context->report_error("Invalid float base", &current_token.value());
       }
       if (period) {
-        // return {.failure = {.duplicate_period}};
-        context->diagnostics.report_error(current_token.value(),
-                                          "Duplicate period");
+        context->report_error("Duplicate period", &current_token.value());
       }
       period = true;
       if (underscore) {
-        // return {.failure = {.special_after_underscore = i}};
-        context->diagnostics.report_error(current_token.value(),
-                                          "Special after underscore");
+        context->report_error("Special after underscore",
+                              &current_token.value());
       }
       special = c;
       ++i;
@@ -1661,15 +1656,12 @@ Parser::parse_number_literal(const std::basic_string<char> &bytes) {
       case 'e':
       case 'E':
         if (base != 10) {
-          // return {.failure = {.invalid_exponent_sign = i}};
-          context->diagnostics.report_error(current_token.value(),
-                                            "Invalid exponent sign");
+          context->report_error("Invalid exponent sign",
+                                &current_token.value());
         }
         break;
       default:
-        // return {.failure = {.invalid_exponent_sign = i}};
-        context->diagnostics.report_error(current_token.value(),
-                                          "Invalid exponent sign");
+        context->report_error("Invalid exponent sign", &current_token.value());
         break;
       }
       special = c;
@@ -1686,20 +1678,15 @@ Parser::parse_number_literal(const std::basic_string<char> &bytes) {
       } else if (c >= 'a' && c <= 'z') {
         return c - 'a' + 10;
       }
-      // return {.failure = {.invalid_character = i}};
-      context->diagnostics.report_error(current_token.value(),
-                                        "Invalid character");
+      context->report_error("Invalid character", &current_token.value());
       return 0;
     }();
     if (digit >= base) {
-      // return {.failure = {.invalid_digit = {.i = i, .base = base}};
-      context->diagnostics.report_error(current_token.value(), "Invalid digit");
+      context->report_error("Invalid digit", &current_token.value());
     }
 
     if (exponent && digit >= 10) {
-      // return {.failure = {.invalid_digit_exponent = i}};
-      context->diagnostics.report_error(current_token.value(),
-                                        "Invalid digit exponent");
+      context->report_error("Invalid digit exponent", &current_token.value());
     }
 
     underscore = false;
@@ -1727,23 +1714,18 @@ Parser::parse_number_literal(const std::basic_string<char> &bytes) {
   }
 
   if (underscore) {
-    // return {.failure = {.trailing_underscore}};
-    context->diagnostics.report_error(current_token.value(),
-                                      "Trailing underscore");
+    context->report_error("Trailing underscore", &current_token.value());
   }
   if (special != 0) {
-    // return {.failure = {.trailing_special}};
-    context->diagnostics.report_error(current_token.value(),
-                                      "Trailing special");
+    context->report_error("Trailing special", &current_token.value());
   }
 
   if (floating) {
-    // return {.success = {.floating = {.value = x}}};
     return stod(lexer->token_to_string(current_token.value()));
   }
   if (overflow) {
     // bigint
-    context->diagnostics.report_error(current_token.value(), "Overflow");
+    context->report_error("Overflow", &current_token.value());
   }
   return (int)x;
 }
@@ -1799,7 +1781,7 @@ Operator Parser::token_to_operator(const Token &op) {
   case TokenKind::StarStar:
     return Operator::Pow;
   default:
-    context->diagnostics.report_error(op, "Invalid operator");
+    context->report_error("Invalid operator", &op);
     return Operator::Invalid;
   }
 }

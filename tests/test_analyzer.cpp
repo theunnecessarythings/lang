@@ -22,14 +22,6 @@ auto parse(const std::string &path, std::string &str, int file_id,
 
   Parser parser(std::move(lexer), context);
   auto tree = parser.parse_program();
-  if (context->diagnostics.level_count(Diagnostic::Level::Error) > 0) {
-    context->diagnostics.report(Diagnostic::Level::Error);
-    REQUIRE(false);
-  }
-  if (context->diagnostics.level_count(Diagnostic::Level::Warning) > 0) {
-    context->diagnostics.report(Diagnostic::Level::Warning);
-    REQUIRE(false);
-  }
   return tree;
 }
 
@@ -41,20 +33,11 @@ void test_analyzer(const std::string &path) {
   std::string str((std::istreambuf_iterator<char>(file)),
                   std::istreambuf_iterator<char>());
 
-  std::shared_ptr<SourceManager> source_manager =
-      std::make_shared<SourceManager>();
-  std::shared_ptr<Context> context = std::make_shared<Context>(source_manager);
-  int file_id = context->source_manager->add_path(path, str);
-
-  auto tree = parse(path, str, file_id, context, false);
+  std::shared_ptr<Context> context = std::make_shared<Context>();
+  auto tree = parse(path, str, 0, context, false);
 
   Analyzer analyzer(context);
   analyzer.analyze(tree.get());
-
-  if (context->diagnostics.level_count(Diagnostic::Level::Error) > 0) {
-    context->diagnostics.report(Diagnostic::Level::Error);
-    REQUIRE(false);
-  }
 }
 
 TEST_CASE("expr", "[analyzer]") { test_analyzer("../examples/expr.lang"); }

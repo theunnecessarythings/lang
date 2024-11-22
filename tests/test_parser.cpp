@@ -7,11 +7,8 @@
 auto parse(const std::string &path, std::string &str,
            bool print_tokens = false) {
 
-  std::shared_ptr<SourceManager> source_manager =
-      std::make_shared<SourceManager>();
-  std::shared_ptr<Context> context = std::make_shared<Context>(source_manager);
-  int file_id = context->source_manager->add_path(path, str);
-  std::unique_ptr<Lexer> lexer = std::make_unique<Lexer>(str, file_id);
+  std::shared_ptr<Context> context = std::make_shared<Context>();
+  std::unique_ptr<Lexer> lexer = std::make_unique<Lexer>(str, 0);
 
   if (print_tokens) {
     while (true) {
@@ -26,14 +23,6 @@ auto parse(const std::string &path, std::string &str,
 
   Parser parser(std::move(lexer), context);
   auto tree = parser.parse_program();
-  if (context->diagnostics.level_count(Diagnostic::Level::Error) > 0) {
-    context->diagnostics.report(Diagnostic::Level::Error);
-    REQUIRE(false);
-  }
-  if (context->diagnostics.level_count(Diagnostic::Level::Warning) > 0) {
-    context->diagnostics.report(Diagnostic::Level::Warning);
-    REQUIRE(false);
-  }
   return tree;
 }
 

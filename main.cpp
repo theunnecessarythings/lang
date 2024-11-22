@@ -89,7 +89,8 @@ static cl::opt<enum Action> emitAction(
 static cl::opt<bool> enableOpt("opt", cl::desc("Enable optimizations"));
 
 /// Returns a Toy AST resulting from parsing the file or a nullptr on error.
-std::unique_ptr<Program> parseInputFile(llvm::StringRef filename) {
+std::unique_ptr<Program> parseInputFile(llvm::StringRef filename,
+                                        std::shared_ptr<Context> context) {
   llvm::ErrorOr<std::unique_ptr<llvm::MemoryBuffer>> fileOrErr =
       llvm::MemoryBuffer::getFileOrSTDIN(filename);
   if (std::error_code ec = fileOrErr.getError()) {
@@ -98,9 +99,8 @@ std::unique_ptr<Program> parseInputFile(llvm::StringRef filename) {
   }
   auto buffer = fileOrErr.get()->getBuffer();
   auto lexer = std::make_unique<Lexer>(buffer.str(), 0);
-  auto source_manager = std::make_shared<SourceManager>();
-  auto context = std::make_shared<Context>(source_manager);
   auto parser = Parser(std::move(lexer), context);
+  context->source_mgr.AddNewSourceBuffer(std::move(*fileOrErr), llvm::SMLoc());
   auto tree = parser.parse_program();
   auto analyzer = Analyzer(context);
   analyzer.analyze(tree.get());
@@ -113,7 +113,8 @@ int dumpJSON() {
     return 5;
   }
 
-  auto moduleAST = parseInputFile(inputFilename);
+  auto context = std::make_shared<Context>();
+  auto moduleAST = parseInputFile(inputFilename, context);
   if (!moduleAST)
     return 1;
   auto dumper = JsonDumper();
@@ -129,11 +130,14 @@ int dumpAST() {
     return 5;
   }
 
-  auto moduleAST = parseInputFile(inputFilename);
+  auto context = std::make_shared<Context>();
+  auto moduleAST = parseInputFile(inputFilename, context);
   if (!moduleAST)
     return 1;
 
-  AstDumper().dump(moduleAST.get());
+  auto dumper = AstDumper();
+  dumper.dump(moduleAST.get());
+  llvm::errs() << dumper.to_string() << "\n";
   return 0;
 }
 
@@ -141,13 +145,14 @@ int loadMLIR(llvm::SourceMgr &sourceMgr, mlir::MLIRContext &context,
              mlir::OwningOpRef<mlir::ModuleOp> &module, bool lang = false) {
   if (inputType != InputType::MLIR &&
       !llvm::StringRef(inputFilename).ends_with(".mlir")) {
-    auto moduleAST = parseInputFile(inputFilename);
+    auto compiler_context = std::make_shared<Context>();
+    auto moduleAST = parseInputFile(inputFilename, compiler_context);
     if (!moduleAST)
       return 6;
     if (!lang)
       module = mlirGen(context, moduleAST.get());
     else
-      module = langGen(context, moduleAST.get());
+      module = langGen(context, moduleAST.get(), *compiler_context);
     return !module ? 1 : 0;
   }
 
@@ -249,7 +254,6 @@ int dumpMLIRLang() {
   if (mlir::failed(pm.run(*module)))
     return 4;
 
-  module->dump();
   runJit(module.get());
   return 0;
 }
