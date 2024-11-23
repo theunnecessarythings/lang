@@ -3,6 +3,7 @@
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"
 #include "mlir/IR/Dialect.h"
 #include "mlir/IR/DialectImplementation.h"
+#include "mlir/Transforms/InliningUtils.h"
 
 #define GET_ATTRDEF_CLASSES
 #include "dialect/LangOpsAttrDefs.cpp.inc"
@@ -15,6 +16,17 @@ template <> struct mlir::FieldParser<llvm::APInt> {
     if (parser.parseInteger(value))
       return failure();
     return value;
+  }
+};
+
+struct LangDialectInlinerInterface : public mlir::DialectInlinerInterface {
+  using DialectInlinerInterface::DialectInlinerInterface;
+
+  bool isLegalToInline(mlir::Operation *call, mlir::Operation *callable,
+                       bool wouldBeCloned) const final {
+    if (callable->hasAttr("force_inline"))
+      return true;
+    return false;
   }
 };
 
@@ -35,6 +47,9 @@ void mlir::lang::LangDialect::initialize() {
       >();
   addTypes<StructType, TypeValueType, StringType, PointerType,
            IntLiteralType>();
+
+  addInterfaces<LangDialectInlinerInterface>();
+
   getContext()->getOrLoadDialect<mlir::LLVM::LLVMDialect>();
 }
 

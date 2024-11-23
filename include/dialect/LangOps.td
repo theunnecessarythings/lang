@@ -157,7 +157,7 @@ def ReturnOp : Lang_Op<"return", [Pure,
   // let hasVerifier = 1;
 }
 
-def VarDeclOp : Lang_Op<"var_decl", [IsolatedFromAbove, Symbol]> {
+def VarDeclOp : Lang_Op<"var_decl", [IsolatedFromAbove, Symbol,InferTypeOpAdaptor, InferTypeOpInterface]> {
   let summary = "Variable declaration operation with a symbol name";
   let description = [{
     The `var_decl` operation declares a variable with a specified symbol name and an optional initial value.
@@ -166,7 +166,9 @@ def VarDeclOp : Lang_Op<"var_decl", [IsolatedFromAbove, Symbol]> {
 
   let arguments = (ins OptionalAttr<TypeAttr>:$var_type,
       SymbolNameAttr:$sym_name, 
-      Optional<AnyType>:$init_value);
+      Optional<AnyType>:$init_value,
+      BoolAttr:$is_mutable,
+      BoolAttr:$is_public);
 
   let results = (outs AnyType:$result);
 
@@ -402,6 +404,52 @@ def YieldOp : Lang_Op<"yield", [Pure, Terminator]> {
 
   let builders = [OpBuilder<(ins), [{ /* nothing to do */ }]>];
   let arguments = (ins Optional<AnyType>:$result);
+}
+
+def TupleOp : Lang_Op<"tuple", []> {
+  let summary = "Tuple operation";
+  let description = [{
+    The `lang.tuple` operation creates a tuple value from a list of values.
+  }];
+
+  let arguments = (ins Variadic<AnyType>:$operands);
+  let results = (outs AnyType:$result);
+
+  let assemblyFormat = "$operands `:` type($operands) attr-dict `->` type($result)";
+}
+
+def LoadOp : Lang_Op<"load", []> {
+  let summary = "Load operation";
+  let description = [{
+    The `lang.load` operation is used to load a value from a memory location.
+  }];
+
+  let arguments = (ins AnyType:$memref);
+  let results = (outs AnyType:$result);
+
+  let assemblyFormat = "$memref `:` type($memref) attr-dict `->` type($result)";
+}
+
+def StoreOp : Lang_Op<"store", []> {
+  let summary = "Store operation";
+  let description = [{
+    The `lang.store` operation is used to store a value to a memory location.
+  }];
+
+  let arguments = (ins AnyType:$value, AnyType:$memref);
+  let assemblyFormat = "$value `to` $memref `:` type($value) attr-dict `->` type($memref)";
+}
+
+def DerefOp: Lang_Op<"deref", [InferTypeOpAdaptor, InferTypeOpInterface]> {
+  let summary = "Dereference operation";
+  let description = [{
+    The `lang.deref` operation is used to dereference a pointer value.
+  }];
+
+  let arguments = (ins AnyType:$addr);
+  let results = (outs AnyType:$result);
+
+  let assemblyFormat = "$addr `:` type($addr) attr-dict `->` type($result)";
 }
 
 

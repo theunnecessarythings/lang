@@ -21,4 +21,5 @@
 - [ ] Bug: Handling Path Expressions, (eg. Impl only work with a type(str), not a path)
 - [ ] Bug: global string constants for strings are duplicated
 - [ ] Change break to 'yield' in loops and blocks
+- [ ] Add inlining (modify the inline interface)
 - [x] MLIROp

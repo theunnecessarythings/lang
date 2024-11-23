@@ -1,0 +1,33 @@
+impl f64 {
+    fn add(self: Self, other: Self) Self {
+        return @mlir_op("arith.addf", [self, other], {}, ["f64"]);
+    }
+
+    fn sub(self: Self, other: Self) Self {
+        return @mlir_op("arith.subf", [self, other], {}, ["f64"]);
+    }
+
+    fn mul(self: Self, other: Self) Self {
+        return @mlir_op("arith.mulf", [self, other], {}, ["f64"]);
+    }
+
+    fn div(self: Self, other: Self) Self {
+        return @mlir_op("arith.divf", [self, other], {}, ["f64"]);
+    }
+
+    fn less_equal(self: Self, other: Self) bool {
+        return @mlir_op("arith.cmpf", [self, other], {predicate: "2: i64"}, ["i1"]);
+    }
+
+    fn greater_than(self: Self, other: Self) bool {
+        return @mlir_op("arith.cmpf", [self, other], {predicate: "4: i64"}, ["i1"]);
+    }
+
+    fn equal(self: Self, other: Self) bool {
+        return @mlir_op("arith.cmpf", [self, other], {predicate: "0: i64"}, ["i1"]);
+    }
+
+    fn neg(self: Self) Self {
+        return -1.0 * self;
+    }
+}

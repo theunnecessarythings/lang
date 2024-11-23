@@ -11,36 +11,6 @@ impl A {
     }
 }
 
-impl i64 {
-    fn add(self: Self, other: Self) Self {
-        return @mlir_op("arith.addi", [self, other], {}, ["i64"]);
-    }
-
-    fn sub(self: Self, other: Self) Self {
-        return @mlir_op("arith.subi", [self, other], {}, ["i64"]);
-    }
-
-    fn mul(self: Self, other: Self) Self {
-        return @mlir_op("arith.muli", [self, other], {}, ["i64"]);
-    }
-
-    fn div(self: Self, other: Self) Self {
-        return @mlir_op("arith.divsi", [self, other], {}, ["i64"]);
-    }
-
-    fn less_equal(self: Self, other: Self) bool {
-        return @mlir_op("arith.cmpi", [self, other], {predicate: "2: i64"}, ["i1"]);
-    }
-
-    fn greater_than(self: Self, other: Self) bool {
-        return @mlir_op("arith.cmpi", [self, other], {predicate: "4: i64"}, ["i1"]);
-    }
-
-    fn equal(self: Self, other: Self) bool {
-        return @mlir_op("arith.cmpi", [self, other], {predicate: "0: i64"}, ["i1"]);
-    }
-}
-
 fn fib(n: i64) i64 {
     if n <= 1 {
         return 0;

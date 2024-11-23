@@ -272,14 +272,9 @@ std::unique_ptr<Expression> Parser::led(std::unique_ptr<Expression> left,
     return std::make_unique<AssignOpExpr>(
         op, token_to_operator(op), std::move(left), parse_expr(precedence - 1));
   case TokenKind::Dot: {
-    auto right = consume_kind(TokenKind::Identifier);
-    if (is_peek(TokenKind::LParen)) {
-      auto call_expr = parse_call_expr();
-      return std::make_unique<FieldAccessExpr>(op, std::move(left),
-                                               std::move(call_expr));
-    } else if (is_peek(TokenKind::NumberLiteral)) {
-      auto number = consume();
-      auto value = parse_number_literal(lexer->token_to_string(number.value()));
+    auto right = consume();
+    if (right->kind == TokenKind::NumberLiteral) {
+      auto value = parse_number_literal(lexer->token_to_string(right.value()));
       if (auto val = std::get_if<int>(&value)) {
         auto expr = std::make_unique<LiteralExpr>(
             op, LiteralExpr::LiteralType::Int, *val);
@@ -287,15 +282,39 @@ std::unique_ptr<Expression> Parser::led(std::unique_ptr<Expression> left,
                                                  std::move(expr));
       }
       context->report_error("Expected integer literal found " +
-                                lexer->token_to_string(number.value()),
-                            &number.value());
+                                lexer->token_to_string(right.value()),
+                            &right.value());
       return std::make_unique<InvalidExpression>(op);
-    } else {
-      auto right_expr =
-          std::make_unique<IdentifierExpr>(op, lexer->token_to_string(right));
-      return std::make_unique<FieldAccessExpr>(op, std::move(left),
-                                               std::move(right_expr));
+    } else if (right->kind == TokenKind::Identifier) {
+      if (is_peek(TokenKind::LParen)) {
+        auto call_expr = parse_call_expr();
+        return std::make_unique<FieldAccessExpr>(op, std::move(left),
+                                                 std::move(call_expr));
+      } else if (is_peek(TokenKind::NumberLiteral)) {
+        auto number = consume();
+        auto value =
+            parse_number_literal(lexer->token_to_string(number.value()));
+        if (auto val = std::get_if<int>(&value)) {
+          auto expr = std::make_unique<LiteralExpr>(
+              op, LiteralExpr::LiteralType::Int, *val);
+          return std::make_unique<FieldAccessExpr>(op, std::move(left),
+                                                   std::move(expr));
+        }
+        context->report_error("Expected integer literal found " +
+                                  lexer->token_to_string(number.value()),
+                              &number.value());
+        return std::make_unique<InvalidExpression>(op);
+      } else {
+        auto right_expr = std::make_unique<IdentifierExpr>(
+            op, lexer->token_to_string(*right));
+        return std::make_unique<FieldAccessExpr>(op, std::move(left),
+                                                 std::move(right_expr));
+      }
     }
+    context->report_error("Expected identifier or number literal found " +
+                              Lexer::lexeme(right->kind),
+                          &right.value());
+    return std::make_unique<InvalidExpression>(op);
   }
   case TokenKind::LBracket: {
     auto index_expr = parse_expr(0);
@@ -422,7 +441,7 @@ std::unique_ptr<ImportDecl> Parser::parse_import_decl() {
 
     // Import the parsed path
     path += ".lang";
-    if (isFileLoaded(context->source_mgr, path)) {
+    if (!isFileLoaded(context->source_mgr, path)) {
       auto tree = parse_single_source(path);
       for (auto &decl : tree->items) {
         top_level_decls.emplace_back(std::move(decl));

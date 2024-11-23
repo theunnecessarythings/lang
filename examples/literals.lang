@@ -1,3 +1,7 @@
+import "std/builtin/int";
+import "std/builtin/float";
+import "std/builtin/bool";
+
 fn main() void {
     // Integer addition
     print("1 + 2 = %d", 1 + 2);

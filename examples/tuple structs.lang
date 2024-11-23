@@ -1,6 +1,12 @@
 // The following struct is for the activity.
 struct Matrix(f64, f64, f64, f64)
 
+impl i64 {
+    fn logical_not(self: Self) Self {
+        return @mlir_op("arith.xori", [self, 1], {}, ["i64"]);
+    }
+}
+
 fn main() void {
     const long_tuple = (1, 2, 3, 4,
                       -1, -2, -3, -4,
@@ -15,17 +21,17 @@ fn main() void {
     print("tuple of tuples: %d", tuple_of_tuples);
 
     const pair = (1, true);
-    print("Pair is %d", pair);
+    print("Pair is %d", pair.0);
 
     // To create one element tuples, the comma is required to tell them apart
     // from a literal surrounded by parentheses.
-    print("One element tuple: {}", (5,));
-    print("Just an integer: {}", (5));
+    print("One element tuple: %d", (5,));
+    print("Just an integer: %d", (5));
 
     // Tuples can be destructured to create bindings.
     const tuple = (1, "hello", 4.5, true);
 
 
     const matrix = Matrix(1.1, 1.2, 2.1, 2.2);
-    print("{}", matrix);
+    print("Matrix: %d", matrix);
 }

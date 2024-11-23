@@ -7,13 +7,15 @@ fn main() void {
 
     // Or a default will be used.
     const default_float = 3.0; // `f64`
-    const default_integer = 7; // `isize`
+    const default_integer = 7; // `i64`
+    print("logical: %d, a_float: %f, an_integer: %d, default_float: %f, default_integer: %d", logical, a_float, an_integer, default_float, default_integer);
 
     // A mutable variable's value can be changed.
     var mutable = 12; // Mutable `isize`
+    print("before, mutable: %d", mutable);
     mutable = 21;
+    print("after, mutable: %d", mutable);
 
     // Error! The type of a variable can't be changed.
     // mutable = true;
 }
-

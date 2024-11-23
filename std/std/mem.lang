@@ -1,3 +1,0 @@
-fn size_of_val(x: anytype) i64 {
-  return 0
-}

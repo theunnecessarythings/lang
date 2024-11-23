@@ -171,6 +171,28 @@ mlir::OpFoldResult mlir::lang::UndefOp::fold(FoldAdaptor) {
 }
 
 mlir::LogicalResult
+VarDeclOp::inferReturnTypes(MLIRContext *ctx, std::optional<Location> loc,
+                            VarDeclOp::Adaptor adaptor,
+                            SmallVectorImpl<Type> &results) {
+  if (adaptor.getIsMutable()) {
+    results.push_back(
+        mlir::MemRefType::get({}, adaptor.getInitValue().getType()));
+    return success();
+  }
+  results.push_back(adaptor.getInitValue().getType());
+  return success();
+}
+
+mlir::LogicalResult DerefOp::inferReturnTypes(MLIRContext *ctx,
+                                              std::optional<Location> loc,
+                                              DerefOp::Adaptor adaptor,
+                                              SmallVectorImpl<Type> &results) {
+  auto memref_type = mlir::cast<mlir::MemRefType>(adaptor.getAddr().getType());
+  results.push_back(memref_type.getElementType());
+  return success();
+}
+
+mlir::LogicalResult
 IfOp::inferReturnTypes(MLIRContext *ctx, std::optional<Location> loc,
                        IfOp::Adaptor adaptor,
                        SmallVectorImpl<Type> &inferredReturnTypes) {

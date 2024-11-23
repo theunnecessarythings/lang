@@ -11,6 +11,7 @@
 #include "mlir/Conversion/MemRefToLLVM/MemRefToLLVM.h"
 #include "mlir/Dialect/Affine/Passes.h"
 #include "mlir/Dialect/Func/Extensions/AllExtensions.h"
+#include "mlir/Dialect/LLVMIR/Transforms/InlinerInterfaceImpl.h"
 #include "mlir/Dialect/LLVMIR/Transforms/Passes.h"
 #include "mlir/Dialect/MemRef/IR/MemRef.h"
 #include "mlir/ExecutionEngine/ExecutionEngine.h"
@@ -211,6 +212,7 @@ int runJit(mlir::ModuleOp module) {
 int dumpMLIRLang() {
   mlir::DialectRegistry registry;
   mlir::registerAllExtensions(registry);
+  mlir::LLVM::registerInlinerInterface(registry);
 
   mlir::MLIRContext context(registry);
   // Load our Dialect in this MLIR Context.
@@ -231,6 +233,7 @@ int dumpMLIRLang() {
   // Custom passes
   mlir::OpPassManager &castPM = pm.nest<mlir::lang::FuncOp>();
   castPM.addPass(mlir::lang::createLiteralCastPass());
+  pm.addPass(mlir::createInlinerPass());
   pm.addPass(mlir::lang::createLowerToAffinePass());
   pm.addPass(mlir::lang::createUnrealizedConversionCastResolverPass());
   pm.addPass(mlir::createLowerAffinePass());
@@ -250,7 +253,7 @@ int dumpMLIRLang() {
   pm.addPass(mlir::createConvertControlFlowToLLVMPass());
   pm.addPass(mlir::createConvertToLLVMPass());
   pm.addPass(mlir::LLVM::createDIScopeForLLVMFuncOpPass());
-
+  pm.addPass(mlir::createReconcileUnrealizedCastsPass());
   if (mlir::failed(pm.run(*module)))
     return 4;
 
