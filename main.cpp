@@ -256,7 +256,7 @@ int dumpMLIRLang() {
   pm.addPass(mlir::createReconcileUnrealizedCastsPass());
   if (mlir::failed(pm.run(*module)))
     return 4;
-
+  module->dump();
   runJit(module.get());
   return 0;
 }

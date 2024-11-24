@@ -23,7 +23,9 @@ struct Parser {
     next2_token = lexer->next();
   }
 
-  Token get_error_token(TokenSpan &span);
+  bool isFileLoaded(llvm::SourceMgr &sourceMgr, const std::string &filePath);
+  void load_builtins();
+  Token get_error_token();
   Token unexpected_token_error(TokenKind &expected, Token &found);
   Token invalid_token_error(Token &found);
   std::optional<Token> consume();

@@ -106,6 +106,9 @@ private:
   std::string mangle(llvm::StringRef base, llvm::ArrayRef<mlir::Type> types) {
     std::string mangled_name = base.str();
     llvm::raw_string_ostream rso(mangled_name);
+    if (!types.empty()) {
+      rso << "_";
+    }
     for (auto &param : types) {
       rso << "_";
       rso << param;
@@ -346,12 +349,14 @@ private:
       }
     }
     // check the last statement is an expression statement or not
-    if (auto exprStmt =
-            dynamic_cast<ExprStmt *>(block->statements.back().get())) {
-      return langGen(exprStmt->expr.get());
-    }
-    if (failed(langGen(block->statements.back().get()))) {
-      return mlir::failure();
+    if (!block->statements.empty()) {
+      if (auto exprStmt =
+              dynamic_cast<ExprStmt *>(block->statements.back().get())) {
+        return langGen(exprStmt->expr.get());
+      }
+      if (failed(langGen(block->statements.back().get()))) {
+        return mlir::failure();
+      }
     }
     // block does not return anything, so return a void value
     return mlir::success(mlir::Value());
@@ -499,7 +504,7 @@ private:
     }
     std::string fn_name = "";
     llvm::raw_string_ostream stream(fn_name);
-    stream << (expr->op == Operator::Sub ? "neg_" : "logical_not_")
+    stream << (expr->op == Operator::Sub ? "neg__" : "logical_not__")
            << operand.value().getType();
     fn_name = stream.str();
 
@@ -734,8 +739,8 @@ private:
     };
     std::string fn_name = "";
     llvm::raw_string_ostream stream(fn_name);
-    stream << op_fns[static_cast<int>(expr->op)] << "_" << lhs.value().getType()
-           << "_" << rhs.value().getType();
+    stream << op_fns[static_cast<int>(expr->op)] << "__"
+           << lhs.value().getType() << "_" << rhs.value().getType();
     fn_name = stream.str();
 
     if (!function_map.count(fn_name)) {
@@ -809,7 +814,7 @@ private:
     auto func_name = mangle(expr->callee, argTypes);
     // if return type is a struct type, then create a struct instance
     // and pass it as an argument
-    auto func_op = function_map[expr->callee];
+    auto func_op = function_map[func_name];
     if (func_op) {
       auto func_type = func_op.getFunctionType();
       mlir::Type return_type = nullptr;

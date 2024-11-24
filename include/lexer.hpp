@@ -102,11 +102,11 @@ enum class TokenKind {
 };
 
 struct TokenSpan {
-  int file_id;
-  int line_no;
-  int col_start;
-  int start;
-  int end;
+  int file_id = -1;
+  int line_no = 1;
+  int col_start = 1;
+  int start = 0;
+  int end = 0;
 };
 
 struct Token {

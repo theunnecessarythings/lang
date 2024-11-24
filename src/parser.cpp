@@ -1,15 +1,12 @@
 #include "parser.hpp"
 #include "ast.hpp"
 #include "lexer.hpp"
-#include "llvm/Support/raw_ostream.h"
-#include <fstream>
+#include <filesystem>
 #include <memory>
 #include <optional>
 #include <unordered_map>
 
 #define NEW_SCOPE()                                                            \
-  llvm::ScopedHashTableScope<llvm::StringRef, Function *> function_scope(      \
-      context->function_table);                                                \
   llvm::ScopedHashTableScope<llvm::StringRef, StructDecl *> struct_scope(      \
       context->struct_table);                                                  \
   llvm::ScopedHashTableScope<llvm::StringRef, EnumDecl *> enum_scope(          \
@@ -42,7 +39,8 @@ static std::unordered_map<std::string, PrimitiveType::PrimitiveTypeKind>
         {"void", PrimitiveType::PrimitiveTypeKind::Void},
 };
 
-Token Parser::get_error_token(TokenSpan &span) {
+Token Parser::get_error_token() {
+  TokenSpan span;
   return Token{TokenKind::Dummy, span};
 }
 
@@ -342,36 +340,44 @@ std::unique_ptr<Expression> Parser::led(std::unique_ptr<Expression> left,
 }
 
 std::unique_ptr<Program> Parser::parse_single_source(std::string &path) {
-  // Try to open the file
-  std::ifstream file(path);
-  if (!file.is_open()) {
-    context->report_error("Could not open file " + path,
-                          &current_token.value());
-    std::vector<std::unique_ptr<TopLevelDecl>> top_level_decls;
-    return std::make_unique<Program>(current_token.value(),
-                                     std::move(top_level_decls));
-  }
-  // Read contents of the file into a string
-  std::string source((std::istreambuf_iterator<char>(file)),
-                     std::istreambuf_iterator<char>());
   static int file_id = 0;
   llvm::ErrorOr<std::unique_ptr<llvm::MemoryBuffer>> fileOrErr =
       llvm::MemoryBuffer::getFileOrSTDIN(path);
   if (std::error_code ec = fileOrErr.getError()) {
-    llvm::errs() << "Could not open input file: " << ec.message() << "\n";
+    context->report_error("Could not open file " + path);
+    std::vector<std::unique_ptr<TopLevelDecl>> top_level_decls;
+    return std::make_unique<Program>(get_error_token(),
+                                     std::move(top_level_decls));
   }
+  auto buffer = fileOrErr->get()->getBuffer();
   context->source_mgr.AddNewSourceBuffer(std::move(*fileOrErr), llvm::SMLoc());
-  std::unique_ptr<Lexer> lexer = std::make_unique<Lexer>(source, file_id++);
+  std::unique_ptr<Lexer> lexer =
+      std::make_unique<Lexer>(buffer.str(), file_id++);
   std::unique_ptr<Parser> parser =
       std::make_unique<Parser>(std::move(lexer), context);
-  auto program = parser->parse_program();
+  return parser->parse_program();
+}
 
-  return program;
+void Parser::load_builtins() {
+  namespace fs = std::filesystem;
+  std::string path = "../std/builtin";
+  for (const auto &entry : fs::directory_iterator(path)) {
+    auto file_path = entry.path().string();
+    if (fs::is_regular_file(entry.path())) {
+      if (!isFileLoaded(context->source_mgr, file_path)) {
+        auto tree = parse_single_source(file_path);
+        for (auto &decl : tree->items) {
+          top_level_decls.emplace_back(std::move(decl));
+        }
+      }
+    }
+  }
 }
 
 // program = top_level_decl*
 std::unique_ptr<Program> Parser::parse_program() {
   NEW_SCOPE();
+  load_builtins();
   while (true) {
     if (is_peek(TokenKind::Eof)) {
       break;
@@ -411,7 +417,8 @@ void Parser::skip_to_next_stmt() {
   }
 }
 
-bool isFileLoaded(llvm::SourceMgr &sourceMgr, const std::string &filePath) {
+bool Parser::isFileLoaded(llvm::SourceMgr &sourceMgr,
+                          const std::string &filePath) {
   for (unsigned i = 1; i <= sourceMgr.getNumBuffers(); ++i) {
     llvm::StringRef bufferIdentifier =
         sourceMgr.getMemoryBuffer(i)->getBufferIdentifier();
@@ -466,7 +473,6 @@ std::unique_ptr<TopLevelDecl> Parser::parse_top_level_decl() {
   }
   if (is_peek(TokenKind::KeywordFn)) {
     auto fn = parse_function(is_pub);
-    context->declare_function(fn->decl->name, fn.get());
     return fn;
   } else if (is_peek(TokenKind::KeywordStruct)) {
     consume();
@@ -820,7 +826,6 @@ std::unique_ptr<ImplDecl> Parser::parse_impl_decl() {
   std::vector<std::unique_ptr<Function>> functions;
   while (!is_peek(TokenKind::RBrace)) {
     auto function = parse_function();
-    context->declare_function(function->decl->name, function.get());
     functions.emplace_back(std::move(function));
   }
   consume_kind(TokenKind::RBrace);
@@ -1454,7 +1459,6 @@ std::unique_ptr<Statement> Parser::parse_stmt() {
                                               std::move(trait_decl));
   } else if (is_peek(TokenKind::KeywordFn)) {
     auto function = parse_function();
-    context->declare_function(function->decl->name, function.get());
     return std::make_unique<TopLevelDeclStmt>(function->token,
                                               std::move(function));
   } else {

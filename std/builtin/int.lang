@@ -46,4 +46,8 @@ impl i64 {
     fn bitwise_shr(self: Self, other: Self) Self {
         return @mlir_op("arith.shrsi", [self, other], {}, ["i64"]);
     }
+
+    fn neg(self: Self) Self {
+        return @mlir_op("arith.muli", [self, @mlir_attr("-1: i64")], {}, ["i64"]);
+    }
 }

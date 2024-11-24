@@ -28,6 +28,6 @@ impl f64 {
     }
 
     fn neg(self: Self) Self {
-        return -1.0 * self;
+        return @mlir_op("arith.mulf", [self, @mlir_attr("-1.0 : f64")], {}, ["f64"]);
     }
 }

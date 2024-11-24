@@ -2,8 +2,6 @@
 #include "ast.hpp"
 
 #define NEW_SCOPE()                                                            \
-  llvm::ScopedHashTableScope<llvm::StringRef, Function *> function_scope(      \
-      context->function_table);                                                \
   llvm::ScopedHashTableScope<llvm::StringRef, StructDecl *> struct_scope(      \
       context->struct_table);                                                  \
   llvm::ScopedHashTableScope<llvm::StringRef, EnumDecl *> enum_scope(          \

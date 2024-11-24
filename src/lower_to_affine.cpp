@@ -427,8 +427,13 @@ struct AssignOpLowering
         rhs = original_rhs;
       }
     }
-    rewriter.create<mlir::memref::StoreOp>(op.getLoc(), rhs, lhs);
-    rewriter.replaceOp(op, rhs);
+    if (auto memRefType = mlir::dyn_cast<mlir::MemRefType>(lhs.getType())) {
+      rewriter.create<mlir::memref::StoreOp>(op.getLoc(), rhs, lhs);
+      rewriter.replaceOp(op, rhs);
+    } else {
+      rewriter.create<mlir::LLVM::StoreOp>(op.getLoc(), rhs, lhs);
+      rewriter.eraseOp(op);
+    }
     return mlir::success();
   }
 };

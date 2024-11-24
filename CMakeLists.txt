@@ -9,7 +9,7 @@ set(CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} -fuse-ld=lld")
 set(CMAKE_MODULE_LINKER_FLAGS "${CMAKE_MODULE_LINKER_FLAGS} -fuse-ld=lld")
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fuse-ld=lld")
 set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fuse-ld=lld")
-add_compile_options(-fexceptions)
+add_compile_options(-fexceptions  -Wno-overloaded-virtual)
 
 # Setup LLVM and MLIR
 set(PREFIX "/mnt/ubuntu/home/sreeraj/Documents/llvm-project/build")

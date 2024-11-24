@@ -8,7 +8,7 @@
 - [ ] Closure
 - [ ] Errors/Results/Optionals/Try/Catch
 - [ ] Disambiguating overlapping traits
-- [ ] Bug: Error location is not correct
+- [ ] Bug: Error location is not correct for imports
 - [ ] Bug: I don't think comma's are correctly consumed everywhere
 - [ ] Bug: Something unexpected comes, the parser loops forever
 - [ ] Remote Trait Implementation/ Implicit trait conformance (Mojo duck typing)
@@ -22,4 +22,5 @@
 - [ ] Bug: global string constants for strings are duplicated
 - [ ] Change break to 'yield' in loops and blocks
 - [ ] Add inlining (modify the inline interface)
+- [ ] Move structs and tuple structs from LLVM to Memref
 - [x] MLIROp

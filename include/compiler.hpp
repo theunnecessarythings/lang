@@ -18,7 +18,6 @@ struct CompilerOptions {
 
 struct Context {
   CompilerOptions options;
-  llvm::ScopedHashTable<llvm::StringRef, Function *> function_table;
   llvm::ScopedHashTable<llvm::StringRef, StructDecl *> struct_table;
   llvm::ScopedHashTable<llvm::StringRef, TupleStructDecl *> tuple_struct_table;
   llvm::ScopedHashTable<llvm::StringRef, EnumDecl *> enum_table;
@@ -37,7 +36,7 @@ struct Context {
   }
 
   void report_error(llvm::StringRef message, const Token *token = nullptr) {
-    if (token->kind == TokenKind::Eof) {
+    if (token && token->kind == TokenKind::Eof) {
       throw std::runtime_error("Unexpected EOF");
     }
     auto loc =
@@ -49,15 +48,6 @@ struct Context {
               : mlir::dyn_cast<mlir::Location>(mlir::UnknownLoc::get(&context));
     source_mgr_handle->emitDiagnostic(loc, message,
                                       mlir::DiagnosticSeverity::Error);
-  }
-
-  void declare_function(llvm::StringRef name, Function *decl) {
-    if (function_table.lookup(name)) {
-      report_error("Function " + name.str() + " already declared",
-                   &decl->token);
-      return;
-    }
-    function_table.insert(name, decl);
   }
 
   void declare_struct(llvm::StringRef name, StructDecl *decl) {
