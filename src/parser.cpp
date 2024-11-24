@@ -39,22 +39,22 @@ static std::unordered_map<std::string, PrimitiveType::PrimitiveTypeKind>
         {"void", PrimitiveType::PrimitiveTypeKind::Void},
 };
 
-Token Parser::get_error_token() {
+Token Parser::getErrorToken() {
   TokenSpan span;
   return Token{TokenKind::Dummy, span};
 }
 
-Token Parser::unexpected_token_error(TokenKind &expected, Token &found) {
-  context->report_error("Expected " + Lexer::lexeme(expected) + ", got " +
-                            Lexer::lexeme(found.kind),
-                        &found);
-  skip_to_next_stmt();
+Token Parser::unexpectedTokenError(TokenKind &expected, Token &found) {
+  context->reportError("Expected " + Lexer::lexeme(expected) + ", got " +
+                           Lexer::lexeme(found.kind),
+                       &found);
+  skipToNextStmt();
   throw std::runtime_error("Unexpected token");
 }
 
-Token Parser::invalid_token_error(Token &found) {
-  context->report_error("Invalid token " + Lexer::lexeme(found.kind), &found);
-  skip_to_next_stmt();
+Token Parser::invalidTokenError(Token &found) {
+  context->reportError("Invalid token " + Lexer::lexeme(found.kind), &found);
+  skipToNextStmt();
   throw std::runtime_error("Invalid token");
 }
 
@@ -71,28 +71,28 @@ Token Parser::consume_kind(TokenKind kind) {
   if (token.has_value() && token.value().kind == kind) {
     return consume().value();
   }
-  return unexpected_token_error(kind, token.value());
+  return unexpectedTokenError(kind, token.value());
 }
 
 std::optional<Token> Parser::peek() { return next_token; }
 
 std::optional<Token> Parser::peek2() { return next2_token; }
 
-bool Parser::is_peek(TokenKind kind) {
+bool Parser::isPeek(TokenKind kind) {
   return peek().has_value() && peek().value().kind == kind;
 }
 
-bool Parser::is_peek2(TokenKind kind) {
+bool Parser::isPeek2(TokenKind kind) {
   return peek2().has_value() && peek2().value().kind == kind;
 }
 
-void Parser::consume_optional_semicolon() {
-  if (is_peek(TokenKind::Semicolon)) {
+void Parser::consumeOptionalSemicolon() {
+  if (isPeek(TokenKind::Semicolon)) {
     consume();
   }
 }
 
-int Parser::binding_pow(const Token &token) {
+int Parser::bindingPow(const Token &token) {
   switch (token.kind) {
   case TokenKind::Equal:
   case TokenKind::PlusEqual:
@@ -146,9 +146,9 @@ int Parser::binding_pow(const Token &token) {
 }
 
 std::unique_ptr<LiteralExpr>
-Parser::parse_number_literal_expr(const Token &token) {
-  auto number_str = lexer->token_to_string(token);
-  auto number = parse_number_literal(number_str);
+Parser::parseNumberLiteralExpr(const Token &token) {
+  auto number_str = lexer->tokenToString(token);
+  auto number = parseNumberLiteral(number_str);
   if (auto val = std::get_if<int>(&number)) {
     return std::make_unique<LiteralExpr>(token, LiteralExpr::LiteralType::Int,
                                          *val);
@@ -161,29 +161,29 @@ Parser::parse_number_literal_expr(const Token &token) {
 std::unique_ptr<Expression> Parser::nud(const Token &token) {
   switch (token.kind) {
   case TokenKind::NumberLiteral: {
-    return parse_number_literal_expr(token);
+    return parseNumberLiteralExpr(token);
   }
   case TokenKind::At: {
-    if (is_peek(TokenKind::Identifier) &&
-        lexer->token_to_string(peek().value()) == "mlir_attr") {
-      return parse_mlir_attr();
-    } else if (is_peek(TokenKind::Identifier) &&
-               lexer->token_to_string(peek().value()) == "mlir_op") {
-      return parse_mlir_op();
+    if (isPeek(TokenKind::Identifier) &&
+        lexer->tokenToString(peek().value()) == "mlir_attr") {
+      return parseMlirAttr();
+    } else if (isPeek(TokenKind::Identifier) &&
+               lexer->tokenToString(peek().value()) == "mlir_op") {
+      return parseMlirOp();
     }
-    return parse_mlir_type(false);
+    return parseMlirType(false);
   }
   case TokenKind::StringLiteral:
     return std::make_unique<LiteralExpr>(
-        token, LiteralExpr::LiteralType::String, lexer->token_to_string(token));
+        token, LiteralExpr::LiteralType::String, lexer->tokenToString(token));
   case TokenKind::CharLiteral:
     return std::make_unique<LiteralExpr>(token, LiteralExpr::LiteralType::Char,
-                                         lexer->token_to_string(token)[1]);
+                                         lexer->tokenToString(token)[1]);
   case TokenKind::LParen: {
-    auto expr = parse_expr(0);
+    auto expr = parseExpr(0);
     auto comma = peek();
     if (comma.has_value() && comma.value().kind == TokenKind::Comma) {
-      return parse_tuple_expr(std::move(expr));
+      return parseTupleExpr(std::move(expr));
     } else {
       consume_kind(TokenKind::RParen);
       return expr;
@@ -191,72 +191,72 @@ std::unique_ptr<Expression> Parser::nud(const Token &token) {
     break;
   }
   case TokenKind::LBracket:
-    return parse_array_expr();
+    return parseArrayExpr();
   case TokenKind::LBrace: {
-    return parse_block(false);
+    return parseBlock(false);
   }
   case TokenKind::Plus:
-    return parse_expr(binding_pow(token));
+    return parseExpr(bindingPow(token));
   case TokenKind::Minus:
-    return std::make_unique<UnaryExpr>(
-        token, Operator::Sub, std::move(parse_expr(binding_pow(token))));
+    return std::make_unique<UnaryExpr>(token, Operator::Sub,
+                                       std::move(parseExpr(bindingPow(token))));
   case TokenKind::KeywordNot:
-    return std::make_unique<UnaryExpr>(
-        token, Operator::Not, std::move(parse_expr(binding_pow(token))));
+    return std::make_unique<UnaryExpr>(token, Operator::Not,
+                                       std::move(parseExpr(bindingPow(token))));
   case TokenKind::Identifier: {
-    if (is_peek(TokenKind::LParen)) {
-      return parse_call_expr();
+    if (isPeek(TokenKind::LParen)) {
+      return parseCallExpr();
     } else {
-      auto str = lexer->token_to_string(token);
+      auto str = lexer->tokenToString(token);
       if (str == "true" || str == "false") {
         return std::make_unique<LiteralExpr>(
             token, LiteralExpr::LiteralType::Bool, str == "true");
       }
       return std::make_unique<IdentifierExpr>(token,
-                                              lexer->token_to_string(token));
+                                              lexer->tokenToString(token));
     }
   }
   case TokenKind::DotDot:
   case TokenKind::DotDotEqual: {
     std::optional<std::unique_ptr<Expression>> right_expr = std::nullopt;
-    if (!is_peek(TokenKind::RBracket) && !is_peek(TokenKind::LBrace)) {
-      right_expr = parse_expr(binding_pow(token));
+    if (!isPeek(TokenKind::RBracket) && !isPeek(TokenKind::LBrace)) {
+      right_expr = parseExpr(bindingPow(token));
     }
     return std::make_unique<RangeExpr>(token, std::nullopt,
                                        std::move(right_expr),
                                        token.kind == TokenKind::DotDotEqual);
   }
   case TokenKind::KeywordMatch:
-    return parse_match_expr(false);
+    return parseMatchExpr(false);
   case TokenKind::KeywordIf:
-    return parse_if_expr(false);
+    return parseIfExpr(false);
   case TokenKind::KeywordWhile:
-    return parse_while_expr(false);
+    return parseWhileExpr(false);
   case TokenKind::KeywordFor:
-    return parse_for_expr(false);
+    return parseForExpr(false);
   case TokenKind::KeywordBreak:
-    return parse_break_expr(false);
+    return parseBreakExpr(false);
   case TokenKind::KeywordContinue:
-    return parse_continue_expr(false);
+    return parseContinueExpr(false);
   case TokenKind::KeywordYield:
-    return parse_yield_expr(false);
+    return parseYieldExpr(false);
   case TokenKind::KeywordComptime: {
-    auto expr = parse_expr(0);
+    auto expr = parseExpr(0);
     return std::make_unique<ComptimeExpr>(token, std::move(expr));
   }
   default:
-    context->report_error("Invalid token " + Lexer::lexeme(token.kind), &token);
+    context->reportError("Invalid token " + Lexer::lexeme(token.kind), &token);
     return std::make_unique<InvalidExpression>(token);
   }
 }
 
 std::unique_ptr<Expression> Parser::led(std::unique_ptr<Expression> left,
                                         Token &op) {
-  auto precedence = binding_pow(op);
+  auto precedence = bindingPow(op);
   switch (op.kind) {
   case TokenKind::Equal:
     return std::make_unique<AssignExpr>(op, std::move(left),
-                                        parse_expr(precedence - 1));
+                                        parseExpr(precedence - 1));
   case TokenKind::PlusEqual:
   case TokenKind::MinusEqual:
   case TokenKind::StarEqual:
@@ -268,54 +268,53 @@ std::unique_ptr<Expression> Parser::led(std::unique_ptr<Expression> left,
   case TokenKind::LessLessEqual:
   case TokenKind::GreaterGreaterEqual:
     return std::make_unique<AssignOpExpr>(
-        op, token_to_operator(op), std::move(left), parse_expr(precedence - 1));
+        op, tokenToOperator(op), std::move(left), parseExpr(precedence - 1));
   case TokenKind::Dot: {
     auto right = consume();
     if (right->kind == TokenKind::NumberLiteral) {
-      auto value = parse_number_literal(lexer->token_to_string(right.value()));
+      auto value = parseNumberLiteral(lexer->tokenToString(right.value()));
       if (auto val = std::get_if<int>(&value)) {
         auto expr = std::make_unique<LiteralExpr>(
             op, LiteralExpr::LiteralType::Int, *val);
         return std::make_unique<FieldAccessExpr>(op, std::move(left),
                                                  std::move(expr));
       }
-      context->report_error("Expected integer literal found " +
-                                lexer->token_to_string(right.value()),
-                            &right.value());
+      context->reportError("Expected integer literal found " +
+                               lexer->tokenToString(right.value()),
+                           &right.value());
       return std::make_unique<InvalidExpression>(op);
     } else if (right->kind == TokenKind::Identifier) {
-      if (is_peek(TokenKind::LParen)) {
-        auto call_expr = parse_call_expr();
+      if (isPeek(TokenKind::LParen)) {
+        auto call_expr = parseCallExpr();
         return std::make_unique<FieldAccessExpr>(op, std::move(left),
                                                  std::move(call_expr));
-      } else if (is_peek(TokenKind::NumberLiteral)) {
+      } else if (isPeek(TokenKind::NumberLiteral)) {
         auto number = consume();
-        auto value =
-            parse_number_literal(lexer->token_to_string(number.value()));
+        auto value = parseNumberLiteral(lexer->tokenToString(number.value()));
         if (auto val = std::get_if<int>(&value)) {
           auto expr = std::make_unique<LiteralExpr>(
               op, LiteralExpr::LiteralType::Int, *val);
           return std::make_unique<FieldAccessExpr>(op, std::move(left),
                                                    std::move(expr));
         }
-        context->report_error("Expected integer literal found " +
-                                  lexer->token_to_string(number.value()),
-                              &number.value());
+        context->reportError("Expected integer literal found " +
+                                 lexer->tokenToString(number.value()),
+                             &number.value());
         return std::make_unique<InvalidExpression>(op);
       } else {
-        auto right_expr = std::make_unique<IdentifierExpr>(
-            op, lexer->token_to_string(*right));
+        auto right_expr =
+            std::make_unique<IdentifierExpr>(op, lexer->tokenToString(*right));
         return std::make_unique<FieldAccessExpr>(op, std::move(left),
                                                  std::move(right_expr));
       }
     }
-    context->report_error("Expected identifier or number literal found " +
-                              Lexer::lexeme(right->kind),
-                          &right.value());
+    context->reportError("Expected identifier or number literal found " +
+                             Lexer::lexeme(right->kind),
+                         &right.value());
     return std::make_unique<InvalidExpression>(op);
   }
   case TokenKind::LBracket: {
-    auto index_expr = parse_expr(0);
+    auto index_expr = parseExpr(0);
     consume_kind(TokenKind::RBracket);
     return std::make_unique<IndexExpr>(op, std::move(left),
                                        std::move(index_expr));
@@ -323,30 +322,30 @@ std::unique_ptr<Expression> Parser::led(std::unique_ptr<Expression> left,
   case TokenKind::DotDot:
   case TokenKind::DotDotEqual: {
     std::optional<std::unique_ptr<Expression>> right_expr = std::nullopt;
-    if (!is_peek(TokenKind::RBracket) && !is_peek(TokenKind::LBrace)) {
-      right_expr = parse_expr(binding_pow(op));
+    if (!isPeek(TokenKind::RBracket) && !isPeek(TokenKind::LBrace)) {
+      right_expr = parseExpr(bindingPow(op));
     }
     bool is_inclusive = op.kind == TokenKind::DotDotEqual;
     return std::make_unique<RangeExpr>(op, std::move(left),
                                        std::move(right_expr), is_inclusive);
   }
   default: {
-    auto right = parse_expr(precedence);
-    Operator op_kind = token_to_operator(op);
+    auto right = parseExpr(precedence);
+    Operator op_kind = tokenToOperator(op);
     return std::make_unique<BinaryExpr>(op, op_kind, std::move(left),
                                         std::move(right));
   }
   }
 }
 
-std::unique_ptr<Program> Parser::parse_single_source(std::string &path) {
+std::unique_ptr<Program> Parser::parseSingleSource(std::string &path) {
   static int file_id = 0;
   llvm::ErrorOr<std::unique_ptr<llvm::MemoryBuffer>> fileOrErr =
       llvm::MemoryBuffer::getFileOrSTDIN(path);
   if (std::error_code ec = fileOrErr.getError()) {
-    context->report_error("Could not open file " + path);
+    context->reportError("Could not open file " + path);
     std::vector<std::unique_ptr<TopLevelDecl>> top_level_decls;
-    return std::make_unique<Program>(get_error_token(),
+    return std::make_unique<Program>(getErrorToken(),
                                      std::move(top_level_decls));
   }
   auto buffer = fileOrErr->get()->getBuffer();
@@ -355,17 +354,17 @@ std::unique_ptr<Program> Parser::parse_single_source(std::string &path) {
       std::make_unique<Lexer>(buffer.str(), file_id++);
   std::unique_ptr<Parser> parser =
       std::make_unique<Parser>(std::move(lexer), context);
-  return parser->parse_program();
+  return parser->parseProgram();
 }
 
-void Parser::load_builtins() {
+void Parser::loadBuiltins() {
   namespace fs = std::filesystem;
   std::string path = "../std/builtin";
   for (const auto &entry : fs::directory_iterator(path)) {
     auto file_path = entry.path().string();
     if (fs::is_regular_file(entry.path())) {
       if (!isFileLoaded(context->source_mgr, file_path)) {
-        auto tree = parse_single_source(file_path);
+        auto tree = parseSingleSource(file_path);
         for (auto &decl : tree->items) {
           top_level_decls.emplace_back(std::move(decl));
         }
@@ -375,16 +374,16 @@ void Parser::load_builtins() {
 }
 
 // program = top_level_decl*
-std::unique_ptr<Program> Parser::parse_program() {
+std::unique_ptr<Program> Parser::parseProgram() {
   NEW_SCOPE();
-  load_builtins();
+  loadBuiltins();
   while (true) {
-    if (is_peek(TokenKind::Eof)) {
+    if (isPeek(TokenKind::Eof)) {
       break;
     }
     std::unique_ptr<TopLevelDecl> top_level_decl;
     try {
-      top_level_decl = parse_top_level_decl();
+      top_level_decl = parseTopLevelDecl();
     } catch (std::runtime_error &e) {
       return std::make_unique<Program>(current_token.value(),
                                        std::move(top_level_decls));
@@ -396,20 +395,20 @@ std::unique_ptr<Program> Parser::parse_program() {
                                    std::move(top_level_decls));
 }
 
-void Parser::skip_to_next_top_level_decl() {
-  while (!is_peek(TokenKind::Eof)) {
-    if (is_peek(TokenKind::KeywordFn) || is_peek(TokenKind::KeywordStruct) ||
-        is_peek(TokenKind::KeywordEnum) || is_peek(TokenKind::KeywordImpl) ||
-        is_peek(TokenKind::KeywordUnion) || is_peek(TokenKind::KeywordTrait)) {
+void Parser::skipToNextTopLevelDecl() {
+  while (!isPeek(TokenKind::Eof)) {
+    if (isPeek(TokenKind::KeywordFn) || isPeek(TokenKind::KeywordStruct) ||
+        isPeek(TokenKind::KeywordEnum) || isPeek(TokenKind::KeywordImpl) ||
+        isPeek(TokenKind::KeywordUnion) || isPeek(TokenKind::KeywordTrait)) {
       break;
     }
     consume();
   }
 }
 
-void Parser::skip_to_next_stmt() {
-  while (!is_peek(TokenKind::Eof)) {
-    if (is_peek(TokenKind::Semicolon)) {
+void Parser::skipToNextStmt() {
+  while (!isPeek(TokenKind::Eof)) {
+    if (isPeek(TokenKind::Semicolon)) {
       consume();
       break;
     }
@@ -430,18 +429,18 @@ bool Parser::isFileLoaded(llvm::SourceMgr &sourceMgr,
 
 // import_decl -> 'import' (ident ('.' ident)* ('as' ident)?)*
 // eg: import std.io, std.math.rand as rand, std.fs
-std::unique_ptr<ImportDecl> Parser::parse_import_decl() {
+std::unique_ptr<ImportDecl> Parser::parseImportDecl() {
   auto import_token = consume_kind(TokenKind::KeywordImport);
   std::vector<ImportDecl::Path> paths;
   while (true) {
     auto path_token = consume_kind(TokenKind::StringLiteral);
-    auto path = lexer->token_to_string(path_token);
+    auto path = lexer->tokenToString(path_token);
     path = "../" + path.substr(1, path.size() - 2);
 
-    if (is_peek(TokenKind::KeywordAs)) {
+    if (isPeek(TokenKind::KeywordAs)) {
       consume();
       auto alias = consume_kind(TokenKind::Identifier);
-      paths.emplace_back(ImportDecl::Path{path, lexer->token_to_string(alias)});
+      paths.emplace_back(ImportDecl::Path{path, lexer->tokenToString(alias)});
     } else {
       paths.emplace_back(ImportDecl::Path{path, std::nullopt});
     }
@@ -449,12 +448,12 @@ std::unique_ptr<ImportDecl> Parser::parse_import_decl() {
     // Import the parsed path
     path += ".lang";
     if (!isFileLoaded(context->source_mgr, path)) {
-      auto tree = parse_single_source(path);
+      auto tree = parseSingleSource(path);
       for (auto &decl : tree->items) {
         top_level_decls.emplace_back(std::move(decl));
       }
     }
-    if (!is_peek(TokenKind::Comma))
+    if (!isPeek(TokenKind::Comma))
       break;
     else
       consume();
@@ -465,62 +464,61 @@ std::unique_ptr<ImportDecl> Parser::parse_import_decl() {
 
 // top_level_decl = function_decl | struct_decl | enum_decl | impl_decl |
 // union_decl | trait_decl
-std::unique_ptr<TopLevelDecl> Parser::parse_top_level_decl() {
+std::unique_ptr<TopLevelDecl> Parser::parseTopLevelDecl() {
   bool is_pub = false;
-  if (is_peek(TokenKind::KeywordPub)) {
+  if (isPeek(TokenKind::KeywordPub)) {
     consume();
     is_pub = true;
   }
-  if (is_peek(TokenKind::KeywordFn)) {
-    auto fn = parse_function(is_pub);
+  if (isPeek(TokenKind::KeywordFn)) {
+    auto fn = parseFunction(is_pub);
     return fn;
-  } else if (is_peek(TokenKind::KeywordStruct)) {
+  } else if (isPeek(TokenKind::KeywordStruct)) {
     consume();
-    if (is_peek2(TokenKind::LParen)) {
-      auto tuple_struct = parse_tuple_struct_decl(is_pub);
-      context->declare_tuple_struct(tuple_struct->name, tuple_struct.get());
+    if (isPeek2(TokenKind::LParen)) {
+      auto tuple_struct = parseTupleStructDecl(is_pub);
+      context->declareTupleStruct(tuple_struct->name, tuple_struct.get());
       return tuple_struct;
     }
-    auto struct_decl = parse_struct_decl(is_pub);
-    context->declare_struct(struct_decl->name, struct_decl.get());
+    auto struct_decl = parseStructDecl(is_pub);
+    context->declareStruct(struct_decl->name, struct_decl.get());
     return struct_decl;
-  } else if (is_peek(TokenKind::KeywordImport)) {
-    return parse_import_decl();
-  } else if (is_peek(TokenKind::KeywordEnum)) {
-    auto enum_decl = parse_enum_decl(is_pub);
-    context->declare_enum(enum_decl->name, enum_decl.get());
+  } else if (isPeek(TokenKind::KeywordImport)) {
+    return parseImportDecl();
+  } else if (isPeek(TokenKind::KeywordEnum)) {
+    auto enum_decl = parseEnumDecl(is_pub);
+    context->declareEnum(enum_decl->name, enum_decl.get());
     return enum_decl;
-  } else if (is_peek(TokenKind::KeywordImpl)) {
-    return parse_impl_decl();
-  } else if (is_peek(TokenKind::KeywordVar) ||
-             is_peek(TokenKind::KeywordConst)) {
+  } else if (isPeek(TokenKind::KeywordImpl)) {
+    return parseImplDecl();
+  } else if (isPeek(TokenKind::KeywordVar) || isPeek(TokenKind::KeywordConst)) {
     auto token = peek();
-    auto var_decl = parse_var_decl(is_pub);
+    auto var_decl = parseVarDecl(is_pub);
     return std::make_unique<TopLevelVarDecl>(token.value(),
                                              std::move(var_decl));
   }
   // else if (is_peek(TokenKind::KeywordUnion)) {
   //   return parse_union_decl();
   // }
-  else if (is_peek(TokenKind::KeywordTrait)) {
-    auto trait_decl = parse_trait_decl(is_pub);
-    context->declare_trait(trait_decl->name, trait_decl.get());
+  else if (isPeek(TokenKind::KeywordTrait)) {
+    auto trait_decl = parseTraitDecl(is_pub);
+    context->declareTrait(trait_decl->name, trait_decl.get());
     return trait_decl;
   } else {
     auto token = consume();
-    context->report_error("Expected top level decl found " +
-                              Lexer::lexeme(token->kind),
-                          &token.value());
-    skip_to_next_top_level_decl();
+    context->reportError("Expected top level decl found " +
+                             Lexer::lexeme(token->kind),
+                         &token.value());
+    skipToNextTopLevelDecl();
     return std::make_unique<InvalidTopLevelDecl>(token.value());
   }
 }
 
 // pratt parser
-std::unique_ptr<Expression> Parser::parse_expr(int precedence) {
+std::unique_ptr<Expression> Parser::parseExpr(int precedence) {
   auto token = consume();
   auto left = nud(token.value());
-  while (precedence < binding_pow(peek().value())) {
+  while (precedence < bindingPow(peek().value())) {
     token = consume();
     auto new_left = led(std::move(left), token.value());
     left = std::move(new_left);
@@ -530,15 +528,15 @@ std::unique_ptr<Expression> Parser::parse_expr(int precedence) {
 
 // tuple_expr = '(' expr (',' expr)* ')'
 std::unique_ptr<Expression>
-Parser::parse_tuple_expr(std::unique_ptr<Expression> first_expr) {
+Parser::parseTupleExpr(std::unique_ptr<Expression> first_expr) {
   std::vector<std::unique_ptr<Expression>> exprs;
   exprs.emplace_back(std::move(first_expr));
-  while (is_peek(TokenKind::Comma)) {
+  while (isPeek(TokenKind::Comma)) {
     consume();
-    if (is_peek(TokenKind::RParen)) {
+    if (isPeek(TokenKind::RParen)) {
       break;
     }
-    auto expr = parse_expr(0);
+    auto expr = parseExpr(0);
     exprs.emplace_back(std::move(expr));
   }
   auto token = consume_kind(TokenKind::RParen);
@@ -546,12 +544,12 @@ Parser::parse_tuple_expr(std::unique_ptr<Expression> first_expr) {
 }
 
 // array_expr = '[' expr (',' expr)* ']'
-std::unique_ptr<Expression> Parser::parse_array_expr() {
+std::unique_ptr<Expression> Parser::parseArrayExpr() {
   std::vector<std::unique_ptr<Expression>> exprs;
-  while (!is_peek(TokenKind::RBracket)) {
-    auto expr = parse_expr(0);
+  while (!isPeek(TokenKind::RBracket)) {
+    auto expr = parseExpr(0);
     exprs.emplace_back(std::move(expr));
-    if (is_peek(TokenKind::Comma)) {
+    if (isPeek(TokenKind::Comma)) {
       consume();
     }
   }
@@ -560,45 +558,45 @@ std::unique_ptr<Expression> Parser::parse_array_expr() {
 }
 
 // function = 'fn' identifier '(' params ')' type block
-std::unique_ptr<Function> Parser::parse_function(bool is_pub) {
+std::unique_ptr<Function> Parser::parseFunction(bool is_pub) {
   NEW_SCOPE();
   consume_kind(TokenKind::KeywordFn);
   auto name = consume_kind(TokenKind::Identifier);
-  auto name_str = lexer->token_to_string(name);
-  auto params = parse_params();
-  auto return_type = parse_type();
-  auto block = parse_block();
+  auto name_str = lexer->tokenToString(name);
+  auto params = parseParams();
+  auto return_type = parseType();
+  auto block = parseBlock();
   return std::make_unique<Function>(name, std::move(name_str),
                                     std::move(params), std::move(return_type),
                                     std::move(block), is_pub);
 }
 
-TraitDecl::Method Parser::parse_trait_method() {
+TraitDecl::Method Parser::parseTraitMethod() {
   auto fn_token = consume_kind(TokenKind::KeywordFn);
   auto name = consume_kind(TokenKind::Identifier);
-  auto name_str = lexer->token_to_string(name);
-  auto params = parse_params();
-  auto return_type = parse_type();
-  if (is_peek(TokenKind::Semicolon)) {
+  auto name_str = lexer->tokenToString(name);
+  auto params = parseParams();
+  auto return_type = parseType();
+  if (isPeek(TokenKind::Semicolon)) {
     consume();
     return std::make_unique<FunctionDecl>(fn_token, std::move(name_str),
                                           std::move(params),
                                           std::move(return_type));
   }
-  auto block = parse_block();
+  auto block = parseBlock();
   return std::make_unique<Function>(fn_token, std::move(name_str),
                                     std::move(params), std::move(return_type),
                                     std::move(block));
 }
 
 // params = '(' (param (',' param)*)? ')'
-std::vector<std::unique_ptr<Parameter>> Parser::parse_params() {
+std::vector<std::unique_ptr<Parameter>> Parser::parseParams() {
   std::vector<std::unique_ptr<Parameter>> params;
   consume_kind(TokenKind::LParen);
-  while (!is_peek(TokenKind::RParen)) {
-    auto param = parse_param();
+  while (!isPeek(TokenKind::RParen)) {
+    auto param = parseParam();
     params.emplace_back(std::move(param));
-    if (is_peek(TokenKind::Comma)) {
+    if (isPeek(TokenKind::Comma)) {
       consume();
     }
   }
@@ -607,35 +605,35 @@ std::vector<std::unique_ptr<Parameter>> Parser::parse_params() {
 }
 
 // param -> ("mut")? identifier ":" type
-std::unique_ptr<Parameter> Parser::parse_param() {
+std::unique_ptr<Parameter> Parser::parseParam() {
   bool is_comptime = false;
   bool is_mut = false;
-  if (is_peek(TokenKind::KeywordComptime)) {
+  if (isPeek(TokenKind::KeywordComptime)) {
     consume();
     is_comptime = true;
   }
-  if (is_peek(TokenKind::KeywordMut)) {
+  if (isPeek(TokenKind::KeywordMut)) {
     if (is_comptime) {
-      context->report_error("Comptime parameter cannot be mutable",
-                            &current_token.value());
+      context->reportError("Comptime parameter cannot be mutable",
+                           &current_token.value());
     }
     consume();
     is_mut = true;
   }
   auto token = peek();
-  auto pattern = parse_pattern();
+  auto pattern = parsePattern();
   consume_kind(TokenKind::Colon);
-  auto type = parse_type();
+  auto type = parseType();
   std::vector<std::unique_ptr<Type>> trait_bounds;
   // if type is primitive type and it is "type" then check for impl Trait
   if (auto primitive_type = dynamic_cast<PrimitiveType *>(type.get())) {
     if (primitive_type->type_kind == PrimitiveType::PrimitiveTypeKind::type) {
-      if (is_peek(TokenKind::KeywordImpl)) {
+      if (isPeek(TokenKind::KeywordImpl)) {
         consume();
         while (true) {
-          auto trait = parse_type();
+          auto trait = parseType();
           trait_bounds.emplace_back(std::move(trait));
-          if (is_peek(TokenKind::Plus))
+          if (isPeek(TokenKind::Plus))
             consume();
           else
             break;
@@ -652,13 +650,13 @@ std::unique_ptr<Parameter> Parser::parse_param() {
 }
 
 // block_expr = '{' stmt* '}'
-std::unique_ptr<BlockExpression> Parser::parse_block(bool consume_lbrace) {
+std::unique_ptr<BlockExpression> Parser::parseBlock(bool consume_lbrace) {
   NEW_SCOPE();
   std::vector<std::unique_ptr<Statement>> stmts;
   if (consume_lbrace)
     consume_kind(TokenKind::LBrace);
-  while (!is_peek(TokenKind::RBrace)) {
-    auto stmt = parse_stmt();
+  while (!isPeek(TokenKind::RBrace)) {
+    auto stmt = parseStmt();
     stmts.emplace_back(std::move(stmt));
   }
   auto token = consume_kind(TokenKind::RBrace);
@@ -666,47 +664,47 @@ std::unique_ptr<BlockExpression> Parser::parse_block(bool consume_lbrace) {
 }
 
 // struct_decl = 'struct' identifier '{' struct_field* '}'
-std::unique_ptr<StructDecl> Parser::parse_struct_decl(bool is_pub) {
+std::unique_ptr<StructDecl> Parser::parseStructDecl(bool is_pub) {
   auto name = consume_kind(TokenKind::Identifier);
   consume_kind(TokenKind::LBrace);
   std::vector<std::unique_ptr<StructField>> fields;
-  while (!is_peek(TokenKind::RBrace)) {
-    auto field = parse_struct_field();
+  while (!isPeek(TokenKind::RBrace)) {
+    auto field = parseStructField();
     fields.emplace_back(std::move(field));
   }
   consume_kind(TokenKind::RBrace);
-  return std::make_unique<StructDecl>(name, lexer->token_to_string(name),
+  return std::make_unique<StructDecl>(name, lexer->tokenToString(name),
                                       std::move(fields), is_pub);
 }
 
 // struct_field = identifier ':' type ','
-std::unique_ptr<StructField> Parser::parse_struct_field() {
+std::unique_ptr<StructField> Parser::parseStructField() {
   auto name = consume_kind(TokenKind::Identifier);
   consume_kind(TokenKind::Colon);
-  auto type = parse_type();
-  if (is_peek(TokenKind::Comma)) {
+  auto type = parseType();
+  if (isPeek(TokenKind::Comma)) {
     consume();
   }
-  return std::make_unique<StructField>(name, lexer->token_to_string(name),
+  return std::make_unique<StructField>(name, lexer->tokenToString(name),
                                        std::move(type));
 }
 
 // tuple_struct_decl = 'struct' identifier '(' type (',' type)* ')'
-std::unique_ptr<TupleStructDecl> Parser::parse_tuple_struct_decl(bool is_pub) {
+std::unique_ptr<TupleStructDecl> Parser::parseTupleStructDecl(bool is_pub) {
   auto name = consume_kind(TokenKind::Identifier);
   consume_kind(TokenKind::LParen);
   std::vector<std::unique_ptr<Type>> fields;
   while (true) {
-    auto field = parse_type();
+    auto field = parseType();
     fields.emplace_back(std::move(field));
-    if (is_peek(TokenKind::Comma)) {
+    if (isPeek(TokenKind::Comma)) {
       consume();
     } else {
       break;
     }
   }
   consume_kind(TokenKind::RParen);
-  return std::make_unique<TupleStructDecl>(name, lexer->token_to_string(name),
+  return std::make_unique<TupleStructDecl>(name, lexer->tokenToString(name),
                                            std::move(fields), is_pub);
 }
 
@@ -736,47 +734,46 @@ std::unique_ptr<TupleStructDecl> Parser::parse_tuple_struct_decl(bool is_pub) {
 // }
 
 // enum_decl = 'enum' identifier '{' enum_variant* '}'
-std::unique_ptr<EnumDecl> Parser::parse_enum_decl(bool is_pub) {
+std::unique_ptr<EnumDecl> Parser::parseEnumDecl(bool is_pub) {
   consume_kind(TokenKind::KeywordEnum);
   auto name = consume_kind(TokenKind::Identifier);
   consume_kind(TokenKind::LBrace);
   std::vector<std::unique_ptr<Variant>> variants;
-  while (!is_peek(TokenKind::RBrace)) {
-    auto variant = parse_enum_variant();
+  while (!isPeek(TokenKind::RBrace)) {
+    auto variant = parseEnumVariant();
     variants.emplace_back(std::move(variant));
-    if (!is_peek(TokenKind::RBrace))
+    if (!isPeek(TokenKind::RBrace))
       consume_kind(TokenKind::Comma);
   }
   consume_kind(TokenKind::RBrace);
-  return std::make_unique<EnumDecl>(name,
-                                    std::move(lexer->token_to_string(name)),
+  return std::make_unique<EnumDecl>(name, std::move(lexer->tokenToString(name)),
                                     std::move(variants), is_pub);
 }
 
-std::unique_ptr<FieldsUnnamed> Parser::parse_field_unnamed() {
+std::unique_ptr<FieldsUnnamed> Parser::parseFieldUnnamed() {
   std::vector<std::unique_ptr<Type>> fields;
   auto token = consume_kind(TokenKind::LParen);
-  while (!is_peek(TokenKind::RParen)) {
-    auto field = parse_type();
+  while (!isPeek(TokenKind::RParen)) {
+    auto field = parseType();
     fields.emplace_back(std::move(field));
-    if (!is_peek(TokenKind::RParen))
+    if (!isPeek(TokenKind::RParen))
       consume_kind(TokenKind::Comma);
   }
   consume_kind(TokenKind::RParen);
   return std::make_unique<FieldsUnnamed>(token, std::move(fields));
 }
 
-std::unique_ptr<FieldsNamed> Parser::parse_field_named() {
+std::unique_ptr<FieldsNamed> Parser::parseFieldNamed() {
   std::vector<std::string> names;
   std::vector<std::unique_ptr<Type>> fields;
   auto token = consume_kind(TokenKind::LBrace);
-  while (!is_peek(TokenKind::RBrace)) {
+  while (!isPeek(TokenKind::RBrace)) {
     auto name = consume_kind(TokenKind::Identifier);
-    names.emplace_back(lexer->token_to_string(name));
+    names.emplace_back(lexer->tokenToString(name));
     consume_kind(TokenKind::Colon);
-    auto field = parse_type();
+    auto field = parseType();
     fields.emplace_back(std::move(field));
-    if (is_peek(TokenKind::Comma)) {
+    if (isPeek(TokenKind::Comma)) {
       consume();
     }
   }
@@ -786,149 +783,149 @@ std::unique_ptr<FieldsNamed> Parser::parse_field_named() {
 }
 
 // enum_variant = (type | tuple_struct_decl | struct_decl)
-std::unique_ptr<Variant> Parser::parse_enum_variant() {
+std::unique_ptr<Variant> Parser::parseEnumVariant() {
   auto name = consume_kind(TokenKind::Identifier);
-  if (is_peek(TokenKind::LBrace)) {
-    return std::make_unique<Variant>(name, lexer->token_to_string(name),
-                                     parse_field_named());
-  } else if (is_peek(TokenKind::LParen)) {
-    return std::make_unique<Variant>(name, lexer->token_to_string(name),
-                                     parse_field_unnamed());
-  } else if (is_peek(TokenKind::Equal)) {
+  if (isPeek(TokenKind::LBrace)) {
+    return std::make_unique<Variant>(name, lexer->tokenToString(name),
+                                     parseFieldNamed());
+  } else if (isPeek(TokenKind::LParen)) {
+    return std::make_unique<Variant>(name, lexer->tokenToString(name),
+                                     parseFieldUnnamed());
+  } else if (isPeek(TokenKind::Equal)) {
     consume();
-    auto expr = parse_expr(0);
-    return std::make_unique<Variant>(name, lexer->token_to_string(name),
+    auto expr = parseExpr(0);
+    return std::make_unique<Variant>(name, lexer->tokenToString(name),
                                      std::move(expr));
   } else {
-    return std::make_unique<Variant>(name, lexer->token_to_string(name),
+    return std::make_unique<Variant>(name, lexer->tokenToString(name),
                                      std::nullopt);
   }
 }
 
 // impl_decl = 'impl' type '{' function_decl* '}'
-std::unique_ptr<ImplDecl> Parser::parse_impl_decl() {
+std::unique_ptr<ImplDecl> Parser::parseImplDecl() {
   NEW_SCOPE();
   auto impl_token = consume_kind(TokenKind::KeywordImpl);
   auto type = consume_kind(TokenKind::Identifier);
 
   std::vector<std::unique_ptr<Type>> traits;
-  if (is_peek(TokenKind::Colon)) {
+  if (isPeek(TokenKind::Colon)) {
     consume();
-    while (!is_peek(TokenKind::LBrace)) {
-      auto trait = parse_type();
+    while (!isPeek(TokenKind::LBrace)) {
+      auto trait = parseType();
       traits.emplace_back(std::move(trait));
-      if (is_peek(TokenKind::Plus)) {
+      if (isPeek(TokenKind::Plus)) {
         consume();
       }
     }
   }
   consume_kind(TokenKind::LBrace);
   std::vector<std::unique_ptr<Function>> functions;
-  while (!is_peek(TokenKind::RBrace)) {
-    auto function = parse_function();
+  while (!isPeek(TokenKind::RBrace)) {
+    auto function = parseFunction();
     functions.emplace_back(std::move(function));
   }
   consume_kind(TokenKind::RBrace);
-  return std::make_unique<ImplDecl>(impl_token, lexer->token_to_string(type),
+  return std::make_unique<ImplDecl>(impl_token, lexer->tokenToString(type),
                                     std::move(traits), std::move(functions));
 }
 
 // trait_decl = 'trait' identifier '{' function_decl* '}'
-std::unique_ptr<TraitDecl> Parser::parse_trait_decl(bool is_pub) {
+std::unique_ptr<TraitDecl> Parser::parseTraitDecl(bool is_pub) {
   consume_kind(TokenKind::KeywordTrait);
   auto name = consume_kind(TokenKind::Identifier);
   std::vector<std::unique_ptr<Type>> traits;
-  if (is_peek(TokenKind::Colon)) {
+  if (isPeek(TokenKind::Colon)) {
     consume();
-    while (!is_peek(TokenKind::LBrace)) {
-      auto trait = parse_type();
+    while (!isPeek(TokenKind::LBrace)) {
+      auto trait = parseType();
       traits.emplace_back(std::move(trait));
-      if (is_peek(TokenKind::Plus)) {
+      if (isPeek(TokenKind::Plus)) {
         consume();
       }
     }
   }
   consume_kind(TokenKind::LBrace);
   std::vector<TraitDecl::Method> functions;
-  while (!is_peek(TokenKind::RBrace)) {
-    auto function = parse_trait_method();
+  while (!isPeek(TokenKind::RBrace)) {
+    auto function = parseTraitMethod();
     functions.emplace_back(std::move(function));
   }
   consume_kind(TokenKind::RBrace);
-  return std::make_unique<TraitDecl>(name, lexer->token_to_string(name),
+  return std::make_unique<TraitDecl>(name, lexer->tokenToString(name),
                                      std::move(functions), std::move(traits),
                                      is_pub);
 }
 
 // type = primitive_type | tuple_type | array_type | function_type |
 //          pointer_type | reference_type | identifier | expr_type
-std::unique_ptr<Type> Parser::parse_type() {
+std::unique_ptr<Type> Parser::parseType() {
   // if (is_peek(TokenKind::KeywordFn)) {
   //   return parse_function_type();
   // } else
-  if (is_peek(TokenKind::At)) {
-    return parse_mlir_type();
-  } else if (is_peek(TokenKind::LParen)) {
-    return parse_tuple_type();
-  } else if (is_peek(TokenKind::LBracket)) {
-    return parse_array_type();
+  if (isPeek(TokenKind::At)) {
+    return parseMlirType();
+  } else if (isPeek(TokenKind::LParen)) {
+    return parseTupleType();
+  } else if (isPeek(TokenKind::LBracket)) {
+    return parseArrayType();
   }
-  if (is_peek(TokenKind::Identifier)) {
-    auto token_str = lexer->token_to_string(peek().value());
+  if (isPeek(TokenKind::Identifier)) {
+    auto token_str = lexer->tokenToString(peek().value());
     if (str_to_primitive_type.find(token_str) != str_to_primitive_type.end()) {
       auto token = consume();
       return std::make_unique<PrimitiveType>(
           token.value(), str_to_primitive_type.at(token_str));
     }
-    if (is_peek2(TokenKind::RParen) || is_peek2(TokenKind::Comma) ||
-        is_peek2(TokenKind::LBrace) || is_peek2(TokenKind::Equal)) {
+    if (isPeek2(TokenKind::RParen) || isPeek2(TokenKind::Comma) ||
+        isPeek2(TokenKind::LBrace) || isPeek2(TokenKind::Equal)) {
       auto token = consume();
       return std::make_unique<IdentifierType>(token.value(), token_str);
     }
   }
-  auto expr = parse_expr(0);
+  auto expr = parseExpr(0);
   return std::make_unique<ExprType>(expr->token, std::move(expr));
 }
 
 // mlir_type = "@mlir_type(" type_str ")"
-std::unique_ptr<Type> Parser::parse_mlir_type(bool consume_at) {
+std::unique_ptr<Type> Parser::parseMlirType(bool consume_at) {
   if (consume_at)
     consume_kind(TokenKind::At);
   auto mlir_type = consume_kind(TokenKind::Identifier);
-  if (lexer->token_to_string(mlir_type) != "mlir_type") {
-    context->report_error("Expected mlir_type found " +
-                              lexer->token_to_string(mlir_type),
-                          &mlir_type);
+  if (lexer->tokenToString(mlir_type) != "mlir_type") {
+    context->reportError("Expected mlir_type found " +
+                             lexer->tokenToString(mlir_type),
+                         &mlir_type);
   }
   consume_kind(TokenKind::LParen);
   auto type_str = consume_kind(TokenKind::StringLiteral);
   consume_kind(TokenKind::RParen);
-  return std::make_unique<MLIRType>(type_str, lexer->token_to_string(type_str));
+  return std::make_unique<MLIRType>(type_str, lexer->tokenToString(type_str));
 }
 
 // mlir_attr = "@mlir_attr(" attr_str ")"
-std::unique_ptr<MLIRAttribute> Parser::parse_mlir_attr() {
+std::unique_ptr<MLIRAttribute> Parser::parseMlirAttr() {
   // consume_kind(TokenKind::At);
   auto mlir_attr = consume_kind(TokenKind::Identifier);
-  if (lexer->token_to_string(mlir_attr) != "mlir_attr") {
-    context->report_error("Expected mlir_attr found " +
-                              lexer->token_to_string(mlir_attr),
-                          &mlir_attr);
+  if (lexer->tokenToString(mlir_attr) != "mlir_attr") {
+    context->reportError("Expected mlir_attr found " +
+                             lexer->tokenToString(mlir_attr),
+                         &mlir_attr);
   }
   consume_kind(TokenKind::LParen);
   auto attr_str = consume_kind(TokenKind::StringLiteral);
   consume_kind(TokenKind::RParen);
   return std::make_unique<MLIRAttribute>(attr_str,
-                                         lexer->token_to_string(attr_str));
+                                         lexer->tokenToString(attr_str));
 }
 
 // eg: @mlir_op("addi", [lhs, rhs], [attr1], ["i32"])
-std::unique_ptr<MLIROp> Parser::parse_mlir_op() {
+std::unique_ptr<MLIROp> Parser::parseMlirOp() {
   // consume_kind(TokenKind::At);
   auto mlir_op = consume_kind(TokenKind::Identifier);
-  if (lexer->token_to_string(mlir_op) != "mlir_op") {
-    context->report_error(
-        "Expected mlir_op found " + lexer->token_to_string(mlir_op), &mlir_op);
+  if (lexer->tokenToString(mlir_op) != "mlir_op") {
+    context->reportError(
+        "Expected mlir_op found " + lexer->tokenToString(mlir_op), &mlir_op);
   }
   consume_kind(TokenKind::LParen);
   auto op_str = consume_kind(TokenKind::StringLiteral);
@@ -938,56 +935,56 @@ std::unique_ptr<MLIROp> Parser::parse_mlir_op() {
 
   consume_kind(TokenKind::Comma);
   consume_kind(TokenKind::LBracket);
-  while (!is_peek(TokenKind::RBracket)) {
-    auto operand = parse_expr(0);
+  while (!isPeek(TokenKind::RBracket)) {
+    auto operand = parseExpr(0);
     operands.emplace_back(std::move(operand));
-    if (is_peek(TokenKind::Comma)) {
+    if (isPeek(TokenKind::Comma)) {
       consume();
     }
   }
   consume_kind(TokenKind::RBracket);
   consume_kind(TokenKind::Comma);
   consume_kind(TokenKind::LBrace);
-  while (!is_peek(TokenKind::RBrace)) {
+  while (!isPeek(TokenKind::RBrace)) {
     auto name = consume_kind(TokenKind::Identifier);
     consume_kind(TokenKind::Colon);
     auto attr = consume_kind(TokenKind::StringLiteral);
-    attributes[lexer->token_to_string(name)] = lexer->token_to_string(attr);
-    if (is_peek(TokenKind::Comma)) {
+    attributes[lexer->tokenToString(name)] = lexer->tokenToString(attr);
+    if (isPeek(TokenKind::Comma)) {
       consume();
     }
   }
   consume_kind(TokenKind::RBrace);
   consume_kind(TokenKind::Comma);
   consume_kind(TokenKind::LBracket);
-  while (!is_peek(TokenKind::RBracket)) {
+  while (!isPeek(TokenKind::RBracket)) {
     auto str = consume_kind(TokenKind::StringLiteral);
-    result_types.emplace_back(std::move(lexer->token_to_string(str)));
-    if (is_peek(TokenKind::Comma)) {
+    result_types.emplace_back(std::move(lexer->tokenToString(str)));
+    if (isPeek(TokenKind::Comma)) {
       consume();
     }
   }
   consume_kind(TokenKind::RBracket);
   consume_kind(TokenKind::RParen);
-  return std::make_unique<MLIROp>(op_str, lexer->token_to_string(op_str),
+  return std::make_unique<MLIROp>(op_str, lexer->tokenToString(op_str),
                                   std::move(operands), std::move(attributes),
                                   std::move(result_types));
 }
 
 // tuple_type = '(' type (',' type)* ')'
-std::unique_ptr<Type> Parser::parse_tuple_type() {
+std::unique_ptr<Type> Parser::parseTupleType() {
   auto token = consume_kind(TokenKind::LParen);
-  if (!is_peek2(TokenKind::Comma)) {
+  if (!isPeek2(TokenKind::Comma)) {
     // not a tuple type
-    auto type = parse_type();
+    auto type = parseType();
     consume_kind(TokenKind::RParen);
     return type;
   }
   std::vector<std::unique_ptr<Type>> types;
-  while (!is_peek(TokenKind::RParen)) {
-    auto type = parse_type();
+  while (!isPeek(TokenKind::RParen)) {
+    auto type = parseType();
     types.emplace_back(std::move(type));
-    if (is_peek(TokenKind::Comma)) {
+    if (isPeek(TokenKind::Comma)) {
       consume();
     }
   }
@@ -998,17 +995,17 @@ std::unique_ptr<Type> Parser::parse_tuple_type() {
 // array_type = slice_type | fixed_array_type
 // slice_type = '[]' type
 // fixed_array_type = '['expr']' type
-std::unique_ptr<Type> Parser::parse_array_type() {
-  if (is_peek2(TokenKind::RBracket)) {
+std::unique_ptr<Type> Parser::parseArrayType() {
+  if (isPeek2(TokenKind::RBracket)) {
     auto token = consume();
     consume_kind(TokenKind::RBracket);
-    auto type = parse_type();
+    auto type = parseType();
     return std::make_unique<SliceType>(token.value(), std::move(type));
   } else {
     auto token = consume();
-    auto expr = parse_expr(0);
+    auto expr = parseExpr(0);
     consume_kind(TokenKind::RBracket);
-    auto type = parse_type();
+    auto type = parseType();
     return std::make_unique<ArrayType>(token.value(), std::move(type),
                                        std::move(expr));
   }
@@ -1032,15 +1029,15 @@ std::unique_ptr<Type> Parser::parse_array_type() {
 // }
 
 // match_expr = 'match' expr '{' match_arm* '}'
-std::unique_ptr<MatchExpr> Parser::parse_match_expr(bool consume_match) {
+std::unique_ptr<MatchExpr> Parser::parseMatchExpr(bool consume_match) {
   if (consume_match)
     consume_kind(TokenKind::KeywordMatch);
   auto token = current_token.value();
-  auto expr = parse_expr(0);
+  auto expr = parseExpr(0);
   consume_kind(TokenKind::LBrace);
   std::vector<std::unique_ptr<MatchArm>> arms;
-  while (!is_peek(TokenKind::RBrace)) {
-    auto arm = parse_match_arm();
+  while (!isPeek(TokenKind::RBrace)) {
+    auto arm = parseMatchArm();
     arms.emplace_back(std::move(arm));
     consume_kind(TokenKind::Comma);
   }
@@ -1049,117 +1046,117 @@ std::unique_ptr<MatchExpr> Parser::parse_match_expr(bool consume_match) {
 }
 
 // match_arm = 'is' pattern (if expr)? '=>' expr | block
-std::unique_ptr<MatchArm> Parser::parse_match_arm() {
+std::unique_ptr<MatchArm> Parser::parseMatchArm() {
   auto is_token = consume_kind(TokenKind::KeywordIs);
-  auto pattern = parse_pattern();
+  auto pattern = parsePattern();
   std::optional<std::unique_ptr<Expression>> guard = std::nullopt;
-  if (is_peek(TokenKind::KeywordIf)) {
+  if (isPeek(TokenKind::KeywordIf)) {
     consume();
-    guard = parse_expr(0);
+    guard = parseExpr(0);
   }
   consume_kind(TokenKind::EqualGreater);
-  if (is_peek(TokenKind::LBrace)) {
-    auto block = parse_block();
+  if (isPeek(TokenKind::LBrace)) {
+    auto block = parseBlock();
     return std::make_unique<MatchArm>(is_token, std::move(pattern),
                                       std::move(block), std::move(guard));
   }
-  auto expr = parse_expr(0);
+  auto expr = parseExpr(0);
   return std::make_unique<MatchArm>(is_token, std::move(pattern),
                                     std::move(expr), std::move(guard));
 }
 
-std::unique_ptr<Pattern> Parser::parse_pattern() {
-  auto pattern = parse_single_pattern();
-  if (is_peek(TokenKind::Pipe)) {
-    return parse_or_pattern(std::move(pattern));
+std::unique_ptr<Pattern> Parser::parsePattern() {
+  auto pattern = parseSinglePattern();
+  if (isPeek(TokenKind::Pipe)) {
+    return parseOrPattern(std::move(pattern));
   }
-  if (is_peek(TokenKind::DotDot) || is_peek(TokenKind::DotDotEqual)) {
-    return parse_range_pattern(std::move(pattern));
+  if (isPeek(TokenKind::DotDot) || isPeek(TokenKind::DotDotEqual)) {
+    return parseRangePattern(std::move(pattern));
   }
   return pattern;
 }
 
 // rest_pattern = '..' (as identifier)?
-std::unique_ptr<RestPattern> Parser::parse_rest_pattern() {
+std::unique_ptr<RestPattern> Parser::parseRestPattern() {
   auto token = consume_kind(TokenKind::DotDot);
   std::optional<IdentifierExpr> name = std::nullopt;
-  if (is_peek(TokenKind::KeywordAs)) {
+  if (isPeek(TokenKind::KeywordAs)) {
     consume();
     auto ident = consume_kind(TokenKind::Identifier);
-    name = IdentifierExpr(ident, lexer->token_to_string(ident));
+    name = IdentifierExpr(ident, lexer->tokenToString(ident));
   }
   return std::make_unique<RestPattern>(token, std::move(name));
 }
 
 // variant_pattern = '.' identifier (tuple_pattern | struct_pattern)
-std::unique_ptr<VariantPattern> Parser::parse_variant_pattern() {
+std::unique_ptr<VariantPattern> Parser::parseVariantPattern() {
   consume_kind(TokenKind::Dot);
   auto name = consume_kind(TokenKind::Identifier);
-  if (is_peek(TokenKind::LParen)) {
-    auto tuple = parse_tuple_pattern();
-    return std::make_unique<VariantPattern>(name, lexer->token_to_string(name),
+  if (isPeek(TokenKind::LParen)) {
+    auto tuple = parseTuplePattern();
+    return std::make_unique<VariantPattern>(name, lexer->tokenToString(name),
                                             std::move(tuple));
-  } else if (is_peek(TokenKind::LBrace)) {
-    auto struct_pattern = parse_struct_pattern();
-    return std::make_unique<VariantPattern>(name, lexer->token_to_string(name),
+  } else if (isPeek(TokenKind::LBrace)) {
+    auto struct_pattern = parseStructPattern();
+    return std::make_unique<VariantPattern>(name, lexer->tokenToString(name),
                                             std::move(struct_pattern));
   }
-  return std::make_unique<VariantPattern>(name, lexer->token_to_string(name),
+  return std::make_unique<VariantPattern>(name, lexer->tokenToString(name),
                                           std::nullopt);
 }
 
 // pattern = literal_pattern | identifier_pattern | wildcard_pattern |
 //          tuple_pattern | struct_pattern | enum_variant_pattern |
 //          slice_pattern | or_pattern | range_pattern
-std::unique_ptr<Pattern> Parser::parse_single_pattern() {
-  if (is_peek(TokenKind::NumberLiteral) || is_peek(TokenKind::StringLiteral) ||
-      is_peek(TokenKind::CharLiteral)) {
-    return parse_literal_pattern();
-  } else if (is_peek(TokenKind::Identifier)) {
-    if (is_peek2(TokenKind::LBrace)) {
+std::unique_ptr<Pattern> Parser::parseSinglePattern() {
+  if (isPeek(TokenKind::NumberLiteral) || isPeek(TokenKind::StringLiteral) ||
+      isPeek(TokenKind::CharLiteral)) {
+    return parseLiteralPattern();
+  } else if (isPeek(TokenKind::Identifier)) {
+    if (isPeek2(TokenKind::LBrace)) {
       auto name = consume();
-      return parse_struct_pattern(lexer->token_to_string(name.value()));
+      return parseStructPattern(lexer->tokenToString(name.value()));
     }
-    auto str = lexer->token_to_string(peek().value());
+    auto str = lexer->tokenToString(peek().value());
     if (str == "_") {
-      return parse_wildcard_pattern();
+      return parseWildcardPattern();
     }
-    return parse_identifier_pattern();
-  } else if (is_peek(TokenKind::LParen)) {
-    return parse_tuple_pattern();
-  } else if (is_peek(TokenKind::Dot)) {
-    return parse_variant_pattern();
-  } else if (is_peek(TokenKind::DotDot)) {
-    return parse_rest_pattern();
+    return parseIdentifierPattern();
+  } else if (isPeek(TokenKind::LParen)) {
+    return parseTuplePattern();
+  } else if (isPeek(TokenKind::Dot)) {
+    return parseVariantPattern();
+  } else if (isPeek(TokenKind::DotDot)) {
+    return parseRestPattern();
   }
   // else if (is_peek(TokenKind::LBrace)) {
   //   return parse_struct_pattern();
   // }
-  else if (is_peek(TokenKind::LBracket)) {
-    return parse_slice_pattern();
+  else if (isPeek(TokenKind::LBracket)) {
+    return parseSlicePattern();
   } else {
-    auto expr = parse_expr(0);
+    auto expr = parseExpr(0);
     return std::make_unique<ExprPattern>(expr->token, std::move(expr));
   }
 }
 
 // literal_pattern = number_literal | string_literal | char_literal
-std::unique_ptr<LiteralPattern> Parser::parse_literal_pattern() {
+std::unique_ptr<LiteralPattern> Parser::parseLiteralPattern() {
   auto token = consume();
   std::unique_ptr<LiteralExpr> expr;
   switch (token->kind) {
   case TokenKind::NumberLiteral:
-    expr = parse_number_literal_expr(token.value());
+    expr = parseNumberLiteralExpr(token.value());
     break;
   case TokenKind::StringLiteral:
     expr = std::make_unique<LiteralExpr>(token.value(),
                                          LiteralExpr::LiteralType::String,
-                                         lexer->token_to_string(token.value()));
+                                         lexer->tokenToString(token.value()));
     break;
   case TokenKind::CharLiteral:
     expr = std::make_unique<LiteralExpr>(
         token.value(), LiteralExpr::LiteralType::Char,
-        lexer->token_to_string(token.value())[0]);
+        lexer->tokenToString(token.value())[0]);
     break;
   default:
     break;
@@ -1168,26 +1165,26 @@ std::unique_ptr<LiteralPattern> Parser::parse_literal_pattern() {
 }
 
 // identifier_pattern = identifier
-std::unique_ptr<IdentifierPattern> Parser::parse_identifier_pattern() {
+std::unique_ptr<IdentifierPattern> Parser::parseIdentifierPattern() {
   auto token = consume_kind(TokenKind::Identifier);
   return std::make_unique<IdentifierPattern>(token,
-                                             lexer->token_to_string(token));
+                                             lexer->tokenToString(token));
 }
 
 // wildcard_pattern = '_'
-std::unique_ptr<WildcardPattern> Parser::parse_wildcard_pattern() {
+std::unique_ptr<WildcardPattern> Parser::parseWildcardPattern() {
   auto token = consume_kind(TokenKind::Identifier);
   return std::make_unique<WildcardPattern>(token);
 }
 
 // tuple_pattern = '(' pattern (',' pattern)* ')'
-std::unique_ptr<TuplePattern> Parser::parse_tuple_pattern() {
+std::unique_ptr<TuplePattern> Parser::parseTuplePattern() {
   auto token = consume_kind(TokenKind::LParen);
   std::vector<std::unique_ptr<Pattern>> patterns;
-  while (!is_peek(TokenKind::RParen)) {
-    auto pattern = parse_pattern();
+  while (!isPeek(TokenKind::RParen)) {
+    auto pattern = parsePattern();
     patterns.emplace_back(std::move(pattern));
-    if (is_peek(TokenKind::Comma)) {
+    if (isPeek(TokenKind::Comma)) {
       consume();
     }
   }
@@ -1197,16 +1194,16 @@ std::unique_ptr<TuplePattern> Parser::parse_tuple_pattern() {
 
 // struct_pattern = '{' pattern_field* '}'
 std::unique_ptr<StructPattern>
-Parser::parse_struct_pattern(std::optional<std::string> name) {
+Parser::parseStructPattern(std::optional<std::string> name) {
   auto token = consume_kind(TokenKind::LBrace);
   std::vector<StructPattern::Field> fields;
-  while (!is_peek(TokenKind::RBrace)) {
-    if (is_peek(TokenKind::DotDot)) {
-      auto rest = parse_rest_pattern();
+  while (!isPeek(TokenKind::RBrace)) {
+    if (isPeek(TokenKind::DotDot)) {
+      auto rest = parseRestPattern();
       fields.emplace_back(std::move(rest));
       break;
     }
-    auto field = parse_pattern_field();
+    auto field = parsePatternField();
     fields.emplace_back(std::move(field));
   }
   consume_kind(TokenKind::RBrace);
@@ -1215,28 +1212,28 @@ Parser::parse_struct_pattern(std::optional<std::string> name) {
 }
 
 // pattern_field = identifier ':' pattern ','?
-std::unique_ptr<PatternField> Parser::parse_pattern_field() {
+std::unique_ptr<PatternField> Parser::parsePatternField() {
   auto name = consume_kind(TokenKind::Identifier);
   std::optional<std::unique_ptr<Pattern>> pattern = std::nullopt;
-  if (is_peek(TokenKind::Colon)) {
+  if (isPeek(TokenKind::Colon)) {
     consume();
-    pattern = parse_pattern();
+    pattern = parsePattern();
   }
-  if (is_peek(TokenKind::Comma)) {
+  if (isPeek(TokenKind::Comma)) {
     consume();
   }
-  return std::make_unique<PatternField>(name, lexer->token_to_string(name),
+  return std::make_unique<PatternField>(name, lexer->tokenToString(name),
                                         std::move(pattern));
 }
 
 // slice_pattern = '[' pattern (',' pattern)* ']'
-std::unique_ptr<SlicePattern> Parser::parse_slice_pattern() {
+std::unique_ptr<SlicePattern> Parser::parseSlicePattern() {
   auto token = consume_kind(TokenKind::LBracket);
   std::vector<std::unique_ptr<Pattern>> patterns;
-  while (!is_peek(TokenKind::RBracket)) {
-    auto pattern = parse_pattern();
+  while (!isPeek(TokenKind::RBracket)) {
+    auto pattern = parsePattern();
     patterns.emplace_back(std::move(pattern));
-    if (is_peek(TokenKind::Comma)) {
+    if (isPeek(TokenKind::Comma)) {
       consume();
     }
   }
@@ -1246,14 +1243,14 @@ std::unique_ptr<SlicePattern> Parser::parse_slice_pattern() {
 
 // or_pattern = pattern '|' pattern
 std::unique_ptr<Pattern>
-Parser::parse_or_pattern(std::unique_ptr<Pattern> first_pattern) {
+Parser::parseOrPattern(std::unique_ptr<Pattern> first_pattern) {
   std::vector<std::unique_ptr<Pattern>> alternatives;
   auto span = first_pattern->token;
   alternatives.emplace_back(std::move(first_pattern));
 
-  while (is_peek(TokenKind::Pipe)) {
+  while (isPeek(TokenKind::Pipe)) {
     consume();
-    alternatives.emplace_back(parse_single_pattern());
+    alternatives.emplace_back(parseSinglePattern());
   }
 
   return std::make_unique<OrPattern>(span, std::move(alternatives));
@@ -1262,15 +1259,15 @@ Parser::parse_or_pattern(std::unique_ptr<Pattern> first_pattern) {
 // range_pattern = pattern '..' expr
 // range_pattern = expr '..=' expr
 std::unique_ptr<Pattern>
-Parser::parse_range_pattern(std::unique_ptr<Pattern> start_pattern) {
+Parser::parseRangePattern(std::unique_ptr<Pattern> start_pattern) {
   auto range_type = consume(); // Consume the `..` or `..=`
   bool inclusive = (range_type->kind == TokenKind::DotDotEqual);
 
   // Parse the end pattern
-  auto end_pattern = parse_single_pattern();
+  auto end_pattern = parseSinglePattern();
   if (!end_pattern) {
-    context->report_error("Expected a pattern after range operator",
-                          &range_type.value());
+    context->reportError("Expected a pattern after range operator",
+                         &range_type.value());
     return std::make_unique<InvalidPattern>(range_type.value());
   }
 
@@ -1280,16 +1277,16 @@ Parser::parse_range_pattern(std::unique_ptr<Pattern> start_pattern) {
 }
 
 // if_expr = 'if' expr block ('else' block)?
-std::unique_ptr<IfExpr> Parser::parse_if_expr(bool consume_if) {
+std::unique_ptr<IfExpr> Parser::parseIfExpr(bool consume_if) {
   if (consume_if)
     consume_kind(TokenKind::KeywordIf);
   auto token = current_token.value();
-  auto condition = parse_expr(0);
+  auto condition = parseExpr(0);
   std::unique_ptr<BlockExpression> then_branch;
-  if (is_peek(TokenKind::LBrace)) {
-    then_branch = parse_block();
+  if (isPeek(TokenKind::LBrace)) {
+    then_branch = parseBlock();
   } else {
-    auto expr = parse_expr(0);
+    auto expr = parseExpr(0);
     auto token = expr->token;
     auto expr_stmt = std::make_unique<ExprStmt>(expr->token, std::move(expr));
     std::vector<std::unique_ptr<Statement>> stmts;
@@ -1297,12 +1294,12 @@ std::unique_ptr<IfExpr> Parser::parse_if_expr(bool consume_if) {
     then_branch = std::make_unique<BlockExpression>(token, std::move(stmts));
   }
   std::optional<std::unique_ptr<BlockExpression>> else_branch = std::nullopt;
-  if (is_peek(TokenKind::KeywordElse)) {
+  if (isPeek(TokenKind::KeywordElse)) {
     consume();
-    if (is_peek(TokenKind::LBrace))
-      else_branch = parse_block();
+    if (isPeek(TokenKind::LBrace))
+      else_branch = parseBlock();
     else {
-      auto expr = parse_expr(0);
+      auto expr = parseExpr(0);
       auto token = expr->token;
       auto expr_stmt = std::make_unique<ExprStmt>(expr->token, std::move(expr));
       std::vector<std::unique_ptr<Statement>> stmts;
@@ -1316,156 +1313,156 @@ std::unique_ptr<IfExpr> Parser::parse_if_expr(bool consume_if) {
 }
 
 // while_expr = 'while' expr : expr block
-std::unique_ptr<WhileExpr>
-Parser::parse_while_expr(bool consume_while, std::optional<Token> label) {
+std::unique_ptr<WhileExpr> Parser::parseWhileExpr(bool consume_while,
+                                                  std::optional<Token> label) {
   std::optional<std::string> label_name = std::nullopt;
   if (label.has_value()) {
-    label_name = lexer->token_to_string(label.value());
+    label_name = lexer->tokenToString(label.value());
   }
   if (consume_while)
     consume_kind(TokenKind::KeywordWhile);
   auto token = current_token.value();
   std::optional<std::unique_ptr<Expression>> condition = std::nullopt;
-  if (!is_peek(TokenKind::LBrace)) {
-    condition = parse_expr(0);
+  if (!isPeek(TokenKind::LBrace)) {
+    condition = parseExpr(0);
   }
   std::optional<std::unique_ptr<Expression>> expr = std::nullopt;
-  if (is_peek(TokenKind::Colon)) {
+  if (isPeek(TokenKind::Colon)) {
     consume();
-    expr = parse_expr(0);
+    expr = parseExpr(0);
   }
-  auto block = parse_block();
+  auto block = parseBlock();
   return std::make_unique<WhileExpr>(token, std::move(condition),
                                      std::move(expr), std::move(block),
                                      std::move(label_name));
 }
 
 // for_expr = 'for' identifier 'in' expr block
-std::unique_ptr<ForExpr> Parser::parse_for_expr(bool consume_for,
-                                                std::optional<Token> label) {
+std::unique_ptr<ForExpr> Parser::parseForExpr(bool consume_for,
+                                              std::optional<Token> label) {
   std::optional<std::string> label_name = std::nullopt;
   if (label.has_value()) {
-    label_name = lexer->token_to_string(label.value());
+    label_name = lexer->tokenToString(label.value());
   }
   if (consume_for)
     consume_kind(TokenKind::KeywordFor);
   auto token = current_token.value();
-  auto pattern = parse_pattern();
+  auto pattern = parsePattern();
   consume_kind(TokenKind::KeywordIn);
-  auto iterable = parse_expr(0);
-  auto block = parse_block();
+  auto iterable = parseExpr(0);
+  auto block = parseBlock();
   return std::make_unique<ForExpr>(token, std::move(pattern),
                                    std::move(iterable), std::move(block),
                                    std::move(label_name));
 }
 
 // call_expr = identifier '(' expr (',' expr)* ')'
-std::unique_ptr<CallExpr> Parser::parse_call_expr() {
+std::unique_ptr<CallExpr> Parser::parseCallExpr() {
   auto name = current_token.value();
   consume_kind(TokenKind::LParen);
   std::vector<std::unique_ptr<Expression>> args;
-  while (!is_peek(TokenKind::RParen)) {
-    auto arg = parse_expr(0);
+  while (!isPeek(TokenKind::RParen)) {
+    auto arg = parseExpr(0);
     args.emplace_back(std::move(arg));
-    if (is_peek(TokenKind::Comma)) {
+    if (isPeek(TokenKind::Comma)) {
       consume();
     }
   }
   consume_kind(TokenKind::RParen);
-  auto call_expr = std::make_unique<CallExpr>(
-      name, lexer->token_to_string(name), std::move(args));
+  auto call_expr = std::make_unique<CallExpr>(name, lexer->tokenToString(name),
+                                              std::move(args));
   return call_expr;
 }
 
 // return_stmt = 'return' expr? ';'?
-std::unique_ptr<ReturnExpr> Parser::parse_return_expr() {
+std::unique_ptr<ReturnExpr> Parser::parseReturnExpr() {
   consume_kind(TokenKind::KeywordReturn);
-  if (is_peek(TokenKind::Semicolon)) {
+  if (isPeek(TokenKind::Semicolon)) {
     return std::make_unique<ReturnExpr>(current_token.value(), std::nullopt);
   }
-  auto expr = parse_expr(0);
+  auto expr = parseExpr(0);
   return std::make_unique<ReturnExpr>(expr->token, std::move(expr));
 }
 
 // stmt = expr_stmt | var_decl | return_stmt | block_stmt |
 // if_stmt |
 //       for_stmt | while_stmt | break_stmt | continue_stmt | match_stmt
-std::unique_ptr<Statement> Parser::parse_stmt() {
-  if (is_peek(TokenKind::KeywordVar) || is_peek(TokenKind::KeywordConst)) {
-    return parse_var_decl();
-  } else if (is_peek(TokenKind::KeywordReturn)) {
-    auto expr = parse_return_expr();
+std::unique_ptr<Statement> Parser::parseStmt() {
+  if (isPeek(TokenKind::KeywordVar) || isPeek(TokenKind::KeywordConst)) {
+    return parseVarDecl();
+  } else if (isPeek(TokenKind::KeywordReturn)) {
+    auto expr = parseReturnExpr();
     consume_kind(TokenKind::Semicolon);
     return std::make_unique<ExprStmt>(expr->token, std::move(expr));
-  } else if (is_peek(TokenKind::KeywordIf)) {
-    auto expr = parse_if_expr();
+  } else if (isPeek(TokenKind::KeywordIf)) {
+    auto expr = parseIfExpr();
     return std::make_unique<ExprStmt>(expr->token, std::move(expr));
-  } else if (is_peek(TokenKind::KeywordFor)) {
-    auto expr = parse_for_expr();
+  } else if (isPeek(TokenKind::KeywordFor)) {
+    auto expr = parseForExpr();
     return std::make_unique<ExprStmt>(expr->token, std::move(expr));
-  } else if (is_peek(TokenKind::KeywordWhile)) {
-    auto expr = parse_while_expr();
+  } else if (isPeek(TokenKind::KeywordWhile)) {
+    auto expr = parseWhileExpr();
     return std::make_unique<ExprStmt>(expr->token, std::move(expr));
-  } else if (is_peek(TokenKind::KeywordComptime)) {
+  } else if (isPeek(TokenKind::KeywordComptime)) {
     consume();
     auto token = peek().value();
-    auto expr = parse_expr(0);
+    auto expr = parseExpr(0);
     if (token.kind != TokenKind::LBrace)
       consume_kind(TokenKind::Semicolon);
     return std::make_unique<ExprStmt>(expr->token, std::move(expr));
-  } else if (is_peek(TokenKind::KeywordBreak)) {
-    auto break_expr = parse_break_expr();
+  } else if (isPeek(TokenKind::KeywordBreak)) {
+    auto break_expr = parseBreakExpr();
     consume_kind(TokenKind::Semicolon);
     return std::make_unique<ExprStmt>(break_expr->token, std::move(break_expr));
-  } else if (is_peek(TokenKind::KeywordContinue)) {
-    auto continue_expr = parse_continue_expr();
+  } else if (isPeek(TokenKind::KeywordContinue)) {
+    auto continue_expr = parseContinueExpr();
     consume_kind(TokenKind::Semicolon);
     return std::make_unique<ExprStmt>(continue_expr->token,
                                       std::move(continue_expr));
-  } else if (is_peek(TokenKind::KeywordYield)) {
-    auto yield_expr = parse_yield_expr();
+  } else if (isPeek(TokenKind::KeywordYield)) {
+    auto yield_expr = parseYieldExpr();
     consume_kind(TokenKind::Semicolon);
     return std::make_unique<ExprStmt>(yield_expr->token, std::move(yield_expr));
-  } else if (is_peek(TokenKind::KeywordMatch)) {
-    auto match_expr = parse_match_expr();
+  } else if (isPeek(TokenKind::KeywordMatch)) {
+    auto match_expr = parseMatchExpr();
     return std::make_unique<ExprStmt>(match_expr->token, std::move(match_expr));
-  } else if (is_peek(TokenKind::Identifier) && is_peek2(TokenKind::Colon)) {
+  } else if (isPeek(TokenKind::Identifier) && isPeek2(TokenKind::Colon)) {
     // labeled statements
     auto label = consume();
     consume();
-    if (is_peek(TokenKind::KeywordWhile)) {
-      auto expr = parse_while_expr(true, label);
+    if (isPeek(TokenKind::KeywordWhile)) {
+      auto expr = parseWhileExpr(true, label);
       return std::make_unique<ExprStmt>(expr->token, std::move(expr));
     }
-  } else if (is_peek(TokenKind::KeywordStruct)) {
+  } else if (isPeek(TokenKind::KeywordStruct)) {
     consume();
-    auto struct_decl = parse_struct_decl();
-    context->declare_struct(struct_decl->name, struct_decl.get());
+    auto struct_decl = parseStructDecl();
+    context->declareStruct(struct_decl->name, struct_decl.get());
     return std::make_unique<TopLevelDeclStmt>(struct_decl->token,
                                               std::move(struct_decl));
-  } else if (is_peek(TokenKind::KeywordEnum)) {
-    auto enum_decl = parse_enum_decl();
-    context->declare_enum(enum_decl->name, enum_decl.get());
+  } else if (isPeek(TokenKind::KeywordEnum)) {
+    auto enum_decl = parseEnumDecl();
+    context->declareEnum(enum_decl->name, enum_decl.get());
     return std::make_unique<TopLevelDeclStmt>(enum_decl->token,
                                               std::move(enum_decl));
-  } else if (is_peek(TokenKind::KeywordImpl)) {
-    auto impl_decl = parse_impl_decl();
+  } else if (isPeek(TokenKind::KeywordImpl)) {
+    auto impl_decl = parseImplDecl();
     return std::make_unique<TopLevelDeclStmt>(impl_decl->token,
                                               std::move(impl_decl));
-  } else if (is_peek(TokenKind::KeywordTrait)) {
-    auto trait_decl = parse_trait_decl();
-    context->declare_trait(trait_decl->name, trait_decl.get());
+  } else if (isPeek(TokenKind::KeywordTrait)) {
+    auto trait_decl = parseTraitDecl();
+    context->declareTrait(trait_decl->name, trait_decl.get());
     return std::make_unique<TopLevelDeclStmt>(trait_decl->token,
                                               std::move(trait_decl));
-  } else if (is_peek(TokenKind::KeywordFn)) {
-    auto function = parse_function();
+  } else if (isPeek(TokenKind::KeywordFn)) {
+    auto function = parseFunction();
     return std::make_unique<TopLevelDeclStmt>(function->token,
                                               std::move(function));
   } else {
     auto token = peek().value();
-    auto expr = parse_expr(0);
+    auto expr = parseExpr(0);
     if (expr->kind() != AstNodeKind::BlockExpression &&
-        !is_peek(TokenKind::Semicolon)) {
+        !isPeek(TokenKind::Semicolon)) {
       // if not block expression, then it is an implicit yield
       expr = std::make_unique<YieldExpr>(token, std::nullopt, std::move(expr));
       return std::make_unique<ExprStmt>(token, std::move(expr));
@@ -1479,7 +1476,7 @@ std::unique_ptr<Statement> Parser::parse_stmt() {
 }
 
 // var_decl = 'var' | 'const' identifier ('=' expr)? ';'
-std::unique_ptr<VarDecl> Parser::parse_var_decl(bool is_pub) {
+std::unique_ptr<VarDecl> Parser::parseVarDecl(bool is_pub) {
   bool is_mut = false;
   if (peek()->kind == TokenKind::KeywordConst) {
     consume_kind(TokenKind::KeywordConst);
@@ -1488,16 +1485,16 @@ std::unique_ptr<VarDecl> Parser::parse_var_decl(bool is_pub) {
     consume_kind(TokenKind::KeywordVar);
   }
   auto token = current_token.value();
-  auto pattern = parse_pattern();
+  auto pattern = parsePattern();
   std::optional<std::unique_ptr<Type>> type = std::nullopt;
   if (peek()->kind == TokenKind::Colon) {
     consume();
-    type = parse_type();
+    type = parseType();
   }
   std::optional<std::unique_ptr<Expression>> expr = std::nullopt;
-  if (is_peek(TokenKind::Equal)) {
+  if (isPeek(TokenKind::Equal)) {
     consume();
-    expr = parse_expr(0);
+    expr = parseExpr(0);
   }
   consume_kind(TokenKind::Semicolon);
   return std::make_unique<VarDecl>(token, std::move(pattern), std::move(type),
@@ -1505,60 +1502,59 @@ std::unique_ptr<VarDecl> Parser::parse_var_decl(bool is_pub) {
 }
 
 // break_expr = 'break' (':' identifier)? (expr)?;
-std::unique_ptr<BreakExpr> Parser::parse_break_expr(bool consume_break) {
+std::unique_ptr<BreakExpr> Parser::parseBreakExpr(bool consume_break) {
   if (consume_break)
     consume_kind(TokenKind::KeywordBreak);
   auto token = current_token.value();
   std::optional<std::string> label = std::nullopt;
-  if (is_peek(TokenKind::Colon)) {
+  if (isPeek(TokenKind::Colon)) {
     consume();
     auto name = consume_kind(TokenKind::Identifier);
-    label = lexer->token_to_string(name);
+    label = lexer->tokenToString(name);
   }
   std::optional<std::unique_ptr<Expression>> expr = std::nullopt;
-  if (!is_peek(TokenKind::Semicolon) && !is_peek(TokenKind::Comma)) {
-    expr = parse_expr(0);
+  if (!isPeek(TokenKind::Semicolon) && !isPeek(TokenKind::Comma)) {
+    expr = parseExpr(0);
   }
   return std::make_unique<BreakExpr>(token, std::move(label), std::move(expr));
 }
 
 // yield_expr = 'yield' (':' identifier)? expr;
-std::unique_ptr<YieldExpr> Parser::parse_yield_expr(bool consume_yield) {
+std::unique_ptr<YieldExpr> Parser::parseYieldExpr(bool consume_yield) {
   if (consume_yield)
     consume_kind(TokenKind::KeywordYield);
   auto token = current_token.value();
   std::optional<std::string> label = std::nullopt;
-  if (is_peek(TokenKind::Colon)) {
+  if (isPeek(TokenKind::Colon)) {
     consume();
     auto name = consume_kind(TokenKind::Identifier);
-    label = lexer->token_to_string(name);
+    label = lexer->tokenToString(name);
   }
-  auto expr = parse_expr(0);
+  auto expr = parseExpr(0);
   return std::make_unique<YieldExpr>(token, std::move(label), std::move(expr));
 }
 
 // continue_expr = 'continue' (':' identifier)? (expr)?;
-std::unique_ptr<ContinueExpr>
-Parser::parse_continue_expr(bool consume_continue) {
+std::unique_ptr<ContinueExpr> Parser::parseContinueExpr(bool consume_continue) {
   if (consume_continue)
     consume_kind(TokenKind::KeywordContinue);
   auto token = current_token.value();
   std::optional<std::string> label = std::nullopt;
-  if (is_peek(TokenKind::Colon)) {
+  if (isPeek(TokenKind::Colon)) {
     consume();
     auto name = consume_kind(TokenKind::Identifier);
-    label = lexer->token_to_string(name);
+    label = lexer->tokenToString(name);
   }
   std::optional<std::unique_ptr<Expression>> expr = std::nullopt;
-  if (!is_peek(TokenKind::Semicolon) && !is_peek(TokenKind::Comma)) {
-    expr = parse_expr(0);
+  if (!isPeek(TokenKind::Semicolon) && !isPeek(TokenKind::Comma)) {
+    expr = parseExpr(0);
   }
   return std::make_unique<ContinueExpr>(token, std::move(label),
                                         std::move(expr));
 }
 
 std::variant<int, double>
-Parser::parse_number_literal(const std::basic_string<char> &bytes) {
+Parser::parseNumberLiteral(const std::basic_string<char> &bytes) {
   size_t i = 0;
   uint8_t base = 10;
   if (bytes.size() >= 2 && bytes[0] == '0') {
@@ -1578,21 +1574,21 @@ Parser::parse_number_literal(const std::basic_string<char> &bytes) {
     case 'B':
     case 'O':
     case 'X':
-      context->report_error("Upper case base not allowed",
-                            &current_token.value());
+      context->reportError("Upper case base not allowed",
+                           &current_token.value());
       break;
     case '.':
     case 'e':
     case 'E':
       break;
     default:
-      context->report_error("Leading zero not allowed", &current_token.value());
+      context->reportError("Leading zero not allowed", &current_token.value());
       break;
     }
   }
   if (bytes.size() == 2 && base != 10) {
-    context->report_error("Digit after base not allowed",
-                          &current_token.value());
+    context->reportError("Digit after base not allowed",
+                         &current_token.value());
   }
 
   uint64_t x = 0;
@@ -1607,15 +1603,15 @@ Parser::parse_number_literal(const std::basic_string<char> &bytes) {
     switch (c) {
     case '_':
       if (i == 2 && base != 10) {
-        context->report_error("Invalid underscore after special",
-                              &current_token.value());
+        context->reportError("Invalid underscore after special",
+                             &current_token.value());
       }
       if (special != 0) {
-        context->report_error("Invalid underscore after special",
-                              &current_token.value());
+        context->reportError("Invalid underscore after special",
+                             &current_token.value());
       }
       if (underscore) {
-        context->report_error("Repeated underscore", &current_token.value());
+        context->reportError("Repeated underscore", &current_token.value());
       }
       underscore = true;
       ++i;
@@ -1625,11 +1621,11 @@ Parser::parse_number_literal(const std::basic_string<char> &bytes) {
       if (base == 10) {
         floating = true;
         if (exponent) {
-          context->report_error("Duplicate exponent", &current_token.value());
+          context->reportError("Duplicate exponent", &current_token.value());
         }
         if (underscore) {
-          context->report_error("Exponent after underscore",
-                                &current_token.value());
+          context->reportError("Exponent after underscore",
+                               &current_token.value());
         }
         special = c;
         exponent = true;
@@ -1642,11 +1638,11 @@ Parser::parse_number_literal(const std::basic_string<char> &bytes) {
       if (base == 16) {
         floating = true;
         if (exponent) {
-          context->report_error("Duplicate exponent", &current_token.value());
+          context->reportError("Duplicate exponent", &current_token.value());
         }
         if (underscore) {
-          context->report_error("Exponent after underscore",
-                                &current_token.value());
+          context->reportError("Exponent after underscore",
+                               &current_token.value());
         }
         special = c;
         exponent = true;
@@ -1657,15 +1653,15 @@ Parser::parse_number_literal(const std::basic_string<char> &bytes) {
     case '.':
       floating = true;
       if (base != 10 && base != 16) {
-        context->report_error("Invalid float base", &current_token.value());
+        context->reportError("Invalid float base", &current_token.value());
       }
       if (period) {
-        context->report_error("Duplicate period", &current_token.value());
+        context->reportError("Duplicate period", &current_token.value());
       }
       period = true;
       if (underscore) {
-        context->report_error("Special after underscore",
-                              &current_token.value());
+        context->reportError("Special after underscore",
+                             &current_token.value());
       }
       special = c;
       ++i;
@@ -1679,12 +1675,11 @@ Parser::parse_number_literal(const std::basic_string<char> &bytes) {
       case 'e':
       case 'E':
         if (base != 10) {
-          context->report_error("Invalid exponent sign",
-                                &current_token.value());
+          context->reportError("Invalid exponent sign", &current_token.value());
         }
         break;
       default:
-        context->report_error("Invalid exponent sign", &current_token.value());
+        context->reportError("Invalid exponent sign", &current_token.value());
         break;
       }
       special = c;
@@ -1701,15 +1696,15 @@ Parser::parse_number_literal(const std::basic_string<char> &bytes) {
       } else if (c >= 'a' && c <= 'z') {
         return c - 'a' + 10;
       }
-      context->report_error("Invalid character", &current_token.value());
+      context->reportError("Invalid character", &current_token.value());
       return 0;
     }();
     if (digit >= base) {
-      context->report_error("Invalid digit", &current_token.value());
+      context->reportError("Invalid digit", &current_token.value());
     }
 
     if (exponent && digit >= 10) {
-      context->report_error("Invalid digit exponent", &current_token.value());
+      context->reportError("Invalid digit exponent", &current_token.value());
     }
 
     underscore = false;
@@ -1737,23 +1732,23 @@ Parser::parse_number_literal(const std::basic_string<char> &bytes) {
   }
 
   if (underscore) {
-    context->report_error("Trailing underscore", &current_token.value());
+    context->reportError("Trailing underscore", &current_token.value());
   }
   if (special != 0) {
-    context->report_error("Trailing special", &current_token.value());
+    context->reportError("Trailing special", &current_token.value());
   }
 
   if (floating) {
-    return stod(lexer->token_to_string(current_token.value()));
+    return stod(lexer->tokenToString(current_token.value()));
   }
   if (overflow) {
     // bigint
-    context->report_error("Overflow", &current_token.value());
+    context->reportError("Overflow", &current_token.value());
   }
   return (int)x;
 }
 
-Operator Parser::token_to_operator(const Token &op) {
+Operator Parser::tokenToOperator(const Token &op) {
   switch (op.kind) {
   case TokenKind::Plus:
   case TokenKind::PlusEqual:
@@ -1804,7 +1799,7 @@ Operator Parser::token_to_operator(const Token &op) {
   case TokenKind::StarStar:
     return Operator::Pow;
   default:
-    context->report_error("Invalid operator", &op);
+    context->reportError("Invalid operator", &op);
     return Operator::Invalid;
   }
 }

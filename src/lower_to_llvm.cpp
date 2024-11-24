@@ -49,16 +49,16 @@ void LangToLLVMLoweringPass::runOnOperation() {
   mlir::LLVMConversionTarget target(getContext());
   target.addLegalOp<mlir::ModuleOp>();
 
-  mlir::LLVMTypeConverter typeConverter(&getContext());
+  mlir::LLVMTypeConverter type_converter(&getContext());
 
   mlir::RewritePatternSet patterns(&getContext());
   populateAffineToStdConversionPatterns(patterns);
   populateSCFToControlFlowConversionPatterns(patterns);
-  mlir::arith::populateArithToLLVMConversionPatterns(typeConverter, patterns);
-  populateFinalizeMemRefToLLVMConversionPatterns(typeConverter, patterns);
-  mlir::cf::populateControlFlowToLLVMConversionPatterns(typeConverter,
+  mlir::arith::populateArithToLLVMConversionPatterns(type_converter, patterns);
+  populateFinalizeMemRefToLLVMConversionPatterns(type_converter, patterns);
+  mlir::cf::populateControlFlowToLLVMConversionPatterns(type_converter,
                                                         patterns);
-  populateFuncToLLVMConversionPatterns(typeConverter, patterns);
+  populateFuncToLLVMConversionPatterns(type_converter, patterns);
 
   // patterns.add<PrintOpLowering>(&getContext());
 

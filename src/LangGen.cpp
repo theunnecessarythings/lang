@@ -17,12 +17,12 @@
 using llvm::StringRef;
 
 #define NEW_SCOPE()                                                            \
-  llvm::ScopedHashTableScope<StringRef, mlir::Value> varScope(symbol_table);   \
-  llvm::ScopedHashTableScope<StringRef, mlir::Type> typeScope(type_table);     \
-  llvm::ScopedHashTableScope<StringRef, StructDecl *> structScope(             \
+  llvm::ScopedHashTableScope<StringRef, mlir::Value> var_scope(symbol_table);  \
+  llvm::ScopedHashTableScope<StringRef, mlir::Type> type_scope(type_table);    \
+  llvm::ScopedHashTableScope<StringRef, StructDecl *> struct_scope(            \
       struct_table);                                                           \
   llvm::ScopedHashTableScope<mlir::lang::StructType, StringRef>                \
-      structNameScope(struct_name_table);
+      struct_name_scope(struct_name_table);
 
 class LangGenImpl {
 public:
@@ -154,8 +154,8 @@ private:
     builder.setInsertionPointToStart(entry_block);
 
     // Declare function parameters.
-    if (failed(declare_parameters(func->decl->parameters,
-                                  entry_block->getArguments()))) {
+    if (failed(declareParameters(func->decl->parameters,
+                                 entry_block->getArguments()))) {
       func_op.erase();
       return emitError(loc(func->token.span), "parameter declaration error");
     }
@@ -211,8 +211,8 @@ private:
   }
 
   llvm::LogicalResult
-  declare_parameters(std::vector<std::unique_ptr<Parameter>> &params,
-                     mlir::ArrayRef<mlir::BlockArgument> args) {
+  declareParameters(std::vector<std::unique_ptr<Parameter>> &params,
+                    mlir::ArrayRef<mlir::BlockArgument> args) {
 
     for (int i = 0; i < (int)params.size(); i++) {
       // Assume identifier pattern
@@ -228,15 +228,15 @@ private:
 
   llvm::FailureOr<llvm::SmallVector<mlir::Type, 4>>
   langGen(std::vector<std::unique_ptr<Parameter>> &params) {
-    llvm::SmallVector<mlir::Type, 4> argTypes;
+    llvm::SmallVector<mlir::Type, 4> arg_types;
     for (auto &param : params) {
       auto type = getType(param->type.get());
       if (failed(type)) {
         return mlir::failure();
       }
-      argTypes.push_back(type.value());
+      arg_types.push_back(type.value());
     }
-    return argTypes;
+    return arg_types;
   }
 
   llvm::FailureOr<mlir::Value> langGen(ReturnExpr *expr) {
@@ -267,16 +267,16 @@ private:
 
   llvm::LogicalResult langGen(TupleStructDecl *decl) {
     auto span = this->loc(decl->token.span);
-    llvm::SmallVector<mlir::Type, 4> fieldTypes;
+    llvm::SmallVector<mlir::Type, 4> field_types;
     for (auto &field : decl->fields) {
       auto type = getType(field.get());
       if (failed(type)) {
         emitError(span, "unsupported field type");
         return mlir::failure();
       }
-      fieldTypes.push_back(type.value());
+      field_types.push_back(type.value());
     }
-    auto struct_type = mlir::lang::StructType::get(fieldTypes, decl->name);
+    auto struct_type = mlir::lang::StructType::get(field_types, decl->name);
     // declare struct type
     if (failed(declare(decl->name, struct_type))) {
       emitError(span, "redeclaration of struct type");
@@ -441,8 +441,8 @@ private:
 
       mlir::Operation *op = nullptr;
       if (current_function) {
-        mlir::SymbolTable symbolTable(current_function->getOperation());
-        op = symbolTable.lookup(type_name);
+        mlir::SymbolTable symbol_table(current_function->getOperation());
+        op = symbol_table.lookup(type_name);
       }
       if (!op) {
         // search in struct table
@@ -456,7 +456,7 @@ private:
       return op->getResult(0).getType();
     }
     return mlir::emitError(loc(type->token.span),
-                           "unsupported type " + to_string(type->kind()));
+                           "unsupported type " + toString(type->kind()));
   }
 
   mlir::FailureOr<mlir::Value> langGen(Expression *expr) {
@@ -494,7 +494,7 @@ private:
       return langGen(e);
     }
     return mlir::emitError(loc(expr->token.span),
-                           "unsupported expression " + to_string(expr->kind()));
+                           "unsupported expression " + toString(expr->kind()));
   }
 
   mlir::FailureOr<mlir::Value> langGen(UnaryExpr *expr) {
@@ -561,11 +561,11 @@ private:
         llvm::errs() << "failed then block\n";
       }
       if (isNonTerminatingBlock(expr->then_block.get())) {
-        auto lastStmt = expr->then_block->statements.back().get();
-        if (auto exprStmt = dynamic_cast<ExprStmt *>(lastStmt)) {
-          if (exprStmt->expr->kind() == AstNodeKind::IfExpr) {
-            auto nestedIfResult = builder.getBlock()->back().getResult(0);
-            builder.create<mlir::lang::YieldOp>(loc, nestedIfResult);
+        auto last_stmt = expr->then_block->statements.back().get();
+        if (auto expr_stmt = dynamic_cast<ExprStmt *>(last_stmt)) {
+          if (expr_stmt->expr->kind() == AstNodeKind::IfExpr) {
+            auto nested_if_result = builder.getBlock()->back().getResult(0);
+            builder.create<mlir::lang::YieldOp>(loc, nested_if_result);
           } else {
             builder.create<mlir::lang::YieldOp>(loc);
           }
@@ -578,11 +578,11 @@ private:
       if (failed(langGen(expr->else_block.value().get())))
         llvm::errs() << "failed else block\n";
       if (isNonTerminatingBlock(expr->else_block.value().get())) {
-        auto lastStmt = expr->else_block.value()->statements.back().get();
-        if (auto exprStmt = dynamic_cast<ExprStmt *>(lastStmt)) {
-          if (exprStmt->expr->kind() == AstNodeKind::IfExpr) {
-            auto nestedIfResult = builder.getBlock()->back().getResult(0);
-            builder.create<mlir::lang::YieldOp>(loc, nestedIfResult);
+        auto last_stmt = expr->else_block.value()->statements.back().get();
+        if (auto expr_stmt = dynamic_cast<ExprStmt *>(last_stmt)) {
+          if (expr_stmt->expr->kind() == AstNodeKind::IfExpr) {
+            auto nested_if_result = builder.getBlock()->back().getResult(0);
+            builder.create<mlir::lang::YieldOp>(loc, nested_if_result);
           } else {
             builder.create<mlir::lang::YieldOp>(loc);
           }
@@ -797,21 +797,21 @@ private:
     // lookup callee in struct table
     auto struct_type = type_table.lookup(expr->callee);
     if (struct_type && mlir::isa<mlir::lang::StructType>(struct_type))
-      return create_struct_instance(
+      return createStructInstance(
           mlir::cast<mlir::lang::StructType>(struct_type), expr->arguments);
 
     // get arguments
     llvm::SmallVector<mlir::Value, 4> args;
-    llvm::SmallVector<mlir::Type, 4> argTypes;
+    llvm::SmallVector<mlir::Type, 4> arg_types;
     for (auto &arg : expr->arguments) {
       auto arg_value = langGen(arg.get());
       if (failed(arg_value)) {
         return mlir::failure();
       }
       args.push_back(arg_value.value());
-      argTypes.push_back(arg_value.value().getType());
+      arg_types.push_back(arg_value.value().getType());
     }
-    auto func_name = mangle(expr->callee, argTypes);
+    auto func_name = mangle(expr->callee, arg_types);
     // if return type is a struct type, then create a struct instance
     // and pass it as an argument
     auto func_op = function_map[func_name];
@@ -917,8 +917,8 @@ private:
   }
 
   mlir::FailureOr<mlir::Value>
-  create_struct_instance(mlir::lang::StructType struct_type,
-                         std::vector<std::unique_ptr<Expression>> &args) {
+  createStructInstance(mlir::lang::StructType struct_type,
+                       std::vector<std::unique_ptr<Expression>> &args) {
     llvm::SmallVector<mlir::Value, 4> field_values;
     for (int i = 0; i < (int)args.size(); i++) {
       auto field_value = langGen(args[i].get());
@@ -953,11 +953,11 @@ private:
                              "failed to parse attribute");
     }
 
-    auto typedAttr = mlir::cast<mlir::TypedAttr>(mlir_attr);
-    auto constantOp = builder.create<mlir::lang::ConstantOp>(
-        loc(attr->token.span), typedAttr.getType(), typedAttr);
+    auto typed_attr = mlir::cast<mlir::TypedAttr>(mlir_attr);
+    auto constant_op = builder.create<mlir::lang::ConstantOp>(
+        loc(attr->token.span), typed_attr.getType(), typed_attr);
 
-    return constantOp.getResult();
+    return constant_op.getResult();
   }
 
   mlir::FailureOr<mlir::Value> langGen(MLIROp *op) {

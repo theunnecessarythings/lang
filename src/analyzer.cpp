@@ -113,7 +113,7 @@ void Analyzer::analyze(ImplDecl *impl) {
       // constructor so check the first parameter type is Self or parent_name
       // delete that parameter
       if (func->decl->parameters.size() == 0) {
-        context->report_error(
+        context->reportError(
             "constructor must have at least one parameter, self",
             &func->decl->token);
       } else {
@@ -123,12 +123,12 @@ void Analyzer::analyze(ImplDecl *impl) {
           if (id_type->name == "Self" || id_type->name == impl->type) {
             func->decl->parameters.erase(func->decl->parameters.begin());
           } else {
-            context->report_error(
+            context->reportError(
                 "first parameter of constructor must be of type Self",
                 &param->token);
           }
         } else {
-          context->report_error(
+          context->reportError(
               "first parameter of constructor must be of type Self",
               &param->token);
         }

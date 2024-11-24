@@ -1,6 +1,6 @@
 #include "json_dumper.hpp"
 
-std::string JsonDumper::token_kind_to_string(TokenKind kind) {
+std::string JsonDumper::tokenKindToString(TokenKind kind) {
   switch (kind) {
   case TokenKind::Dummy:
     return "Dummy";
@@ -191,8 +191,7 @@ void JsonDumper::dump(const Token &token) {
   output_stream << "{\n";
   cur_indent++;
   indent();
-  output_stream << "\"kind\": \"" << token_kind_to_string(token.kind)
-                << "\",\n";
+  output_stream << "\"kind\": \"" << tokenKindToString(token.kind) << "\",\n";
   indent();
   output_stream << "\"span\": ";
   dump(token.span);
@@ -388,7 +387,7 @@ void JsonDumper::dump(FunctionDecl *node) {
   output_stream << ",\n";
 
   indent();
-  output_stream << "\"parent_kind\": \"" << to_string(node->extra.parent_kind)
+  output_stream << "\"parent_kind\": \"" << toString(node->extra.parent_kind)
                 << "\"\n";
 
   cur_indent--;

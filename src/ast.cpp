@@ -970,7 +970,7 @@ void AstDumper::indent() {
     output_stream << "  ";
 }
 
-std::string &to_string(AstNodeKind kind) {
+std::string &toString(AstNodeKind kind) {
   static std::array<std::string, 86> names = {
       "Program",
       "Module",

@@ -8,7 +8,7 @@
 struct JsonDumper {
   JsonDumper(bool skip_import = false) : skip_import(skip_import) {}
 
-  std::string to_string() const { return output_stream.str(); }
+  std::string toString() const { return output_stream.str(); }
 
   void dump(const Token &token);
   void dump(Program *node);
@@ -89,7 +89,7 @@ struct JsonDumper {
   void dump(MLIROp *node);
   void dump(YieldExpr *node);
 
-  std::string token_kind_to_string(TokenKind kind);
+  std::string tokenKindToString(TokenKind kind);
   void dump(const TokenSpan &span);
   void dump(const TokenKind &span);
   void dumpNodeToken(Node *node);
@@ -101,7 +101,7 @@ private:
     }
   }
 
-  std::string to_string(AstNodeKind kind) {
+  std::string toString(AstNodeKind kind) {
     switch (kind) {
     case AstNodeKind::InvalidNode:
       return "InvalidNode";

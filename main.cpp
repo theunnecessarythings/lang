@@ -58,26 +58,26 @@
 
 namespace cl = llvm::cl;
 
-static cl::opt<std::string> inputFilename(cl::Positional,
-                                          cl::desc("<input lang file>"),
-                                          cl::init("-"),
-                                          cl::value_desc("filename"));
+static cl::opt<std::string> input_filename(cl::Positional,
+                                           cl::desc("<input lang file>"),
+                                           cl::init("-"),
+                                           cl::value_desc("filename"));
 
 namespace {
 enum InputType { Lang, MLIR };
 } // namespace
 static cl::opt<enum InputType>
-    inputType("x", cl::init(Lang),
-              cl::desc("Decided the kind of output desired"),
-              cl::values(clEnumValN(Lang, "lang",
-                                    "load the input file as a Toy source.")),
-              cl::values(clEnumValN(MLIR, "mlir",
-                                    "load the input file as an MLIR file")));
+    input_type("x", cl::init(Lang),
+               cl::desc("Decided the kind of output desired"),
+               cl::values(clEnumValN(Lang, "lang",
+                                     "load the input file as a Toy source.")),
+               cl::values(clEnumValN(MLIR, "mlir",
+                                     "load the input file as an MLIR file")));
 
 namespace {
 enum Action { None, DumpAST, DumpJSON, DumpMLIR, DumpMLIRLang, DumpMLIRAffine };
 } // namespace
-static cl::opt<enum Action> emitAction(
+static cl::opt<enum Action> emit_action(
     "emit", cl::desc("Select the kind of output desired"),
     cl::values(clEnumValN(DumpAST, "ast", "output the AST dump")),
     cl::values(clEnumValN(DumpJSON, "json", "output the AST dump")),
@@ -87,89 +87,90 @@ static cl::opt<enum Action> emitAction(
     cl::values(clEnumValN(DumpMLIRAffine, "mlir-affine",
                           "output the MLIR dump after affine lowering")));
 
-static cl::opt<bool> enableOpt("opt", cl::desc("Enable optimizations"));
+static cl::opt<bool> enable_opt("opt", cl::desc("Enable optimizations"));
 
 /// Returns a Toy AST resulting from parsing the file or a nullptr on error.
 std::unique_ptr<Program> parseInputFile(llvm::StringRef filename,
                                         std::shared_ptr<Context> context) {
-  llvm::ErrorOr<std::unique_ptr<llvm::MemoryBuffer>> fileOrErr =
+  llvm::ErrorOr<std::unique_ptr<llvm::MemoryBuffer>> file_or_err =
       llvm::MemoryBuffer::getFileOrSTDIN(filename);
-  if (std::error_code ec = fileOrErr.getError()) {
+  if (std::error_code ec = file_or_err.getError()) {
     llvm::errs() << "Could not open input file: " << ec.message() << "\n";
     return nullptr;
   }
-  auto buffer = fileOrErr.get()->getBuffer();
+  auto buffer = file_or_err.get()->getBuffer();
   auto lexer = std::make_unique<Lexer>(buffer.str(), 0);
   auto parser = Parser(std::move(lexer), context);
-  context->source_mgr.AddNewSourceBuffer(std::move(*fileOrErr), llvm::SMLoc());
-  auto tree = parser.parse_program();
+  context->source_mgr.AddNewSourceBuffer(std::move(*file_or_err),
+                                         llvm::SMLoc());
+  auto tree = parser.parseProgram();
   auto analyzer = Analyzer(context);
   analyzer.analyze(tree.get());
   return tree;
 }
 
 int dumpJSON() {
-  if (inputType == InputType::MLIR) {
+  if (input_type == InputType::MLIR) {
     llvm::errs() << "Can't dump a Lang AST JSON when the input is MLIR\n";
     return 5;
   }
 
   auto context = std::make_shared<Context>();
-  auto moduleAST = parseInputFile(inputFilename, context);
-  if (!moduleAST)
+  auto module_ast = parseInputFile(input_filename, context);
+  if (!module_ast)
     return 1;
   auto dumper = JsonDumper();
-  dumper.dump(moduleAST.get());
-  auto str = dumper.to_string();
+  dumper.dump(module_ast.get());
+  auto str = dumper.toString();
   llvm::errs() << str << "\n";
   return 0;
 }
 
 int dumpAST() {
-  if (inputType == InputType::MLIR) {
+  if (input_type == InputType::MLIR) {
     llvm::errs() << "Can't dump a Lang AST when the input is MLIR\n";
     return 5;
   }
 
   auto context = std::make_shared<Context>();
-  auto moduleAST = parseInputFile(inputFilename, context);
-  if (!moduleAST)
+  auto module_ast = parseInputFile(input_filename, context);
+  if (!module_ast)
     return 1;
 
   auto dumper = AstDumper();
-  dumper.dump(moduleAST.get());
-  llvm::errs() << dumper.to_string() << "\n";
+  dumper.dump(module_ast.get());
+  llvm::errs() << dumper.toString() << "\n";
   return 0;
 }
 
 int loadMLIR(llvm::SourceMgr &sourceMgr, mlir::MLIRContext &context,
              mlir::OwningOpRef<mlir::ModuleOp> &module, bool lang = false) {
-  if (inputType != InputType::MLIR &&
-      !llvm::StringRef(inputFilename).ends_with(".mlir")) {
+  if (input_type != InputType::MLIR &&
+      !llvm::StringRef(input_filename).ends_with(".mlir")) {
     auto compiler_context = std::make_shared<Context>();
-    auto moduleAST = parseInputFile(inputFilename, compiler_context);
-    if (!moduleAST)
+    auto module_ast = parseInputFile(input_filename, compiler_context);
+    if (!module_ast)
       return 6;
     if (!lang)
-      module = mlirGen(context, moduleAST.get());
+      module = mlirGen(context, module_ast.get());
     else
-      module = langGen(context, moduleAST.get(), *compiler_context);
+      module = langGen(context, module_ast.get(), *compiler_context);
     return !module ? 1 : 0;
   }
 
   // Otherwise, the input is '.mlir'.
-  llvm::ErrorOr<std::unique_ptr<llvm::MemoryBuffer>> fileOrErr =
-      llvm::MemoryBuffer::getFileOrSTDIN(inputFilename);
-  if (std::error_code ec = fileOrErr.getError()) {
+  llvm::ErrorOr<std::unique_ptr<llvm::MemoryBuffer>> file_or_err =
+      llvm::MemoryBuffer::getFileOrSTDIN(input_filename);
+  if (std::error_code ec = file_or_err.getError()) {
     llvm::errs() << "Could not open input file: " << ec.message() << "\n";
     return -1;
   }
 
   // Parse the input mlir.
-  sourceMgr.AddNewSourceBuffer(std::move(*fileOrErr), llvm::SMLoc());
+  sourceMgr.AddNewSourceBuffer(std::move(*file_or_err), llvm::SMLoc());
   module = mlir::parseSourceFile<mlir::ModuleOp>(sourceMgr, &context);
   if (!module) {
-    llvm::errs() << "Error can't load file " << inputFilename << "\n";
+    llvm::errs() << "Error can't load file " << input_filename << "\n";
     return 3;
   }
   return 0;
@@ -186,22 +187,22 @@ int runJit(mlir::ModuleOp module) {
   mlir::registerLLVMDialectTranslation(*module->getContext());
 
   // An optimization pipeline to use within the execution engine.
-  auto optPipeline = mlir::makeOptimizingTransformer(
-      /*optLevel=*/enableOpt ? 3 : 0, /*sizeLevel=*/0,
+  auto opt_pipeline = mlir::makeOptimizingTransformer(
+      /*optLevel=*/enable_opt ? 3 : 0, /*sizeLevel=*/0,
       /*targetMachine=*/nullptr);
 
   // Create an MLIR execution engine. The execution engine eagerly JIT-compiles
   // the module.
-  mlir::ExecutionEngineOptions engineOptions;
-  engineOptions.transformer = optPipeline;
-  auto maybeEngine = mlir::ExecutionEngine::create(module, engineOptions);
-  assert(maybeEngine && "failed to construct an execution engine");
-  auto engine = std::move(maybeEngine.get());
+  mlir::ExecutionEngineOptions engine_options;
+  engine_options.transformer = opt_pipeline;
+  auto maybe_engine = mlir::ExecutionEngine::create(module, engine_options);
+  assert(maybe_engine && "failed to construct an execution engine");
+  auto engine = std::move(maybe_engine.get());
 
   // Invoke the JIT-compiled function.
-  auto invocationResult = engine->invokePacked("main", {});
+  auto invocation_result = engine->invokePacked("main", {});
 
-  if (invocationResult) {
+  if (invocation_result) {
     llvm::errs() << "JIT invocation failed\n";
     return -1;
   }
@@ -220,9 +221,9 @@ int dumpMLIRLang() {
   context.getOrLoadDialect<mlir::arith::ArithDialect>();
   context.getOrLoadDialect<mlir::scf::SCFDialect>();
   mlir::OwningOpRef<mlir::ModuleOp> module;
-  llvm::SourceMgr sourceMgr;
-  mlir::SourceMgrDiagnosticHandler sourceMgrHandler(sourceMgr, &context);
-  if (int error = loadMLIR(sourceMgr, context, module, true))
+  llvm::SourceMgr source_mgr;
+  mlir::SourceMgrDiagnosticHandler source_mgr_handle(source_mgr, &context);
+  if (int error = loadMLIR(source_mgr, context, module, true))
     return error;
 
   mlir::PassManager pm(module.get()->getName());
@@ -231,19 +232,19 @@ int dumpMLIRLang() {
     return 4;
 
   // Custom passes
-  mlir::OpPassManager &castPM = pm.nest<mlir::lang::FuncOp>();
-  castPM.addPass(mlir::lang::createLiteralCastPass());
+  mlir::OpPassManager &cast_pm = pm.nest<mlir::lang::FuncOp>();
+  cast_pm.addPass(mlir::lang::createLiteralCastPass());
   pm.addPass(mlir::createInlinerPass());
   pm.addPass(mlir::lang::createLowerToAffinePass());
   pm.addPass(mlir::lang::createUnrealizedConversionCastResolverPass());
   pm.addPass(mlir::createLowerAffinePass());
 
   // Add a few cleanups post lowering.
-  mlir::OpPassManager &optPM = pm.nest<mlir::func::FuncOp>();
-  optPM.addPass(mlir::createCanonicalizerPass());
-  optPM.addPass(mlir::createCSEPass());
-  optPM.addPass(mlir::affine::createLoopFusionPass());
-  optPM.addPass(mlir::affine::createAffineScalarReplacementPass());
+  mlir::OpPassManager &opt_pm = pm.nest<mlir::func::FuncOp>();
+  opt_pm.addPass(mlir::createCanonicalizerPass());
+  opt_pm.addPass(mlir::createCSEPass());
+  opt_pm.addPass(mlir::affine::createLoopFusionPass());
+  opt_pm.addPass(mlir::affine::createAffineScalarReplacementPass());
 
   // Add passes to lower the module to LLVM dialect.
   pm.addPass(mlir::createConvertSCFToCFPass());
@@ -276,9 +277,9 @@ int dumpMLIR() {
   context.getOrLoadDialect<mlir::memref::MemRefDialect>();
 
   mlir::OwningOpRef<mlir::ModuleOp> module;
-  llvm::SourceMgr sourceMgr;
-  mlir::SourceMgrDiagnosticHandler sourceMgrHandler(sourceMgr, &context);
-  if (int error = loadMLIR(sourceMgr, context, module))
+  llvm::SourceMgr source_mgr;
+  mlir::SourceMgrDiagnosticHandler source_mgr_handler(source_mgr, &context);
+  if (int error = loadMLIR(source_mgr, context, module))
     return error;
 
   mlir::PassManager pm(module.get()->getName());
@@ -288,32 +289,32 @@ int dumpMLIR() {
     return 4;
 
   // Check to see what granularity of MLIR we are compiling to.
-  bool isLoweringToAffine = emitAction >= Action::DumpMLIRAffine;
+  bool is_lowering_to_affine = emit_action >= Action::DumpMLIRAffine;
 
-  if (enableOpt || isLoweringToAffine) {
+  if (enable_opt || is_lowering_to_affine) {
     // Inline all functions into main and then delete them.
     // pm.addPass(mlir::createInlinerPass());
 
     // Now that there is only one function, we can infer the shapes of each of
     // the operations.
-    mlir::OpPassManager &optPM = pm.nest<mlir::func::FuncOp>();
-    optPM.addPass(mlir::createCanonicalizerPass());
-    optPM.addPass(mlir::createCSEPass());
+    mlir::OpPassManager &opt_pm = pm.nest<mlir::func::FuncOp>();
+    opt_pm.addPass(mlir::createCanonicalizerPass());
+    opt_pm.addPass(mlir::createCSEPass());
   }
 
-  if (isLoweringToAffine) {
+  if (is_lowering_to_affine) {
     // Partially lower the toy dialect.
     pm.addPass(mlir::createLowerAffinePass());
 
     // Add a few cleanups post lowering.
-    mlir::OpPassManager &optPM = pm.nest<mlir::func::FuncOp>();
-    optPM.addPass(mlir::createCanonicalizerPass());
-    optPM.addPass(mlir::createCSEPass());
+    mlir::OpPassManager &opt_pm = pm.nest<mlir::func::FuncOp>();
+    opt_pm.addPass(mlir::createCanonicalizerPass());
+    opt_pm.addPass(mlir::createCSEPass());
 
     // Add optimizations if enabled.
-    if (enableOpt) {
-      optPM.addPass(mlir::affine::createLoopFusionPass());
-      optPM.addPass(mlir::affine::createAffineScalarReplacementPass());
+    if (enable_opt) {
+      opt_pm.addPass(mlir::affine::createLoopFusionPass());
+      opt_pm.addPass(mlir::affine::createAffineScalarReplacementPass());
     }
   }
 
@@ -343,7 +344,7 @@ int main(int argc, char **argv) {
 
   cl::ParseCommandLineOptions(argc, argv, "lang compiler\n");
 
-  switch (emitAction) {
+  switch (emit_action) {
   case Action::DumpAST:
     return dumpAST();
   case Action::DumpJSON:

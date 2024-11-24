@@ -201,9 +201,9 @@ struct Lexer {
     }
   }
 
-  int get_source_file_id() { return file_id; }
+  int getSourceFileId() { return file_id; }
 
-  std::string token_to_string(Token token) {
+  std::string tokenToString(Token token) {
     return source.substr(token.span.start, token.span.end - token.span.start);
   }
 
@@ -488,7 +488,7 @@ struct Lexer {
             loop_break = true;
             break;
           } else {
-            check_literal_character();
+            checkLiteralCharacter();
           }
           break;
         case '\n':
@@ -498,7 +498,7 @@ struct Lexer {
           loop_break = true;
           break;
         default:
-          check_literal_character();
+          checkLiteralCharacter();
           break;
         }
         break;
@@ -855,7 +855,7 @@ struct Lexer {
           break;
         default:
           state = State::LineComment;
-          check_literal_character();
+          checkLiteralCharacter();
           break;
         }
         break;
@@ -877,7 +877,7 @@ struct Lexer {
         case '\t':
           break;
         default:
-          check_literal_character();
+          checkLiteralCharacter();
           break;
         }
         break;
@@ -1001,11 +1001,11 @@ struct Lexer {
     return result;
   }
 
-  void check_literal_character() {
+  void checkLiteralCharacter() {
     if (pending_invalid_token.has_value()) {
       return;
     }
-    int invalid_length = get_invalid_character_length();
+    int invalid_length = getInvalidCharacterLength();
     if (invalid_length == 0)
       return;
     pending_invalid_token =
@@ -1013,7 +1013,7 @@ struct Lexer {
                                             index + invalid_length}};
   }
 
-  uint8_t get_invalid_character_length() {
+  uint8_t getInvalidCharacterLength() {
     unsigned char c0 = source[index];
     // if (c0 < 128) { // is_ascii
     if (isascii(c0)) {
@@ -1027,7 +1027,7 @@ struct Lexer {
       }
       return 0;
     } else {
-      int length = utf8_byte_sequence_length(c0);
+      int length = utf8ByteSequenceLength(c0);
       if (length == -1)
         return 1;
       if (index + length > (int)source.size())
@@ -1036,7 +1036,7 @@ struct Lexer {
       const char *bytes = source.c_str() + index;
       switch (length) {
       case 2: {
-        uint32_t value = utf8_decode2(bytes);
+        uint32_t value = utf8Decode2(bytes);
         if (value == UINT32_MAX)
           return length; // Decoding error
         if (value == 0x85)
@@ -1044,7 +1044,7 @@ struct Lexer {
         break;
       }
       case 3: {
-        uint32_t value = utf8_decode3(bytes);
+        uint32_t value = utf8Decode3(bytes);
         if (value == UINT32_MAX)
           return length; // Decoding error
         if (value == 0x2028)
@@ -1054,13 +1054,12 @@ struct Lexer {
         break;
       }
       case 4: {
-        uint32_t value = utf8_decode4(bytes);
+        uint32_t value = utf8Decode4(bytes);
         if (value == UINT32_MAX)
           return length; // Decoding error
         break;
       }
       default:
-        std::cout << "Invalid length: " << length << std::endl;
         assert(false); // Unreachable
       }
       index += length - 1;
@@ -1068,7 +1067,7 @@ struct Lexer {
     }
   }
 
-  uint8_t utf8_byte_sequence_length(unsigned char first_byte) {
+  uint8_t utf8ByteSequenceLength(unsigned char first_byte) {
     switch (first_byte) {
     case 0b0000'0000 ... 0b0111'1111:
       return 1;
@@ -1083,7 +1082,7 @@ struct Lexer {
     }
   }
 
-  uint32_t utf8_decode2(const char *bytes) {
+  uint32_t utf8Decode2(const char *bytes) {
     unsigned char c0 = bytes[0];
     unsigned char c1 = bytes[1];
     if ((c1 & 0xC0) != 0x80)
@@ -1092,7 +1091,7 @@ struct Lexer {
     return codepoint;
   }
 
-  uint32_t utf8_decode3(const char *bytes) {
+  uint32_t utf8Decode3(const char *bytes) {
     unsigned char c0 = bytes[0];
     unsigned char c1 = bytes[1];
     unsigned char c2 = bytes[2];
@@ -1102,7 +1101,7 @@ struct Lexer {
     return codepoint;
   }
 
-  uint32_t utf8_decode4(const char *bytes) {
+  uint32_t utf8Decode4(const char *bytes) {
     unsigned char c0 = bytes[0];
     unsigned char c1 = bytes[1];
     unsigned char c2 = bytes[2];

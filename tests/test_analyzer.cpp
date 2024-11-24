@@ -16,16 +16,16 @@ auto parse(const std::string &path, std::string &str, int file_id,
         break;
       }
       std::cout << Lexer::lexeme(token.kind) << " : "
-                << lexer->token_to_string(token) << std::endl;
+                << lexer->tokenToString(token) << std::endl;
     }
   }
 
   Parser parser(std::move(lexer), context);
-  auto tree = parser.parse_program();
+  auto tree = parser.parseProgram();
   return tree;
 }
 
-void test_analyzer(const std::string &path) {
+void testAnalyzer(const std::string &path) {
   std::cout << "Parsing " << path << std::endl;
   std::ifstream file(path);
   if (!file)
@@ -40,7 +40,7 @@ void test_analyzer(const std::string &path) {
   analyzer.analyze(tree.get());
 }
 
-TEST_CASE("expr", "[analyzer]") { test_analyzer("../examples/expr.lang"); }
+TEST_CASE("expr", "[analyzer]") { testAnalyzer("../examples/expr.lang"); }
 
 // TEST_CASE("hello", "[analyzer]") { test_analyzer("../examples/hello.lang"); }
 //

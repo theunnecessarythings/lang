@@ -99,7 +99,7 @@ enum class AstNodeKind {
   InvalidPattern,
 };
 
-std::string &to_string(AstNodeKind kind);
+std::string &toString(AstNodeKind kind);
 
 struct Node {
   Token token;
@@ -1137,11 +1137,11 @@ struct AstDumper {
   std::ostringstream output_stream;
   bool skip_import = false;
 
-  std::string to_string() const { return output_stream.str(); }
+  std::string toString() const { return output_stream.str(); }
 
   template <typename T> std::string dump(T *node) {
     dump(node);
-    auto str = to_string();
+    auto str = toString();
     output_stream.str("");
     return str;
   }

@@ -34,14 +34,14 @@ public:
     addConversion(
         [&](mlir::lang::StructType struct_type) -> std::optional<mlir::Type> {
           mlir::MLIRContext *ctx = struct_type.getContext();
-          mlir::SmallVector<mlir::Type, 4> elementTypes;
-          for (mlir::Type fieldType : struct_type.getElementTypes()) {
-            elementTypes.push_back(convertType(fieldType));
+          mlir::SmallVector<mlir::Type, 4> element_types;
+          for (mlir::Type field_type : struct_type.getElementTypes()) {
+            element_types.push_back(convertType(field_type));
           }
           auto llvm_struct_type = mlir::LLVM::LLVMStructType::getIdentified(
               ctx, struct_type.getName());
-          if (mlir::failed(
-                  llvm_struct_type.setBody(elementTypes, /*isPacked=*/false))) {
+          if (mlir::failed(llvm_struct_type.setBody(element_types,
+                                                    /*isPacked=*/false))) {
             return std::nullopt;
           }
           return llvm_struct_type;
@@ -67,8 +67,9 @@ public:
 struct FuncOpLowering : public mlir::OpConversionPattern<mlir::lang::FuncOp> {
   using OpConversionPattern<mlir::lang::FuncOp>::OpConversionPattern;
 
-  FuncOpLowering(mlir::TypeConverter &typeConverter, mlir::MLIRContext *context)
-      : OpConversionPattern<mlir::lang::FuncOp>(typeConverter, context) {}
+  FuncOpLowering(mlir::TypeConverter &type_converter,
+                 mlir::MLIRContext *context)
+      : OpConversionPattern<mlir::lang::FuncOp>(type_converter, context) {}
 
   mlir::LogicalResult
   matchAndRewrite(mlir::lang::FuncOp op, OpAdaptor adaptor,
@@ -76,46 +77,46 @@ struct FuncOpLowering : public mlir::OpConversionPattern<mlir::lang::FuncOp> {
     auto func_type = op.getFunctionType();
     auto input_types = func_type.getInputs();
     auto result_types = func_type.getResults();
-    mlir::TypeConverter::SignatureConversion signatureConversion(
+    mlir::TypeConverter::SignatureConversion signature_conversion(
         input_types.size());
-    mlir::SmallVector<mlir::Type, 4> convertedResultTypes;
+    mlir::SmallVector<mlir::Type, 4> converted_result_types;
 
     for (const auto &type : llvm::enumerate(input_types)) {
-      mlir::Type convertedType = getTypeConverter()->convertType(type.value());
-      if (!convertedType) {
+      mlir::Type converted_type = getTypeConverter()->convertType(type.value());
+      if (!converted_type) {
         return rewriter.notifyMatchFailure(op, "failed to convert input type");
       }
-      signatureConversion.addInputs(type.index(), convertedType);
+      signature_conversion.addInputs(type.index(), converted_type);
     }
 
     for (mlir::Type type : result_types) {
-      mlir::Type convertedType = getTypeConverter()->convertType(type);
-      if (!convertedType) {
+      mlir::Type converted_type = getTypeConverter()->convertType(type);
+      if (!converted_type) {
         return rewriter.notifyMatchFailure(op, "failed to convert result type");
       }
-      convertedResultTypes.push_back(convertedType);
+      converted_result_types.push_back(converted_type);
     }
 
-    auto convertedFuncType = mlir::FunctionType::get(
-        op.getContext(), signatureConversion.getConvertedTypes(),
-        convertedResultTypes);
+    auto converted_func_type = mlir::FunctionType::get(
+        op.getContext(), signature_conversion.getConvertedTypes(),
+        converted_result_types);
 
-    auto newFuncOp = rewriter.create<mlir::func::FuncOp>(
-        op.getLoc(), op.getName(), convertedFuncType);
+    auto new_func_op = rewriter.create<mlir::func::FuncOp>(
+        op.getLoc(), op.getName(), converted_func_type);
 
-    rewriter.inlineRegionBefore(op.getBody(), newFuncOp.getBody(),
-                                newFuncOp.end());
+    rewriter.inlineRegionBefore(op.getBody(), new_func_op.getBody(),
+                                new_func_op.end());
 
-    if (failed(rewriter.convertRegionTypes(&newFuncOp.getRegion(),
+    if (failed(rewriter.convertRegionTypes(&new_func_op.getRegion(),
                                            *this->getTypeConverter(),
-                                           &signatureConversion))) {
+                                           &signature_conversion))) {
       return rewriter.notifyMatchFailure(op, "failed to convert region types");
     }
     llvm::SmallVector<mlir::Location, 4> locations(result_types.size(),
                                                    rewriter.getUnknownLoc());
-    auto return_block =
-        rewriter.createBlock(&newFuncOp.getBody(), newFuncOp.getBody().end(),
-                             newFuncOp.getResultTypes(), locations);
+    auto return_block = rewriter.createBlock(
+        &new_func_op.getBody(), new_func_op.getBody().end(),
+        new_func_op.getResultTypes(), locations);
     rewriter.setInsertionPointToStart(return_block);
     rewriter.create<mlir::func::ReturnOp>(op.getLoc(),
                                           return_block->getArguments());
@@ -188,58 +189,58 @@ struct IfOpLowering : public mlir::OpConversionPattern<mlir::lang::IfOp> {
     auto loc = op.getLoc();
 
     // Get the parent block and function
-    auto *currentBlock = rewriter.getInsertionBlock();
-    auto *parentRegion = currentBlock->getParent();
+    auto *current_block = rewriter.getInsertionBlock();
+    auto *parent_region = current_block->getParent();
 
     // Create the blocks for the 'then', 'else', and continuation ('merge')
     // blocks
-    auto *thenBlock = rewriter.createBlock(
-        parentRegion, std::next(currentBlock->getIterator()));
-    mlir::Block *elseBlock = nullptr;
+    auto *then_block = rewriter.createBlock(
+        parent_region, std::next(current_block->getIterator()));
+    mlir::Block *else_block = nullptr;
     if (!op.getElseRegion().empty()) {
-      elseBlock = rewriter.createBlock(parentRegion,
-                                       std::next(currentBlock->getIterator()));
+      else_block = rewriter.createBlock(
+          parent_region, std::next(current_block->getIterator()));
     }
     // Create the merge block by splitting the current block
-    auto *mergeBlock = rewriter.splitBlock(currentBlock, op->getIterator());
+    auto *merge_block = rewriter.splitBlock(current_block, op->getIterator());
 
     // Insert the conditional branch
-    rewriter.setInsertionPointToEnd(currentBlock);
-    if (elseBlock) {
-      rewriter.create<mlir::cf::CondBranchOp>(loc, op.getCondition(), thenBlock,
-                                              elseBlock);
+    rewriter.setInsertionPointToEnd(current_block);
+    if (else_block) {
+      rewriter.create<mlir::cf::CondBranchOp>(loc, op.getCondition(),
+                                              then_block, else_block);
     } else {
-      rewriter.create<mlir::cf::CondBranchOp>(loc, op.getCondition(), thenBlock,
-                                              mergeBlock);
+      rewriter.create<mlir::cf::CondBranchOp>(loc, op.getCondition(),
+                                              then_block, merge_block);
     }
 
     // move the contents of the then region to the new block
-    rewriter.mergeBlocks(&op.getThenRegion().front(), thenBlock);
+    rewriter.mergeBlocks(&op.getThenRegion().front(), then_block);
 
     // If 'then' block does not end with a return, branch to the merge block
-    if (thenBlock->empty() ||
+    if (then_block->empty() ||
         !mlir::isa<mlir::lang::ReturnOp, mlir::func::ReturnOp>(
-            thenBlock->back())) {
-      rewriter.setInsertionPointToEnd(thenBlock);
-      rewriter.create<mlir::cf::BranchOp>(loc, mergeBlock);
+            then_block->back())) {
+      rewriter.setInsertionPointToEnd(then_block);
+      rewriter.create<mlir::cf::BranchOp>(loc, merge_block);
     }
     // Build the 'else' block if it exists
-    if (elseBlock) {
+    if (else_block) {
       // move the contents of the else region to the new block
-      rewriter.mergeBlocks(&op.getElseRegion().front(), elseBlock);
+      rewriter.mergeBlocks(&op.getElseRegion().front(), else_block);
 
       // If 'else' block does not end with a return, branch to the merge
       // block
-      if (elseBlock->empty() ||
+      if (else_block->empty() ||
           !mlir::isa<mlir::lang::ReturnOp, mlir::func::ReturnOp>(
-              elseBlock->back())) {
-        rewriter.setInsertionPointToEnd(elseBlock);
-        rewriter.create<mlir::cf::BranchOp>(loc, mergeBlock);
+              else_block->back())) {
+        rewriter.setInsertionPointToEnd(else_block);
+        rewriter.create<mlir::cf::BranchOp>(loc, merge_block);
       }
     }
 
     // Continue building from the merge block
-    rewriter.setInsertionPointToStart(mergeBlock);
+    rewriter.setInsertionPointToStart(merge_block);
     rewriter.eraseOp(op);
 
     return mlir::success();
@@ -280,8 +281,9 @@ struct UndefOpLowering : public mlir::OpConversionPattern<mlir::lang::UndefOp> {
     }
     // rewriter.replaceOpWithNewOp<mlir::LLVM::UndefOp>(op, new_type);
     // allocate an llvm struct
-    auto llvmStructType = mlir::dyn_cast<mlir::LLVM::LLVMStructType>(new_type);
-    if (!llvmStructType) {
+    auto llvm_struct_type =
+        mlir::dyn_cast<mlir::LLVM::LLVMStructType>(new_type);
+    if (!llvm_struct_type) {
       return rewriter.notifyMatchFailure(
           op, "converted type is not an LLVM struct");
     }
@@ -289,7 +291,7 @@ struct UndefOpLowering : public mlir::OpConversionPattern<mlir::lang::UndefOp> {
         op.getLoc(), rewriter.getI64Type(), rewriter.getI64IntegerAttr(1));
     auto alloca_op = rewriter.create<mlir::LLVM::AllocaOp>(
         op.getLoc(), mlir::LLVM::LLVMPointerType::get(op.getContext()),
-        llvmStructType, one_val);
+        llvm_struct_type, one_val);
     rewriter.replaceOp(op, alloca_op);
     return mlir::success();
   }
@@ -352,25 +354,25 @@ struct TupleOpLowering : public mlir::OpConversionPattern<mlir::lang::TupleOp> {
   mlir::LogicalResult
   matchAndRewrite(mlir::lang::TupleOp op, OpAdaptor adaptor,
                   mlir::ConversionPatternRewriter &rewriter) const final {
-    mlir::Type convertedType =
+    mlir::Type converted_type =
         this->getTypeConverter()->convertType(op.getType());
-    if (!convertedType) {
+    if (!converted_type) {
       return rewriter.notifyMatchFailure(op, "Failed to convert result type");
     }
     auto one_val = rewriter.create<mlir::arith::ConstantOp>(
         op.getLoc(), rewriter.getI64Type(), rewriter.getI64IntegerAttr(1));
     auto alloca_op = rewriter.create<mlir::LLVM::AllocaOp>(
         op.getLoc(), mlir::LLVM::LLVMPointerType::get(op.getContext()),
-        convertedType, one_val);
+        converted_type, one_val);
 
     // Insert each field into the struct using LLVM::StoreOp
     for (auto it : llvm::enumerate(adaptor.getOperands())) {
       mlir::Value field = it.value();
 
       // Optionally, convert the field type if necessary
-      mlir::Type fieldType = field.getType();
-      mlir::Type convertedFieldType = typeConverter->convertType(fieldType);
-      if (!convertedFieldType)
+      mlir::Type field_type = field.getType();
+      mlir::Type converted_field_type = typeConverter->convertType(field_type);
+      if (!converted_field_type)
         return rewriter.notifyMatchFailure(op, "Failed to convert field type");
 
       auto index_val = rewriter.create<mlir::arith::ConstantOp>(
@@ -379,7 +381,7 @@ struct TupleOpLowering : public mlir::OpConversionPattern<mlir::lang::TupleOp> {
       // Insert the field into the struct
       auto gep_op = rewriter.create<mlir::LLVM::GEPOp>(
           op.getLoc(), mlir::LLVM::LLVMPointerType::get(op.getContext()),
-          convertedType, alloca_op, mlir::ValueRange{one_val, index_val});
+          converted_type, alloca_op, mlir::ValueRange{one_val, index_val});
       rewriter.create<mlir::LLVM::StoreOp>(op.getLoc(), field, gep_op);
     }
 
@@ -403,12 +405,12 @@ struct AssignOpLowering
     mlir::Value rhs = adaptor.getValue();
 
     // Ensure types are convertible
-    mlir::Type convertedLhsType =
+    mlir::Type converted_lhs_type =
         this->getTypeConverter()->convertType(lhs.getType());
-    mlir::Type convertedRhsType =
+    mlir::Type converted_rhs_type =
         this->getTypeConverter()->convertType(rhs.getType());
 
-    if (!convertedLhsType || !convertedRhsType) {
+    if (!converted_lhs_type || !converted_rhs_type) {
       return rewriter.notifyMatchFailure(op, "failed to convert types");
     }
     if (lhs.getDefiningOp<mlir::UnrealizedConversionCastOp>()) {
@@ -427,7 +429,7 @@ struct AssignOpLowering
         rhs = original_rhs;
       }
     }
-    if (auto memRefType = mlir::dyn_cast<mlir::MemRefType>(lhs.getType())) {
+    if (auto memref_type = mlir::dyn_cast<mlir::MemRefType>(lhs.getType())) {
       rewriter.create<mlir::memref::StoreOp>(op.getLoc(), rhs, lhs);
       rewriter.replaceOp(op, rhs);
     } else {
@@ -449,9 +451,9 @@ struct DerefOpLowering : public mlir::OpConversionPattern<mlir::lang::DerefOp> {
   matchAndRewrite(mlir::lang::DerefOp op, OpAdaptor adaptor,
                   mlir::ConversionPatternRewriter &rewriter) const final {
     mlir::Value addr = adaptor.getAddr();
-    mlir::Type convertedType =
+    mlir::Type converted_type =
         this->getTypeConverter()->convertType(op.getType());
-    if (!convertedType) {
+    if (!converted_type) {
       return rewriter.notifyMatchFailure(op, "failed to convert type");
     }
     if (addr.getDefiningOp<mlir::UnrealizedConversionCastOp>()) {
@@ -459,7 +461,7 @@ struct DerefOpLowering : public mlir::OpConversionPattern<mlir::lang::DerefOp> {
           addr.getDefiningOp<mlir::UnrealizedConversionCastOp>().getOperand(0);
     }
     rewriter.replaceOp(op, rewriter.create<mlir::memref::LoadOp>(
-                               op.getLoc(), convertedType, addr));
+                               op.getLoc(), converted_type, addr));
     return mlir::success();
   }
 };
@@ -479,22 +481,22 @@ struct StructAccessOpLowering
                   mlir::ConversionPatternRewriter &rewriter) const final {
     auto input = adaptor.getInput();
 
-    mlir::Type convertedStructType =
+    mlir::Type converted_struct_type =
         this->getTypeConverter()->convertType(input.getType());
-    if (!convertedStructType)
+    if (!converted_struct_type)
       return rewriter.notifyMatchFailure(op,
                                          "Failed to convert input struct type");
 
-    auto llvmStructType =
-        mlir::dyn_cast<mlir::LLVM::LLVMStructType>(convertedStructType);
-    if (!llvmStructType)
+    auto llvm_struct_type =
+        mlir::dyn_cast<mlir::LLVM::LLVMStructType>(converted_struct_type);
+    if (!llvm_struct_type)
       return rewriter.notifyMatchFailure(
           op, "Converted type is not an LLVM struct");
 
-    int64_t fieldIndex = op.getIndex();
+    int64_t field_index = op.getIndex();
 
-    unsigned numFields = llvmStructType.getBody().size();
-    if (fieldIndex < 0 || static_cast<unsigned>(fieldIndex) >= numFields)
+    unsigned num_fields = llvm_struct_type.getBody().size();
+    if (field_index < 0 || static_cast<unsigned>(field_index) >= num_fields)
       return rewriter.notifyMatchFailure(op, "Field index out of bounds");
 
     if (adaptor.getInput().getDefiningOp<mlir::UnrealizedConversionCastOp>()) {
@@ -512,15 +514,15 @@ struct StructAccessOpLowering
         op.getLoc(), rewriter.getI64Type(), rewriter.getI64IntegerAttr(0));
     auto index_val = rewriter.create<mlir::arith::ConstantOp>(
         op.getLoc(), rewriter.getI64Type(),
-        rewriter.getI64IntegerAttr(fieldIndex));
+        rewriter.getI64IntegerAttr(field_index));
 
     auto gep = rewriter.create<mlir::LLVM::GEPOp>(
         op.getLoc(), mlir::LLVM::LLVMPointerType::get(op.getContext()),
-        llvmStructType, input, mlir::ValueRange{zero_val, index_val});
-    auto extractedValue = rewriter.create<mlir::LLVM::LoadOp>(
-        op.getLoc(), llvmStructType.getBody()[fieldIndex], gep);
+        llvm_struct_type, input, mlir::ValueRange{zero_val, index_val});
+    auto extracted_value = rewriter.create<mlir::LLVM::LoadOp>(
+        op.getLoc(), llvm_struct_type.getBody()[field_index], gep);
 
-    rewriter.replaceOp(op, extractedValue);
+    rewriter.replaceOp(op, extracted_value);
 
     return mlir::success();
   }
@@ -543,44 +545,44 @@ struct ResolveCastPattern
       return rewriter.notifyMatchFailure(castOp, "expected one operand");
     }
     mlir::Value original = castOp.getOperand(0);
-    mlir::Type originalType = original.getType();
-    mlir::Type convertedType =
-        this->getTypeConverter()->convertType(originalType);
-    mlir::Type targetType = castOp.getType(0);
+    mlir::Type original_type = original.getType();
+    mlir::Type converted_type =
+        this->getTypeConverter()->convertType(original_type);
+    mlir::Type target_type = castOp.getType(0);
 
     // llvm::errs() << "originalType: " << originalType << "\n";
     // llvm::errs() << "convertedType: " << convertedType << "\n";
     // llvm::errs() << "targetType: " << targetType << "\n";
 
-    if (mlir::isa<mlir::LLVM::LLVMPointerType>(convertedType) &&
-        mlir::isa<mlir::LLVM::LLVMStructType>(targetType)) {
+    if (mlir::isa<mlir::LLVM::LLVMPointerType>(converted_type) &&
+        mlir::isa<mlir::LLVM::LLVMStructType>(target_type)) {
       // Load the value from the pointer
-      auto loadOp = rewriter.create<mlir::LLVM::LoadOp>(castOp.getLoc(),
-                                                        targetType, original);
-      rewriter.replaceOp(castOp, loadOp.getResult());
+      auto load_op = rewriter.create<mlir::LLVM::LoadOp>(castOp.getLoc(),
+                                                         target_type, original);
+      rewriter.replaceOp(castOp, load_op.getResult());
       return mlir::success();
     }
     // if targetType and convertedType are the same, we can erase the cast
-    if (targetType == convertedType) {
+    if (target_type == converted_type) {
       rewriter.replaceOp(castOp, original);
       return mlir::success();
     }
-    if (!convertedType) {
+    if (!converted_type) {
       return rewriter.notifyMatchFailure(castOp,
                                          "failed to convert operand type");
     }
 
     // if either the original or converted type is a struct
     // then we can construct using the target struct's constructor function
-    if (auto targetStructType =
-            mlir::dyn_cast<mlir::lang::StructType>(targetType)) {
-      if (auto convertedStructType =
-              mlir::dyn_cast<mlir::lang::StructType>(convertedType)) {
+    if (auto target_struct_type =
+            mlir::dyn_cast<mlir::lang::StructType>(target_type)) {
+      if (auto converted_struct_type =
+              mlir::dyn_cast<mlir::lang::StructType>(converted_type)) {
         mlir::Operation *op = castOp.getOperation();
         auto module = op->getParentOfType<mlir::ModuleOp>();
-        auto constructorName = convertedStructType.getName().str() + "_init";
+        auto constructor_name = converted_struct_type.getName().str() + "_init";
         auto constructor =
-            module.lookupSymbol<mlir::lang::FuncOp>(constructorName);
+            module.lookupSymbol<mlir::lang::FuncOp>(constructor_name);
         if (!constructor) {
           return rewriter.notifyMatchFailure(
               castOp, "constructor function not found for struct type");
@@ -611,9 +613,9 @@ struct CreateStructOpLowering
   mlir::LogicalResult
   matchAndRewrite(mlir::lang::CreateStructOp op, OpAdaptor adaptor,
                   mlir::ConversionPatternRewriter &rewriter) const final {
-    mlir::Type convertedType =
+    mlir::Type converted_type =
         this->getTypeConverter()->convertType(op.getType());
-    if (!convertedType) {
+    if (!converted_type) {
       llvm::errs() << "Failed to convert type: " << op.getType() << "\n";
       return rewriter.notifyMatchFailure(op, "Failed to convert result type");
     }
@@ -623,16 +625,16 @@ struct CreateStructOpLowering
         op.getLoc(), rewriter.getI64Type(), rewriter.getI64IntegerAttr(0));
     auto ptr_type = mlir::LLVM::LLVMPointerType::get(op.getContext());
     auto alloca_op = rewriter.create<mlir::LLVM::AllocaOp>(
-        op.getLoc(), ptr_type, convertedType, one_val);
+        op.getLoc(), ptr_type, converted_type, one_val);
 
     // Insert each field into the struct using LLVM::StoreOp
     for (auto it : llvm::enumerate(adaptor.getFields())) {
       mlir::Value field = it.value();
 
       // Optionally, convert the field type if necessary
-      mlir::Type fieldType = field.getType();
-      mlir::Type convertedFieldType = typeConverter->convertType(fieldType);
-      if (!convertedFieldType)
+      mlir::Type field_type = field.getType();
+      mlir::Type converted_field_type = typeConverter->convertType(field_type);
+      if (!converted_field_type)
         return rewriter.notifyMatchFailure(op, "Failed to convert field type");
 
       auto index_val = rewriter.create<mlir::arith::ConstantOp>(
@@ -640,7 +642,7 @@ struct CreateStructOpLowering
           rewriter.getI64IntegerAttr(it.index()));
       // Insert the field into the struct
       auto gep_op = rewriter.create<mlir::LLVM::GEPOp>(
-          op.getLoc(), ptr_type, convertedType, alloca_op,
+          op.getLoc(), ptr_type, converted_type, alloca_op,
           mlir::ValueRange{zero_val, index_val});
       rewriter.create<mlir::LLVM::StoreOp>(op.getLoc(), field, gep_op);
     }
@@ -661,40 +663,40 @@ struct VarDeclOpLowering
   matchAndRewrite(mlir::lang::VarDeclOp op, OpAdaptor adaptor,
                   mlir::ConversionPatternRewriter &rewriter) const final {
 
-    mlir::Type varType = op.getVarType().value_or(op.getInitValue().getType());
+    mlir::Type var_type = op.getVarType().value_or(op.getInitValue().getType());
 
-    if (mlir::isa<mlir::lang::StructType>(varType)) {
+    if (mlir::isa<mlir::lang::StructType>(var_type)) {
       // NOTE: Check this
       rewriter.replaceOp(op, adaptor.getInitValue());
       return mlir::success();
     }
 
-    if (mlir::isa<mlir::lang::StringType>(varType)) {
+    if (mlir::isa<mlir::lang::StringType>(var_type)) {
       rewriter.replaceOp(op, adaptor.getInitValue());
       return mlir::success();
     }
 
     // If the variable type is a TypeValueType, get the aliased type
-    if (mlir::isa<mlir::lang::TypeValueType>(varType)) {
+    if (mlir::isa<mlir::lang::TypeValueType>(var_type)) {
       // if the init value is also a TypeValueType, we can erase the VarDeclOp
       if (mlir::isa<mlir::lang::TypeValueType>(
               adaptor.getInitValue().getType())) {
         rewriter.eraseOp(op);
         return mlir::success();
       }
-      auto type_value = mlir::cast<mlir::lang::TypeValueType>(varType);
-      varType = type_value.getAliasedType();
+      auto type_value = mlir::cast<mlir::lang::TypeValueType>(var_type);
+      var_type = type_value.getAliasedType();
     }
 
     // If the variable is mutable, we need to allocate memory for it
     if (adaptor.getIsMutable()) {
-      varType = mlir::MemRefType::get({}, varType);
+      var_type = mlir::MemRefType::get({}, var_type);
     }
 
     // Check if the variable type is a MemRefType
-    if (auto memRefType = mlir::dyn_cast<mlir::MemRefType>(varType)) {
+    if (auto memref_type = mlir::dyn_cast<mlir::MemRefType>(var_type)) {
       auto alloca_op =
-          rewriter.create<mlir::memref::AllocaOp>(op.getLoc(), memRefType);
+          rewriter.create<mlir::memref::AllocaOp>(op.getLoc(), memref_type);
       if (adaptor.getInitValue()) {
         rewriter.create<mlir::memref::StoreOp>(
             op.getLoc(), adaptor.getInitValue(), alloca_op);
@@ -705,10 +707,11 @@ struct VarDeclOpLowering
     }
 
     if (mlir::isa<mlir::IntegerType, mlir::FloatType, mlir::VectorType,
-                  mlir::TensorType, mlir::lang::IntLiteralType>(varType)) {
+                  mlir::TensorType, mlir::lang::IntLiteralType>(var_type)) {
       if (!adaptor.getInitValue()) {
-        auto zero = rewriter.getZeroAttr(varType);
-        rewriter.replaceOpWithNewOp<mlir::arith::ConstantOp>(op, varType, zero);
+        auto zero = rewriter.getZeroAttr(var_type);
+        rewriter.replaceOpWithNewOp<mlir::arith::ConstantOp>(op, var_type,
+                                                             zero);
       } else {
         rewriter.replaceOp(op, adaptor.getInitValue());
       }
@@ -716,7 +719,7 @@ struct VarDeclOpLowering
     }
 
     return mlir::emitError(op.getLoc(), "lowering of variable type ")
-           << varType << " not supported";
+           << var_type << " not supported";
   }
 };
 
@@ -732,36 +735,36 @@ struct StringConstantOpLowering
 
     // Get LLVM types
     auto *context = rewriter.getContext();
-    auto llvmI8Type = mlir::IntegerType::get(context, 8);
-    auto llvmI8PtrType = mlir::LLVM::LLVMPointerType::get(context);
+    auto llvm_i8_type = mlir::IntegerType::get(context, 8);
+    auto llvm_i8_ptr_type = mlir::LLVM::LLVMPointerType::get(context);
 
     // Create a global string in the LLVM dialect
-    size_t strSize = value.size() + 1; // +1 for null terminator
-    auto arrayType = mlir::LLVM::LLVMArrayType::get(llvmI8Type, strSize);
+    size_t str_size = value.size() + 1; // +1 for null terminator
+    auto array_type = mlir::LLVM::LLVMArrayType::get(llvm_i8_type, str_size);
 
     // Insert global at the module level
     auto module = op->getParentOfType<mlir::ModuleOp>();
-    std::string globalName =
+    std::string global_name =
         "_str_constant_" +
         std::to_string(reinterpret_cast<uintptr_t>(op.getOperation()));
-    if (!module.lookupSymbol<mlir::LLVM::GlobalOp>(globalName)) {
+    if (!module.lookupSymbol<mlir::LLVM::GlobalOp>(global_name)) {
       mlir::OpBuilder::InsertionGuard guard(rewriter);
       rewriter.setInsertionPointToStart(module.getBody());
 
       // Create initial value attribute
-      auto initialValue = rewriter.getStringAttr(value.str() + '\0');
-      rewriter.create<mlir::LLVM::GlobalOp>(loc, arrayType, /*isConstant=*/true,
-                                            mlir::LLVM::Linkage::Internal,
-                                            globalName, initialValue);
+      auto initial_value = rewriter.getStringAttr(value.str() + '\0');
+      rewriter.create<mlir::LLVM::GlobalOp>(
+          loc, array_type, /*isConstant=*/true, mlir::LLVM::Linkage::Internal,
+          global_name, initial_value);
     }
 
-    auto global_op = module.lookupSymbol<mlir::LLVM::GlobalOp>(globalName);
+    auto global_op = module.lookupSymbol<mlir::LLVM::GlobalOp>(global_name);
     // Get pointer to the first character
     auto global = rewriter.create<mlir::LLVM::AddressOfOp>(loc, global_op);
     auto zero = rewriter.create<mlir::LLVM::ConstantOp>(
         loc, rewriter.getIntegerType(32), rewriter.getI32IntegerAttr(0));
     auto ptr = rewriter.create<mlir::LLVM::GEPOp>(
-        loc, llvmI8PtrType, arrayType, global,
+        loc, llvm_i8_ptr_type, array_type, global,
         mlir::ArrayRef<mlir::Value>{zero, zero});
 
     // Replace the original operation
@@ -784,38 +787,38 @@ struct PrintOpLowering : public mlir::OpConversionPattern<mlir::lang::PrintOp> {
 
     // Get the printf function
     auto module = op->getParentOfType<mlir::ModuleOp>();
-    auto printfSymbol = getOrInsertPrintf(rewriter, module);
+    auto printf_symbol = getOrInsertPrintf(rewriter, module);
 
     // Get the format string
     auto format_str = op.getFormatAttr().getValue();
 
     // Create a global string in the LLVM dialect
-    static int formatStringCounter = 0;
+    static int format_string_counter = 0;
     auto format_str_val = getOrCreateGlobalString(
-        op.getLoc(), rewriter, "_fmt" + std::to_string(formatStringCounter++),
+        op.getLoc(), rewriter, "_fmt" + std::to_string(format_string_counter++),
         format_str, module);
 
     mlir::SmallVector<mlir::Value, 4> args;
     args.push_back(format_str_val);
 
-    mlir::SmallVector<mlir::Type, 4> argTypes;
-    argTypes.push_back(format_str_val.getType());
+    mlir::SmallVector<mlir::Type, 4> arg_types;
+    arg_types.push_back(format_str_val.getType());
 
     for (mlir::Value operand : adaptor.getOperands()) {
-      mlir::Type llvmType =
+      mlir::Type llvm_type =
           this->getTypeConverter()->convertType(operand.getType());
-      if (!llvmType)
+      if (!llvm_type)
         return op.emitError("failed to convert operand type");
       args.push_back(operand);
-      argTypes.push_back(llvmType);
+      arg_types.push_back(llvm_type);
     }
 
-    auto i32Ty = rewriter.getIntegerType(32);
-    auto funcType = mlir::LLVM::LLVMFunctionType::get(i32Ty, argTypes,
-                                                      /*isVarArg=*/true);
+    auto i32_type = rewriter.getIntegerType(32);
+    auto func_type = mlir::LLVM::LLVMFunctionType::get(i32_type, arg_types,
+                                                       /*isVarArg=*/true);
 
     // Call the printf function
-    rewriter.create<mlir::LLVM::CallOp>(op.getLoc(), funcType, printfSymbol,
+    rewriter.create<mlir::LLVM::CallOp>(op.getLoc(), func_type, printf_symbol,
                                         mlir::ValueRange(args));
 
     // Replace the original operation
@@ -828,11 +831,12 @@ private:
   ///   * `i32 (i8*, ...)`
   static mlir::LLVM::LLVMFunctionType
   getPrintfType(mlir::MLIRContext *context) {
-    auto llvmI32Ty = mlir::IntegerType::get(context, 32);
-    auto llvmPtrTy = mlir::LLVM::LLVMPointerType::get(context);
-    auto llvmFnType = mlir::LLVM::LLVMFunctionType::get(llvmI32Ty, llvmPtrTy,
-                                                        /*isVarArg=*/true);
-    return llvmFnType;
+    auto llvm_i32_type = mlir::IntegerType::get(context, 32);
+    auto llvm_ptr_type = mlir::LLVM::LLVMPointerType::get(context);
+    auto llvm_fn_type =
+        mlir::LLVM::LLVMFunctionType::get(llvm_i32_type, llvm_ptr_type,
+                                          /*isVarArg=*/true);
+    return llvm_fn_type;
   }
 
   /// Return a symbol reference to the printf function, inserting it into the
@@ -844,7 +848,7 @@ private:
       return mlir::SymbolRefAttr::get(context, "printf");
 
     // Insert the printf function into the body of the parent module.
-    mlir::PatternRewriter::InsertionGuard insertGuard(rewriter);
+    mlir::PatternRewriter::InsertionGuard insert_guard(rewriter);
     rewriter.setInsertionPointToStart(module.getBody());
     rewriter.create<mlir::LLVM::LLVMFuncOp>(module.getLoc(), "printf",
                                             getPrintfType(context));
@@ -861,7 +865,7 @@ private:
     // Create the global at the entry of the module.
     mlir::LLVM::GlobalOp global;
     if (!(global = module.lookupSymbol<mlir::LLVM::GlobalOp>(name))) {
-      mlir::OpBuilder::InsertionGuard insertGuard(builder);
+      mlir::OpBuilder::InsertionGuard insert_guard(builder);
       builder.setInsertionPointToStart(module.getBody());
       auto type = mlir::LLVM::LLVMArrayType::get(
           mlir::IntegerType::get(builder.getContext(), 8), value.size());
@@ -872,13 +876,14 @@ private:
     }
 
     // Get the pointer to the first character in the global string.
-    mlir::Value globalPtr =
+    mlir::Value global_ptr =
         builder.create<mlir::LLVM::AddressOfOp>(loc, global);
     mlir::Value cst0 = builder.create<mlir::LLVM::ConstantOp>(
         loc, builder.getI64Type(), builder.getIndexAttr(0));
     return builder.create<mlir::LLVM::GEPOp>(
         loc, mlir::LLVM::LLVMPointerType::get(builder.getContext()),
-        global.getType(), globalPtr, mlir::ArrayRef<mlir::Value>({cst0, cst0}));
+        global.getType(), global_ptr,
+        mlir::ArrayRef<mlir::Value>({cst0, cst0}));
   }
 };
 
@@ -912,7 +917,7 @@ struct ResolveCastPatternPass
 
 void LangToAffineLoweringPass::runOnOperation() {
   mlir::ConversionTarget target(getContext());
-  LangToLLVMTypeConverter typeConverter(&getContext());
+  LangToLLVMTypeConverter type_converter(&getContext());
 
   target
       .addLegalDialect<mlir::affine::AffineDialect, mlir::BuiltinDialect,
@@ -928,7 +933,7 @@ void LangToAffineLoweringPass::runOnOperation() {
   patterns.add<CreateStructOpLowering, DerefOpLowering, FuncOpLowering,
                AssignOpLowering, ResolveCastPattern, UndefOpLowering,
                PrintOpLowering, TupleOpLowering, StructAccessOpLowering>(
-      typeConverter, &getContext());
+      type_converter, &getContext());
 
   patterns.add<IfOpLowering, CallOpLowering, ReturnOpLowering,
                VarDeclOpLowering, TypeConstOpLowering, StringConstantOpLowering,
@@ -945,7 +950,7 @@ void LangToAffineLoweringPass::runOnOperation() {
 
 void ResolveCastPatternPass::runOnOperation() {
   mlir::ConversionTarget target(getContext());
-  LangToLLVMTypeConverter typeConverter(&getContext());
+  LangToLLVMTypeConverter type_converter(&getContext());
 
   target.addLegalDialect<mlir::affine::AffineDialect, mlir::BuiltinDialect,
                          mlir::arith::ArithDialect, mlir::func::FuncDialect,
@@ -957,7 +962,7 @@ void ResolveCastPatternPass::runOnOperation() {
   target.addIllegalOp<mlir::UnrealizedConversionCastOp>();
 
   mlir::RewritePatternSet patterns(&getContext());
-  patterns.add<ResolveCastPattern>(typeConverter, &getContext());
+  patterns.add<ResolveCastPattern>(type_converter, &getContext());
 
   // Apply partial conversion.
   if (failed(mlir::applyPartialConversion(getOperation(), target,

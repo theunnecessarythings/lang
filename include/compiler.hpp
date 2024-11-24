@@ -35,7 +35,7 @@ struct Context {
         source_mgr, &context);
   }
 
-  void report_error(llvm::StringRef message, const Token *token = nullptr) {
+  void reportError(llvm::StringRef message, const Token *token = nullptr) {
     if (token && token->kind == TokenKind::Eof) {
       throw std::runtime_error("Unexpected EOF");
     }
@@ -50,51 +50,50 @@ struct Context {
                                       mlir::DiagnosticSeverity::Error);
   }
 
-  void declare_struct(llvm::StringRef name, StructDecl *decl) {
+  void declareStruct(llvm::StringRef name, StructDecl *decl) {
     if (struct_table.lookup(name)) {
-      report_error("Struct " + name.str() + " already declared", &decl->token);
+      reportError("Struct " + name.str() + " already declared", &decl->token);
       return;
     }
     struct_table.insert(name, decl);
   }
 
-  void declare_tuple_struct(llvm::StringRef name, TupleStructDecl *decl) {
+  void declareTupleStruct(llvm::StringRef name, TupleStructDecl *decl) {
     if (tuple_struct_table.lookup(name)) {
-      report_error("Tuple struct " + name.str() + " already declared",
-                   &decl->token);
+      reportError("Tuple struct " + name.str() + " already declared",
+                  &decl->token);
       return;
     }
     tuple_struct_table.insert(name, decl);
   }
 
-  void declare_enum(llvm::StringRef name, EnumDecl *decl) {
+  void declareEnum(llvm::StringRef name, EnumDecl *decl) {
     if (enum_table.lookup(name)) {
-      report_error("Enum " + name.str() + " already declared", &decl->token);
+      reportError("Enum " + name.str() + " already declared", &decl->token);
       return;
     }
     enum_table.insert(name, decl);
   }
 
-  void declare_union(llvm::StringRef name, UnionDecl *decl) {
+  void declareUnion(llvm::StringRef name, UnionDecl *decl) {
     if (union_table.lookup(name)) {
-      report_error("Union " + name.str() + " already declared", &decl->token);
+      reportError("Union " + name.str() + " already declared", &decl->token);
       return;
     }
     union_table.insert(name, decl);
   }
 
-  void declare_trait(llvm::StringRef name, TraitDecl *decl) {
+  void declareTrait(llvm::StringRef name, TraitDecl *decl) {
     if (trait_table.lookup(name)) {
-      report_error("Trait " + name.str() + " already declared", &decl->token);
+      reportError("Trait " + name.str() + " already declared", &decl->token);
       return;
     }
     trait_table.insert(name, decl);
   }
 
-  void declare_var(llvm::StringRef name, VarDecl *decl) {
+  void declareVar(llvm::StringRef name, VarDecl *decl) {
     if (var_table.lookup(name)) {
-      report_error("Variable " + name.str() + " already declared",
-                   &decl->token);
+      reportError("Variable " + name.str() + " already declared", &decl->token);
       return;
     }
     var_table.insert(name, decl);
