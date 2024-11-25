@@ -1,5 +1,6 @@
 #include "dialect/LangDialect.h"
 #include "dialect/LangOps.h"
+#include "mlir/Dialect/ControlFlow/IR/ControlFlowOps.h"
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"
 #include "mlir/IR/Dialect.h"
 #include "mlir/IR/DialectImplementation.h"
@@ -18,17 +19,63 @@ template <> struct mlir::FieldParser<llvm::APInt> {
     return value;
   }
 };
-
 struct LangDialectInlinerInterface : public mlir::DialectInlinerInterface {
   using DialectInlinerInterface::DialectInlinerInterface;
 
+  /// All call operations can be inlined.
   bool isLegalToInline(mlir::Operation *call, mlir::Operation *callable,
                        bool wouldBeCloned) const final {
-    if (callable->hasAttr("force_inline"))
-      return true;
-    return false;
+    return true;
+  }
+
+  /// All operations can be inlined.
+  bool isLegalToInline(mlir::Operation *, mlir::Region *, bool,
+                       mlir::IRMapping &) const final {
+    return true;
+  }
+
+  /// All functions can be inlined.
+  bool isLegalToInline(mlir::Region *, mlir::Region *, bool,
+                       mlir::IRMapping &) const final {
+    return true;
+  }
+  /// Handle the given inlined terminator by replacing it with a new operation
+  /// as necessary.
+  void handleTerminator(mlir::Operation *op, mlir::Block *newDest) const final {
+    // Only return needs to be handled here.
+    auto returnOp = mlir::dyn_cast<mlir::lang::ReturnOp>(op);
+    if (!returnOp)
+      return;
+
+    // Replace the return with a branch to the dest.
+    mlir::OpBuilder builder(op);
+    builder.create<mlir::cf::BranchOp>(op->getLoc(), newDest,
+                                       returnOp.getOperands());
+    op->erase();
+  }
+
+  /// Handle the given inlined terminator by replacing it with a new operation
+  /// as necessary.
+  void handleTerminator(mlir::Operation *op,
+                        mlir::ValueRange valuesToRepl) const final {
+    // Only return needs to be handled here.
+    auto returnOp = mlir::cast<mlir::lang::ReturnOp>(op);
+
+    // Replace the values directly with the return operands.
+    assert(returnOp.getNumOperands() == valuesToRepl.size());
+    for (const auto &it : llvm::enumerate(returnOp.getOperands()))
+      valuesToRepl[it.index()].replaceAllUsesWith(it.value());
   }
 };
+// void mlir::lang::registerInlinerExtension(DialectRegistry &registry) {
+//   registry.addExtension(
+//       +[](MLIRContext *ctx, mlir::lang::LangDialect *dialect) {
+//         dialect->addInterfaces<FuncInlinerInterface>();
+//
+//         // The inliner extension relies on the ControlFlow dialect.
+//         ctx->getOrLoadDialect<cf::ControlFlowDialect>();
+//       });
+// }
 
 void mlir::lang::LangDialect::initialize() {
   addOperations<
@@ -51,6 +98,7 @@ void mlir::lang::LangDialect::initialize() {
   addInterfaces<LangDialectInlinerInterface>();
 
   getContext()->getOrLoadDialect<mlir::LLVM::LLVMDialect>();
+  getContext()->getOrLoadDialect<mlir::cf::ControlFlowDialect>();
 }
 
 mlir::Type mlir::lang::LangDialect::parseType(DialectAsmParser &parser) const {

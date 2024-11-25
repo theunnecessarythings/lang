@@ -2,6 +2,7 @@
 
 #include <memory>
 #include <optional>
+#include <unordered_set>
 
 #include "ast.hpp"
 #include "compiler.hpp"
@@ -23,13 +24,14 @@ struct Parser {
     next2_token = lexer->next();
   }
 
+  Attribute tokenToAttribute(const Token &token);
   bool isFileLoaded(llvm::SourceMgr &sourceMgr, const std::string &filePath);
   void loadBuiltins();
   Token getErrorToken();
   Token unexpectedTokenError(TokenKind &expected, Token &found);
   Token invalidTokenError(Token &found);
   std::optional<Token> consume();
-  Token consume_kind(TokenKind kind);
+  Token consumeKind(TokenKind kind);
   std::optional<Token> peek();
   std::optional<Token> peek2();
   bool isPeek(TokenKind kind);
@@ -49,7 +51,8 @@ struct Parser {
   std::unique_ptr<Expression>
   parseTupleExpr(std::unique_ptr<Expression> first_expr);
   std::unique_ptr<Expression> parseArrayExpr();
-  std::unique_ptr<Function> parseFunction(bool is_pub = false);
+  std::unique_ptr<Function>
+  parseFunction(bool is_pub = false, std::unordered_set<Attribute> attrs = {});
   TraitDecl::Method parseTraitMethod();
   std::vector<std::unique_ptr<Parameter>> parseParams();
   std::unique_ptr<Parameter> parseParam();
@@ -104,4 +107,5 @@ struct Parser {
   std::variant<int, double>
   parseNumberLiteral(const std::basic_string<char> &bytes);
   Operator tokenToOperator(const Token &op);
+  std::unordered_set<Attribute> parseAttributes();
 };

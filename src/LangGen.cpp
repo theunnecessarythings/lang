@@ -98,7 +98,7 @@ private:
   mlir::Location loc(const TokenSpan &loc) {
     return mlir::FileLineColLoc::get(
         builder.getContext(),
-        compiler_context.source_mgr.getBufferInfo(loc.file_id + 1)
+        compiler_context.source_mgr.getBufferInfo(loc.file_id)
             .Buffer->getBufferIdentifier(),
         loc.line_no, loc.col_start);
   }
@@ -140,13 +140,17 @@ private:
           mlir::lang::PointerType::get(builder.getContext()));
       return_types = mlir::TypeRange();
     }
-
-    // auto func_name = mangleFunctionName(func->decl.get());
     auto func_name = mangle(func->decl->name, param_types.value());
+    bool is_inline = func->attrs.count(Attribute::Inline);
+    mlir::NamedAttrList attrs;
+    if (is_inline) {
+      auto inline_attr =
+          builder.getNamedAttr("force_inline", builder.getBoolAttr(is_inline));
+      attrs.push_back(inline_attr);
+    }
     auto func_type = builder.getFunctionType(param_types.value(), return_types);
-    auto func_op = builder.create<mlir::lang::FuncOp>(loc(func->token.span),
-                                                      func_name, func_type);
-
+    auto func_op = builder.create<mlir::lang::FuncOp>(
+        loc(func->token.span), func_name, func_type, attrs);
     function_map[func_name] = func_op;
     current_function = &func_op;
 

@@ -5,6 +5,7 @@
 #include <optional>
 #include <sstream>
 #include <string>
+#include <unordered_set>
 #include <variant>
 #include <vector>
 
@@ -327,16 +328,26 @@ struct FunctionDecl : public Node {
   AstNodeKind kind() const override { return AstNodeKind::FunctionDecl; }
 };
 
+enum class Attribute {
+  Inline,
+  NoInline,
+  AlwaysInline,
+  None,
+};
+
 struct Function : public TopLevelDecl {
   std::unique_ptr<FunctionDecl> decl;
   std::unique_ptr<BlockExpression> body;
+  std::unordered_set<Attribute> attrs;
   bool is_pub;
 
   Function(Token token, std::string name,
            std::vector<std::unique_ptr<Parameter>> parameters,
            std::unique_ptr<Type> return_type,
-           std::unique_ptr<BlockExpression> body, bool is_pub = false)
-      : TopLevelDecl(token), body(std::move(body)), is_pub(is_pub) {
+           std::unique_ptr<BlockExpression> body,
+           std::unordered_set<Attribute> attrs, bool is_pub = false)
+      : TopLevelDecl(token), body(std::move(body)), attrs(std::move(attrs)),
+        is_pub(is_pub) {
     decl = std::make_unique<FunctionDecl>(token, name, std::move(parameters),
                                           std::move(return_type));
   }

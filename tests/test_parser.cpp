@@ -2,6 +2,7 @@
 #include "parser.hpp"
 #include <catch2/catch_test_macros.hpp>
 #include <fstream>
+#include <iostream>
 #include <string>
 
 auto parse(const std::string &path, std::string &str,

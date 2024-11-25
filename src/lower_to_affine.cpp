@@ -368,6 +368,12 @@ struct TupleOpLowering : public mlir::OpConversionPattern<mlir::lang::TupleOp> {
     // Insert each field into the struct using LLVM::StoreOp
     for (auto it : llvm::enumerate(adaptor.getOperands())) {
       mlir::Value field = it.value();
+      // if unrealized conversion cast, get the original value
+      if (field.getDefiningOp<mlir::UnrealizedConversionCastOp>()) {
+        field =
+            field.getDefiningOp<mlir::UnrealizedConversionCastOp>().getOperand(
+                0);
+      }
 
       // Optionally, convert the field type if necessary
       mlir::Type field_type = field.getType();
@@ -375,13 +381,25 @@ struct TupleOpLowering : public mlir::OpConversionPattern<mlir::lang::TupleOp> {
       if (!converted_field_type)
         return rewriter.notifyMatchFailure(op, "Failed to convert field type");
 
+      // If the field is a pointer (e.g., a nested tuple), load the value
+      if (mlir::isa<mlir::LLVM::LLVMPointerType>(field_type)) {
+        auto field_alloca =
+            mlir::dyn_cast<mlir::LLVM::AllocaOp>(field.getDefiningOp());
+        if (field_alloca) {
+          field = rewriter.create<mlir::LLVM::LoadOp>(
+              op.getLoc(), field_alloca.getElemType(), field);
+        }
+      }
+
       auto index_val = rewriter.create<mlir::arith::ConstantOp>(
           op.getLoc(), rewriter.getI64Type(),
           rewriter.getI64IntegerAttr(it.index()));
+      auto zero_val = rewriter.create<mlir::arith::ConstantOp>(
+          op.getLoc(), rewriter.getI64Type(), rewriter.getI64IntegerAttr(0));
       // Insert the field into the struct
       auto gep_op = rewriter.create<mlir::LLVM::GEPOp>(
           op.getLoc(), mlir::LLVM::LLVMPointerType::get(op.getContext()),
-          converted_type, alloca_op, mlir::ValueRange{one_val, index_val});
+          converted_type, alloca_op, mlir::ValueRange{zero_val, index_val});
       rewriter.create<mlir::LLVM::StoreOp>(op.getLoc(), field, gep_op);
     }
 
@@ -505,16 +523,19 @@ struct StructAccessOpLowering
                   .getInputs()[0];
     }
 
-    // mlir::Value extractedValue =
-    // rewriter.create<mlir::LLVM::ExtractValueOp>(
-    //     op.getLoc(), llvmStructType.getBody()[fieldIndex],
-    //     adaptor.getInput(), fieldIndex);
-
     auto zero_val = rewriter.create<mlir::arith::ConstantOp>(
         op.getLoc(), rewriter.getI64Type(), rewriter.getI64IntegerAttr(0));
     auto index_val = rewriter.create<mlir::arith::ConstantOp>(
         op.getLoc(), rewriter.getI64Type(),
         rewriter.getI64IntegerAttr(field_index));
+
+    if (mlir::isa<mlir::LLVM::LLVMStructType>(input.getType())) {
+      auto extracted_value = rewriter.create<mlir::LLVM::ExtractValueOp>(
+          op.getLoc(), llvm_struct_type.getBody()[field_index], input,
+          field_index);
+      rewriter.replaceOp(op, extracted_value.getResult());
+      return mlir::success();
+    }
 
     auto gep = rewriter.create<mlir::LLVM::GEPOp>(
         op.getLoc(), mlir::LLVM::LLVMPointerType::get(op.getContext()),

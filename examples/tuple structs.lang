@@ -7,25 +7,25 @@ fn main() void {
                       0.1, 0.2,
                       'a', true);
 
-    // // Values can be extracted from the tuple using tuple indexing.
-    //
-    // // Tuples can be tuple members.
-    // const tuple_of_tuples = ((1, 2, 2), (4, -1), -2);
-    //
-    // print("tuple of tuples: %d", tuple_of_tuples);
-    //
-    // const pair = (1, true);
-    // print("Pair is %d", pair.0);
-    //
-    // // To create one element tuples, the comma is required to tell them apart
-    // // from a literal surrounded by parentheses.
-    // print("One element tuple: %d", (5,));
-    // print("Just an integer: %d", (5));
-    //
-    // // Tuples can be destructured to create bindings.
-    // const tuple = (1, "hello", 4.5, true);
-    //
-    //
-    // const matrix = Matrix(1.1, 1.2, 2.1, 2.2);
-    // print("Matrix: %d", matrix);
+    // Values can be extracted from the tuple using tuple indexing.
+
+    // Tuples can be tuple members.
+    const tuple_of_tuples = ((1, 2, 2), (4, -1), -2);
+
+    print("tuple of tuples: %d", (tuple_of_tuples.1).1);
+
+    const pair = (1, false);
+    print("Pair is (%d, %d)", pair.0, pair.1);
+
+    // To create one element tuples, the comma is required to tell them apart
+    // from a literal surrounded by parentheses.
+    print("One element tuple: %d", (6,).0);
+    print("Just an integer: %d", (5));
+
+    // Tuples can be destructured to create bindings.
+    const tuple = (1, "hello", 4.5, true);
+
+
+    const matrix = Matrix(1.1, 1.2, 2.1, 2.2);
+    print("Matrix: %f, %f, %f, %f", matrix.0, matrix.1, matrix.2, matrix.3);
 }

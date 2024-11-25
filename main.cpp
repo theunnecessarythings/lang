@@ -99,7 +99,7 @@ std::unique_ptr<Program> parseInputFile(llvm::StringRef filename,
     return nullptr;
   }
   auto buffer = file_or_err.get()->getBuffer();
-  auto lexer = std::make_unique<Lexer>(buffer.str(), 0);
+  auto lexer = std::make_unique<Lexer>(buffer.str(), 1);
   auto parser = Parser(std::move(lexer), context);
   context->source_mgr.AddNewSourceBuffer(std::move(*file_or_err),
                                          llvm::SMLoc());
@@ -232,11 +232,14 @@ int dumpMLIRLang() {
     return 4;
 
   // Custom passes
-  mlir::OpPassManager &cast_pm = pm.nest<mlir::lang::FuncOp>();
-  cast_pm.addPass(mlir::lang::createLiteralCastPass());
+  // mlir::OpPassManager &cast_pm = pm.nest<mlir::lang::FuncOp>();
+  // cast_pm.addPass(mlir::lang::createLiteralCastPass());
   pm.addPass(mlir::createInlinerPass());
+  pm.addPass(mlir::createCanonicalizerPass());
+  pm.addPass(mlir::createCSEPass());
   pm.addPass(mlir::lang::createLowerToAffinePass());
   pm.addPass(mlir::lang::createUnrealizedConversionCastResolverPass());
+  pm.addPass(mlir::createInlinerPass());
   pm.addPass(mlir::createLowerAffinePass());
 
   // Add a few cleanups post lowering.

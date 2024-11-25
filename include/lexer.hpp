@@ -3,7 +3,6 @@
 #include <cassert>
 #include <csignal>
 #include <cstdint>
-#include <iostream>
 #include <optional>
 #include <string>
 #include <unordered_map>
@@ -102,7 +101,7 @@ enum class TokenKind {
 };
 
 struct TokenSpan {
-  int file_id = -1;
+  int file_id = 0;
   int line_no = 1;
   int col_start = 1;
   int start = 0;

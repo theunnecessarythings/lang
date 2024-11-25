@@ -42,7 +42,7 @@ struct Context {
     auto loc =
         token ? mlir::FileLineColLoc::get(
                     &context,
-                    source_mgr.getBufferInfo(token->span.file_id + 1)
+                    source_mgr.getBufferInfo(token->span.file_id)
                         .Buffer->getBufferIdentifier(),
                     token->span.line_no, token->span.col_start)
               : mlir::dyn_cast<mlir::Location>(mlir::UnknownLoc::get(&context));
