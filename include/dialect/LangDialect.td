@@ -58,4 +58,15 @@ def Lang_UndefAttr : Lang_Attr<"Undef", "undef">;
 class Lang_Op<string mnemonic, list<Trait> traits = []> :
   Op<Lang_Dialect, mnemonic, traits>;
 
+//===----------------------------------------------------------------------===//
+// Passes
+//===----------------------------------------------------------------------===//
+
+include "mlir/Pass/PassBase.td"
+def ComptimeAnalysis : Pass<"comptime_analysis"> {
+    let summary = "Comptime Analysis Pass";
+    let description = ""; 
+    let constructor = "mlir::lang::createComptimeAnalysisPass()";
+}
+
 #endif // LANG_DIALECT

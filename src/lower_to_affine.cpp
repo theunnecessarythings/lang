@@ -922,20 +922,6 @@ struct LangToAffineLoweringPass
 };
 } // namespace
 
-namespace {
-struct ResolveCastPatternPass
-    : public mlir::PassWrapper<ResolveCastPatternPass,
-                               mlir::OperationPass<mlir::ModuleOp>> {
-  MLIR_DEFINE_EXPLICIT_INTERNAL_INLINE_TYPE_ID(ResolveCastPatternPass)
-
-  void getDependentDialects(mlir::DialectRegistry &registry) const override {
-    registry.insert<mlir::affine::AffineDialect, mlir::func::FuncDialect,
-                    mlir::memref::MemRefDialect>();
-  }
-  void runOnOperation() final;
-};
-} // namespace
-
 void LangToAffineLoweringPass::runOnOperation() {
   mlir::ConversionTarget target(getContext());
   LangToLLVMTypeConverter type_converter(&getContext());
@@ -956,18 +942,38 @@ void LangToAffineLoweringPass::runOnOperation() {
                PrintOpLowering, TupleOpLowering, StructAccessOpLowering>(
       type_converter, &getContext());
 
-  patterns.add<IfOpLowering, CallOpLowering, ReturnOpLowering,
-               VarDeclOpLowering, TypeConstOpLowering, StringConstantOpLowering,
-               ConstantOpLowering, YieldOpLowering>(&getContext());
+  patterns
+      .add<IfOpLowering, CallOpLowering, ReturnOpLowering,
+           mlir::lang::InlineComptimeOp, VarDeclOpLowering, TypeConstOpLowering,
+           StringConstantOpLowering, ConstantOpLowering, YieldOpLowering>(
+          &getContext());
 
   // Apply partial conversion.
   if (failed(mlir::applyPartialConversion(getOperation(), target,
                                           std::move(patterns)))) {
 
-    llvm::errs() << "Partial conversion failed for\n";
+    llvm::errs() << "LangToAffineLoweringPass: Partial conversion failed for\n";
     signalPassFailure();
   }
 }
+
+std::unique_ptr<mlir::Pass> mlir::lang::createLowerToAffinePass() {
+  return std::make_unique<LangToAffineLoweringPass>();
+}
+
+namespace {
+struct ResolveCastPatternPass
+    : public mlir::PassWrapper<ResolveCastPatternPass,
+                               mlir::OperationPass<mlir::ModuleOp>> {
+  MLIR_DEFINE_EXPLICIT_INTERNAL_INLINE_TYPE_ID(ResolveCastPatternPass)
+
+  void getDependentDialects(mlir::DialectRegistry &registry) const override {
+    registry.insert<mlir::affine::AffineDialect, mlir::func::FuncDialect,
+                    mlir::memref::MemRefDialect>();
+  }
+  void runOnOperation() final;
+};
+} // namespace
 
 void ResolveCastPatternPass::runOnOperation() {
   mlir::ConversionTarget target(getContext());
@@ -989,10 +995,6 @@ void ResolveCastPatternPass::runOnOperation() {
   if (failed(mlir::applyPartialConversion(getOperation(), target,
                                           std::move(patterns))))
     signalPassFailure();
-}
-
-std::unique_ptr<mlir::Pass> mlir::lang::createLowerToAffinePass() {
-  return std::make_unique<LangToAffineLoweringPass>();
 }
 
 std::unique_ptr<mlir::Pass>

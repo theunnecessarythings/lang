@@ -18,7 +18,7 @@ include "mlir/Interfaces/SideEffectInterfaces.td"
 
 def FuncOp : Lang_Op<"func", [
   AffineScope, AutomaticAllocationScope,
-  FunctionOpInterface, IsolatedFromAbove, OpAsmOpInterface, SymbolTable
+  FunctionOpInterface, IsolatedFromAbove, OpAsmOpInterface
 ]> {
   let summary = "An operation with a name containing a single `SSACFG` region";
   let description = [{
@@ -157,7 +157,7 @@ def ReturnOp : Lang_Op<"return", [Pure,
   // let hasVerifier = 1;
 }
 
-def VarDeclOp : Lang_Op<"var_decl", [IsolatedFromAbove, Symbol,InferTypeOpAdaptor, InferTypeOpInterface]> {
+def VarDeclOp : Lang_Op<"var_decl", [IsolatedFromAbove, InferTypeOpAdaptor, InferTypeOpInterface]> {
   let summary = "Variable declaration operation with a symbol name";
   let description = [{
     The `var_decl` operation declares a variable with a specified symbol name and an optional initial value.
@@ -452,5 +452,31 @@ def DerefOp: Lang_Op<"deref", [InferTypeOpAdaptor, InferTypeOpInterface]> {
   let assemblyFormat = "$addr `:` type($addr) attr-dict `->` type($result)";
 }
 
+def IndexAccessOp: Lang_Op<"index_access", []> {
+  let summary = "Index access operation";
+  let description = [{
+    The `lang.index_access` operation is used to access an element of a container.
+  }];
+
+  let arguments = (ins AnyType:$container, AnyType:$index);
+  let results = (outs AnyType:$result);
+
+  let assemblyFormat = "$container `[` $index `:` type($index) `]` attr-dict `:` type($container) `->` type($result)";
+}
+
+def ComptimeOp: Lang_Op<"comptime", [IsolatedFromAbove]> {
+  let summary = "Comptime operation";
+  let description = [{
+    The `lang.comptime` operation is used to evaluate a constant expression at compile time.
+    It essentially wraps any other operation or set of operations. 
+    Has a single region that takes arguments of the operation it wraps and returns the result.
+  }];
+
+  let regions = (region AnyRegion:$body);
+  let arguments = (ins Variadic<AnyType>:$operands);
+  let results = (outs AnyType:$result);
+
+  let assemblyFormat = "$operands `:` type($operands) attr-dict `->` type($result) $body";
+}
 
 #endif // LANG_OPS

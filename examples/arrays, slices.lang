@@ -1,9 +1,9 @@
-import "std/mem";
+// import "std/mem";
 
 // This function borrows a slice.
 fn analyze_slice(slice: []i32) void {
     print("First element of the slice: {}", slice[0]);
-    print("The slice has {} elements", slice.len());
+    // print("The slice has {} elements", slice.len());
 }
 
 fn main() void {
@@ -18,10 +18,10 @@ fn main() void {
     print("Second element of the array: {}", xs[1]);
 
     // `len` returns the count of elements in the array.
-    print("Number of elements in array: {}", xs.len());
+    // print("Number of elements in array: {}", xs.len());
 
     // Arrays are stack allocated.
-    print("Array occupies {} bytes", mem.size_of_val(xs));
+    // print("Array occupies {} bytes", mem.size_of_val(xs));
 
     // Arrays can be automatically borrowed as slices.
     print("Borrow the whole array as a slice.");

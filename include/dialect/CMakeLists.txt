@@ -7,4 +7,5 @@ mlir_tablegen(LangOpsAttrDefs.h.inc -gen-attrdef-decls
   -attrdefs-dialect=lang)
 mlir_tablegen(LangOpsAttrDefs.cpp.inc -gen-attrdef-defs 
   -attrdefs-dialect=lang)
+mlir_tablegen(LangPasses.h.inc -gen-pass-decls)
 add_public_tablegen_target(LangOpsAttrDefsIncGen)

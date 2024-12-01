@@ -48,6 +48,7 @@ add_library(liblang STATIC
     src/lower_to_llvm.cpp
     src/lower_to_affine.cpp
     src/literal_cast_pass.cpp
+    src/comptime_eval_pass.cpp
     src/json_dumper.cpp)  
 target_include_directories(liblang PUBLIC include/)
 

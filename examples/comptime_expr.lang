@@ -1,0 +1,68 @@
+// Define a factorial function
+fn factorial(n: i64) i64 {
+    if n <= 1 {
+        return 1;
+    }
+    return n * factorial(n - 1);
+}
+
+fn fib(n: i64) i64 {
+    if n <= 1 {
+        return 0;
+    } else if n == 1 {
+        return 1;
+    }
+    return fib(n - 1) + fib(n - 2);
+}
+
+// Define a function that computes the nth number in a custom sequence
+fn custom_sequence(n: i64) i64 {
+    if n == 0 {
+        return 2;
+    } else if n == 1 {
+        return 3;
+    }
+    return custom_sequence(n - 1) + custom_sequence(n - 2);
+}
+
+// Main function
+pub fn main() void {
+    // Compute factorial of 5 at compile time
+    const fact5 = comptime factorial(5);
+
+    // Compute the 5th number in the custom sequence at compile time
+    const seq5 = comptime custom_sequence(3);
+
+    // Compute factorial of seq5 at compile time
+    const fact_seq5 = comptime factorial(seq5);
+
+    // Compute a complex expression with dependencies
+    const temp1 = comptime factorial(4);
+    const temp2 = comptime custom_sequence(temp1);
+    const complex_result = comptime temp1 + temp2 + fact5;
+
+    // Compute nested compile-time expressions
+    const nested_result = comptime factorial(custom_sequence(factorial(3)));
+
+    // Compute a sequence of compile-time computations
+    const a = comptime factorial(2);
+    const b = comptime factorial(a);
+    const c = comptime factorial(b);
+    const chain_result = comptime a + b + c;
+
+    // Print the results
+    print("factorial(5) -> %d", fact5);
+    print("custom_sequence(5) -> %d", seq5);
+    print("factorial(custom_sequence(5)) -> %d", fact_seq5);
+    print("complex_result -> %d", complex_result);
+    print("nested_result -> %d", nested_result);
+    print("chain_result -> %d", chain_result);
+
+    const fib6 = comptime fib(6);
+    const fib10 = comptime fib(fib6);
+    print("fib(6) -> %d", fib6);
+    print("fib(10) -> %d", fib10);
+}
+
+
+

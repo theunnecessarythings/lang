@@ -214,12 +214,23 @@ int dumpMLIRLang() {
   mlir::DialectRegistry registry;
   mlir::registerAllExtensions(registry);
   mlir::LLVM::registerInlinerInterface(registry);
-
   mlir::MLIRContext context(registry);
+
+  mlir::registerBuiltinDialectTranslation(context);
+  mlir::registerLLVMDialectTranslation(context);
+  mlir::registerConvertMemRefToLLVMInterface(registry);
+
   // Load our Dialect in this MLIR Context.
   context.getOrLoadDialect<mlir::lang::LangDialect>();
   context.getOrLoadDialect<mlir::arith::ArithDialect>();
   context.getOrLoadDialect<mlir::scf::SCFDialect>();
+
+  context.getOrLoadDialect<mlir::affine::AffineDialect>();
+  context.getOrLoadDialect<mlir::memref::MemRefDialect>();
+  context.getOrLoadDialect<mlir::func::FuncDialect>();
+  context.getOrLoadDialect<mlir::cf::ControlFlowDialect>();
+  context.getOrLoadDialect<mlir::BuiltinDialect>();
+
   mlir::OwningOpRef<mlir::ModuleOp> module;
   llvm::SourceMgr source_mgr;
   mlir::SourceMgrDiagnosticHandler source_mgr_handle(source_mgr, &context);
@@ -234,11 +245,15 @@ int dumpMLIRLang() {
   // Custom passes
   // mlir::OpPassManager &cast_pm = pm.nest<mlir::lang::FuncOp>();
   // cast_pm.addPass(mlir::lang::createLiteralCastPass());
-  pm.addPass(mlir::createInlinerPass());
+  // pm.addPass(mlir::createInlinerPass());
   pm.addPass(mlir::createCanonicalizerPass());
   pm.addPass(mlir::createCSEPass());
+
+  pm.addPass(mlir::lang::createComptimeEvalPass());
+  pm.addPass(mlir::lang::createComptimeLoweringPass());
   pm.addPass(mlir::lang::createLowerToAffinePass());
   pm.addPass(mlir::lang::createUnrealizedConversionCastResolverPass());
+
   pm.addPass(mlir::createInlinerPass());
   pm.addPass(mlir::createLowerAffinePass());
 
@@ -251,15 +266,13 @@ int dumpMLIRLang() {
 
   // Add passes to lower the module to LLVM dialect.
   pm.addPass(mlir::createConvertSCFToCFPass());
-  pm.addPass(mlir::createConvertFuncToLLVMPass());
   pm.addPass(mlir::createCanonicalizerPass());
-  pm.addPass(mlir::createArithToLLVMConversionPass());
-  pm.addPass(mlir::createConvertControlFlowToLLVMPass());
   pm.addPass(mlir::createConvertToLLVMPass());
   pm.addPass(mlir::LLVM::createDIScopeForLLVMFuncOpPass());
   pm.addPass(mlir::createReconcileUnrealizedCastsPass());
   if (mlir::failed(pm.run(*module)))
     return 4;
+  llvm::errs() << "MLIR after lowering to LLVM:\n";
   module->dump();
   runJit(module.get());
   return 0;

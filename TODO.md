@@ -19,8 +19,13 @@
 - [ ] Pointers
 - [ ] Bug: All structs are returned as values, not pointers
 - [ ] Bug: Handling Path Expressions, (eg. Impl only work with a type(str), not a path)
-- [ ] Bug: global string constants for strings are duplicated
-- [ ] Change break to 'yield' in loops and blocks
+- [x] Bug: global string constants for strings are duplicated
+- [x] Change break to 'yield' in loops and blocks
+- [ ] Advanced Compile Time Evaluation
+  - [ ] Checking runtime dependencies
+  - [ ] Comptime arguments
+- [ ] Allow function declaration
 - [ ] Add inlining (modify the inline interface)
 - [ ] Move structs and tuple structs from LLVM to Memref
+- [ ] Field Access out of bounds compile time check
 - [x] MLIROp
