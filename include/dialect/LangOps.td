@@ -18,7 +18,7 @@ include "mlir/Interfaces/SideEffectInterfaces.td"
 
 def FuncOp : Lang_Op<"func", [
   AffineScope, AutomaticAllocationScope,
-  FunctionOpInterface, IsolatedFromAbove, OpAsmOpInterface
+  FunctionOpInterface, IsolatedFromAbove, OpAsmOpInterface, SymbolTable
 ]> {
   let summary = "An operation with a name containing a single `SSACFG` region";
   let description = [{

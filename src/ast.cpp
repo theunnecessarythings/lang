@@ -1,5 +1,6 @@
 #include "ast.hpp"
 #include <array>
+#include <iostream>
 
 #define INDENT() Indent level_(cur_indent);
 
@@ -10,26 +11,39 @@ void AstDumper::dump(Program *program) {
 }
 
 void AstDumper::dump(TopLevelDecl *decl) {
-  if (dynamic_cast<Module *>(decl)) {
-    dump(static_cast<Module *>(decl));
-  } else if (dynamic_cast<ImportDecl *>(decl)) {
-    dump(static_cast<ImportDecl *>(decl));
-  } else if (dynamic_cast<StructDecl *>(decl)) {
-    dump(static_cast<StructDecl *>(decl));
-  } else if (dynamic_cast<TupleStructDecl *>(decl)) {
-    dump(static_cast<TupleStructDecl *>(decl));
-  } else if (dynamic_cast<EnumDecl *>(decl)) {
-    dump(static_cast<EnumDecl *>(decl));
-  } else if (dynamic_cast<UnionDecl *>(decl)) {
-    dump(static_cast<UnionDecl *>(decl));
-  } else if (dynamic_cast<TraitDecl *>(decl)) {
-    dump(static_cast<TraitDecl *>(decl));
-  } else if (dynamic_cast<ImplDecl *>(decl)) {
-    dump(static_cast<ImplDecl *>(decl));
-  } else if (dynamic_cast<TopLevelVarDecl *>(decl)) {
-    dump(static_cast<TopLevelVarDecl *>(decl));
-  } else if (dynamic_cast<Function *>(decl)) {
-    dump(static_cast<Function *>(decl));
+  switch (decl->kind()) {
+  case AstNodeKind::Module:
+    dump(decl->as<Module>());
+    break;
+  case AstNodeKind::ImportDecl:
+    dump(decl->as<ImportDecl>());
+    break;
+  case AstNodeKind::StructDecl:
+    dump(decl->as<StructDecl>());
+    break;
+  case AstNodeKind::TupleStructDecl:
+    dump(decl->as<TupleStructDecl>());
+    break;
+  case AstNodeKind::EnumDecl:
+    dump(decl->as<EnumDecl>());
+    break;
+  case AstNodeKind::UnionDecl:
+    dump(decl->as<UnionDecl>());
+    break;
+  case AstNodeKind::TraitDecl:
+    dump(decl->as<TraitDecl>());
+    break;
+  case AstNodeKind::ImplDecl:
+    dump(decl->as<ImplDecl>());
+    break;
+  case AstNodeKind::TopLevelVarDecl:
+    dump(decl->as<TopLevelVarDecl>());
+    break;
+  case AstNodeKind::Function:
+    dump(decl->as<Function>());
+    break;
+  default:
+    std::cerr << "Unknown top level decl kind\n";
   }
 }
 
@@ -850,122 +864,185 @@ void AstDumper::dump(MLIROp *op) {
 }
 
 void AstDumper::dump(Pattern *pattern) {
-  if (dynamic_cast<LiteralPattern *>(pattern)) {
-    dump(static_cast<LiteralPattern *>(pattern));
-  } else if (dynamic_cast<IdentifierPattern *>(pattern)) {
-    dump(static_cast<IdentifierPattern *>(pattern));
-  } else if (dynamic_cast<WildcardPattern *>(pattern)) {
-    dump(static_cast<WildcardPattern *>(pattern));
-  } else if (dynamic_cast<TuplePattern *>(pattern)) {
-    dump(static_cast<TuplePattern *>(pattern));
-  } else if (dynamic_cast<StructPattern *>(pattern)) {
-    dump(static_cast<StructPattern *>(pattern));
-  } else if (dynamic_cast<SlicePattern *>(pattern)) {
-    dump(static_cast<SlicePattern *>(pattern));
-  } else if (dynamic_cast<OrPattern *>(pattern)) {
-    dump(static_cast<OrPattern *>(pattern));
-  } else if (dynamic_cast<ExprPattern *>(pattern)) {
-    dump(static_cast<ExprPattern *>(pattern));
-  } else if (dynamic_cast<RangePattern *>(pattern)) {
-    dump(static_cast<RangePattern *>(pattern));
-  } else if (dynamic_cast<VariantPattern *>(pattern)) {
-    dump(static_cast<VariantPattern *>(pattern));
-  } else if (dynamic_cast<RestPattern *>(pattern)) {
-    dump(static_cast<RestPattern *>(pattern));
+  switch (pattern->kind()) {
+  case AstNodeKind::LiteralPattern:
+    dump(pattern->as<LiteralPattern>());
+    break;
+  case AstNodeKind::IdentifierPattern:
+    dump(pattern->as<IdentifierPattern>());
+    break;
+  case AstNodeKind::WildcardPattern:
+    dump(pattern->as<WildcardPattern>());
+    break;
+  case AstNodeKind::TuplePattern:
+    dump(pattern->as<TuplePattern>());
+    break;
+  case AstNodeKind::StructPattern:
+    dump(pattern->as<StructPattern>());
+    break;
+  case AstNodeKind::SlicePattern:
+    dump(pattern->as<SlicePattern>());
+    break;
+  case AstNodeKind::OrPattern:
+    dump(pattern->as<OrPattern>());
+    break;
+  case AstNodeKind::ExprPattern:
+    dump(pattern->as<ExprPattern>());
+    break;
+  case AstNodeKind::RangePattern:
+    dump(pattern->as<RangePattern>());
+    break;
+  case AstNodeKind::VariantPattern:
+    dump(pattern->as<VariantPattern>());
+    break;
+  case AstNodeKind::RestPattern:
+    dump(pattern->as<RestPattern>());
+    break;
+  default:
+    std::cerr << "Unknown pattern kind\n";
+    break;
   }
 }
 
 void AstDumper::dump(Statement *stmt) {
-  if (dynamic_cast<ExprStmt *>(stmt)) {
-    dump(static_cast<ExprStmt *>(stmt));
-  } else if (dynamic_cast<TopLevelDeclStmt *>(stmt)) {
-    dump(static_cast<TopLevelDeclStmt *>(stmt));
-  } else if (dynamic_cast<VarDecl *>(stmt)) {
-    dump(static_cast<VarDecl *>(stmt));
-  } else if (dynamic_cast<DeferStmt *>(stmt)) {
-    dump(static_cast<DeferStmt *>(stmt));
+  switch (stmt->kind()) {
+  case AstNodeKind::ExprStmt:
+    dump(stmt->as<ExprStmt>());
+    break;
+  case AstNodeKind::TopLevelDeclStmt:
+    dump(stmt->as<TopLevelDeclStmt>());
+    break;
+
+  case AstNodeKind::VarDecl:
+    dump(stmt->as<VarDecl>());
+    break;
+  case AstNodeKind::DeferStmt:
+    dump(stmt->as<DeferStmt>());
+    break;
+  default:
+    std::cerr << "Unknown statement kind\n";
+    break;
   }
 }
 
 void AstDumper::dump(Expression *expr) {
-  if (dynamic_cast<LiteralExpr *>(expr)) {
-    dump(static_cast<LiteralExpr *>(expr));
-  } else if (dynamic_cast<IdentifierExpr *>(expr)) {
-    dump(static_cast<IdentifierExpr *>(expr));
-  } else if (dynamic_cast<TupleExpr *>(expr)) {
-    dump(static_cast<TupleExpr *>(expr));
-  } else if (dynamic_cast<ArrayExpr *>(expr)) {
-    dump(static_cast<ArrayExpr *>(expr));
-  } else if (dynamic_cast<BinaryExpr *>(expr)) {
-    dump(static_cast<BinaryExpr *>(expr));
-  } else if (dynamic_cast<UnaryExpr *>(expr)) {
-    dump(static_cast<UnaryExpr *>(expr));
-  } else if (dynamic_cast<CallExpr *>(expr)) {
-    dump(static_cast<CallExpr *>(expr));
-  } else if (dynamic_cast<AssignExpr *>(expr)) {
-    dump(static_cast<AssignExpr *>(expr));
-  } else if (dynamic_cast<AssignOpExpr *>(expr)) {
-    dump(static_cast<AssignOpExpr *>(expr));
-  } else if (dynamic_cast<FieldAccessExpr *>(expr)) {
-    dump(static_cast<FieldAccessExpr *>(expr));
-  } else if (dynamic_cast<IndexExpr *>(expr)) {
-    dump(static_cast<IndexExpr *>(expr));
-  } else if (dynamic_cast<RangeExpr *>(expr)) {
-    dump(static_cast<RangeExpr *>(expr));
-  } else if (dynamic_cast<IfExpr *>(expr)) {
-    dump(static_cast<IfExpr *>(expr));
-  } else if (dynamic_cast<MatchExpr *>(expr)) {
-    dump(static_cast<MatchExpr *>(expr));
-  } else if (dynamic_cast<ForExpr *>(expr)) {
-    dump(static_cast<ForExpr *>(expr));
-  } else if (dynamic_cast<WhileExpr *>(expr)) {
-    dump(static_cast<WhileExpr *>(expr));
-  } else if (dynamic_cast<ReturnExpr *>(expr)) {
-    dump(static_cast<ReturnExpr *>(expr));
-  } else if (dynamic_cast<BreakExpr *>(expr)) {
-    dump(static_cast<BreakExpr *>(expr));
-  } else if (dynamic_cast<ContinueExpr *>(expr)) {
-    dump(static_cast<ContinueExpr *>(expr));
-  } else if (dynamic_cast<BlockExpression *>(expr)) {
-    dump(static_cast<BlockExpression *>(expr));
-  } else if (dynamic_cast<ComptimeExpr *>(expr)) {
-    dump(static_cast<ComptimeExpr *>(expr));
-  } else if (dynamic_cast<MLIRAttribute *>(expr)) {
-    dump(static_cast<MLIRAttribute *>(expr));
-  } else if (dynamic_cast<Type *>(expr)) {
-    dump(static_cast<Type *>(expr));
-  } else if (dynamic_cast<YieldExpr *>(expr)) {
-    dump(static_cast<YieldExpr *>(expr));
+  switch (expr->kind()) {
+  case AstNodeKind::LiteralExpr:
+    dump(expr->as<LiteralExpr>());
+    break;
+  case AstNodeKind::IdentifierExpr:
+    dump(expr->as<IdentifierExpr>());
+    break;
+  case AstNodeKind::TupleExpr:
+    dump(expr->as<TupleExpr>());
+    break;
+  case AstNodeKind::ArrayExpr:
+    dump(expr->as<ArrayExpr>());
+    break;
+  case AstNodeKind::BinaryExpr:
+    dump(expr->as<BinaryExpr>());
+    break;
+  case AstNodeKind::UnaryExpr:
+    dump(expr->as<UnaryExpr>());
+    break;
+  case AstNodeKind::CallExpr:
+    dump(expr->as<CallExpr>());
+    break;
+  case AstNodeKind::AssignExpr:
+    dump(expr->as<AssignExpr>());
+    break;
+  case AstNodeKind::AssignOpExpr:
+    dump(expr->as<AssignOpExpr>());
+    break;
+  case AstNodeKind::FieldAccessExpr:
+    dump(expr->as<FieldAccessExpr>());
+    break;
+  case AstNodeKind::IndexExpr:
+    dump(expr->as<IndexExpr>());
+    break;
+  case AstNodeKind::RangeExpr:
+    dump(expr->as<RangeExpr>());
+    break;
+  case AstNodeKind::IfExpr:
+    dump(expr->as<IfExpr>());
+    break;
+  case AstNodeKind::MatchExpr:
+    dump(expr->as<MatchExpr>());
+    break;
+  case AstNodeKind::ForExpr:
+    dump(expr->as<ForExpr>());
+    break;
+  case AstNodeKind::WhileExpr:
+    dump(expr->as<WhileExpr>());
+    break;
+  case AstNodeKind::ReturnExpr:
+    dump(expr->as<ReturnExpr>());
+    break;
+  case AstNodeKind::BreakExpr:
+    dump(expr->as<BreakExpr>());
+    break;
+  case AstNodeKind::ContinueExpr:
+    dump(expr->as<ContinueExpr>());
+    break;
+  case AstNodeKind::BlockExpression:
+    dump(expr->as<BlockExpression>());
+    break;
+  case AstNodeKind::ComptimeExpr:
+    dump(expr->as<ComptimeExpr>());
+    break;
+  case AstNodeKind::YieldExpr:
+    dump(expr->as<YieldExpr>());
+    break;
+  default:
+    std::cerr << "Unknown expression kind\n";
+    break;
   }
 }
 
 void AstDumper::dump(Type *type) {
-  if (dynamic_cast<PrimitiveType *>(type)) {
-    dump(static_cast<PrimitiveType *>(type));
-  } else if (dynamic_cast<TupleType *>(type)) {
-    dump(static_cast<TupleType *>(type));
-  } else if (dynamic_cast<FunctionType *>(type)) {
-    dump(static_cast<FunctionType *>(type));
-  } else if (dynamic_cast<ReferenceType *>(type)) {
-    dump(static_cast<ReferenceType *>(type));
-  } else if (dynamic_cast<SliceType *>(type)) {
-    dump(static_cast<SliceType *>(type));
-  } else if (dynamic_cast<ArrayType *>(type)) {
-    dump(static_cast<ArrayType *>(type));
-  } else if (dynamic_cast<TraitType *>(type)) {
-    dump(static_cast<TraitType *>(type));
-  } else if (dynamic_cast<IdentifierType *>(type)) {
-    dump(static_cast<IdentifierType *>(type));
-  } else if (dynamic_cast<StructType *>(type)) {
-    dump(static_cast<StructType *>(type));
-  } else if (dynamic_cast<EnumType *>(type)) {
-    dump(static_cast<EnumType *>(type));
-  } else if (dynamic_cast<UnionType *>(type)) {
-    dump(static_cast<UnionType *>(type));
-  } else if (dynamic_cast<ExprType *>(type)) {
-    dump(static_cast<ExprType *>(type));
-  } else if (dynamic_cast<MLIRType *>(type)) {
-    dump(static_cast<MLIRType *>(type));
+  switch (type->kind()) {
+  case AstNodeKind::PrimitiveType:
+    dump(type->as<PrimitiveType>());
+    break;
+  case AstNodeKind::TupleType:
+    dump(type->as<TupleType>());
+    break;
+  case AstNodeKind::FunctionType:
+    dump(type->as<FunctionType>());
+    break;
+  case AstNodeKind::ReferenceType:
+    dump(type->as<ReferenceType>());
+    break;
+  case AstNodeKind::SliceType:
+    dump(type->as<SliceType>());
+    break;
+  case AstNodeKind::ArrayType:
+    dump(type->as<ArrayType>());
+    break;
+  case AstNodeKind::TraitType:
+    dump(type->as<TraitType>());
+    break;
+  case AstNodeKind::IdentifierType:
+    dump(type->as<IdentifierType>());
+    break;
+  case AstNodeKind::StructType:
+    dump(type->as<StructType>());
+    break;
+  case AstNodeKind::EnumType:
+    dump(type->as<EnumType>());
+    break;
+  case AstNodeKind::UnionType:
+    dump(type->as<UnionType>());
+    break;
+  case AstNodeKind::ExprType:
+    dump(type->as<ExprType>());
+    break;
+  case AstNodeKind::MLIRType:
+    dump(type->as<MLIRType>());
+    break;
+  default:
+    std::cerr << "Unknown type kind " << ::toString(type->kind()) << "\n";
+    break;
   }
 }
 

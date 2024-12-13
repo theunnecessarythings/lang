@@ -26,7 +26,6 @@
 #include <cassert>
 #include <functional>
 #include <string>
-#include <variant>
 
 using llvm::ArrayRef;
 using llvm::isa;
@@ -52,23 +51,23 @@ public:
     the_module = mlir::ModuleOp::create(builder.getUnknownLoc());
 
     for (auto &f : program->items) {
-      if (dynamic_cast<Function *>(f.get())) {
-        auto func = mlirGen(dynamic_cast<Function *>(f.get()));
+      if (f->kind() == AstNodeKind::Function) {
+        auto func = mlirGen(f->as<Function>());
         if (failed(func)) {
           return nullptr;
         }
-      } else if (dynamic_cast<TupleStructDecl *>(f.get())) {
-        auto tuple_struct = mlirGen(dynamic_cast<TupleStructDecl *>(f.get()));
+      } else if (f->kind() == AstNodeKind::TupleStructDecl) {
+        auto tuple_struct = mlirGen(f->as<TupleStructDecl>());
         if (failed(tuple_struct)) {
           return nullptr;
         }
-      } else if (dynamic_cast<StructDecl *>(f.get())) {
-        auto struct_decl = mlirGen(dynamic_cast<StructDecl *>(f.get()));
+      } else if (f->kind() == AstNodeKind::StructDecl) {
+        auto struct_decl = mlirGen(f->as<StructDecl>());
         if (failed(struct_decl)) {
           return nullptr;
         }
-      } else if (dynamic_cast<ImplDecl *>(f.get())) {
-        auto impl_decl = mlirGen(dynamic_cast<ImplDecl *>(f.get()));
+      } else if (f->kind() == AstNodeKind::ImplDecl) {
+        auto impl_decl = mlirGen(f->as<ImplDecl>());
         if (failed(impl_decl)) {
           return nullptr;
         }
@@ -165,8 +164,8 @@ private:
     auto param_types = mlirGen(func->decl->parameters);
     mlir::TypeRange return_types =
         func->decl->return_type->kind() == AstNodeKind::PrimitiveType &&
-                static_cast<PrimitiveType *>(func->decl->return_type.get())
-                        ->type_kind == PrimitiveType::PrimitiveTypeKind::Void
+                func->decl->return_type->as<PrimitiveType>()->type_kind ==
+                    PrimitiveType::PrimitiveTypeKind::Void
             ? mlir::TypeRange()
             : mlir::TypeRange(mlirGen(func->decl->return_type.get()).value());
 
@@ -238,8 +237,7 @@ private:
 
     for (int i = 0; i < (int)params.size(); i++) {
       // Assume identifier pattern
-      auto &var_name =
-          dynamic_cast<IdentifierPattern *>(params[i]->pattern.get())->name;
+      auto &var_name = params[i]->pattern->as<IdentifierPattern>()->name;
       if (failed(declare(var_name, args[i]))) {
         the_module.emitError("redeclaration of parameter");
         return mlir::failure();
@@ -404,12 +402,14 @@ private:
   }
 
   llvm::LogicalResult mlirGen(Statement *stmt) {
-    if (auto expr = dynamic_cast<VarDecl *>(stmt)) {
+    if (stmt->kind() == AstNodeKind::VarDecl) {
+      auto expr = stmt->as<VarDecl>();
       if (failed(mlirGen(expr))) {
         return mlir::failure();
       }
       return mlir::success();
-    } else if (auto expr = dynamic_cast<ExprStmt *>(stmt)) {
+    } else if (stmt->kind() == AstNodeKind::ExprStmt) {
+      auto expr = stmt->as<ExprStmt>();
       if (failed(mlirGen(expr->expr.get()))) {
         emitError(loc(expr->token.span), "error in expression statement");
         return mlir::failure();
@@ -429,7 +429,7 @@ private:
     auto loc = this->loc(var_decl->token.span);
     // Assume identifier pattern
     auto pattern = var_decl->pattern.get();
-    auto &var_name = dynamic_cast<IdentifierPattern *>(pattern)->name;
+    auto var_name = pattern->as<IdentifierPattern>()->name;
     auto init_value = mlirGen(var_decl->initializer.value().get());
     if (failed(init_value)) {
       emitError(loc, "unsupported initializer");
@@ -455,10 +455,11 @@ private:
   }
 
   bool tryCoercion(mlir::Value &value, Type *type) {
-    if (auto t = dynamic_cast<SliceType *>(type)) {
+    if (type->kind() == AstNodeKind::SliceType) {
+      auto t = type->as<SliceType>();
       // check if type is []u8
       if (t->base->kind() != AstNodeKind::PrimitiveType ||
-          dynamic_cast<PrimitiveType *>(t->base.get())->type_kind !=
+          t->base->as<PrimitiveType>()->type_kind !=
               PrimitiveType::PrimitiveTypeKind::U8) {
         return false;
       }
@@ -499,7 +500,8 @@ private:
         value = slice_val.getResult();
         return true;
       }
-    } else if (auto t = dynamic_cast<PrimitiveType *>(type)) {
+    } else if (type->kind() == AstNodeKind::PrimitiveType) {
+      auto t = type->as<PrimitiveType>();
       if (t->type_kind == PrimitiveType::PrimitiveTypeKind::U8) {
         // if its an integer type then coerce it to u8
         if (auto op = value.getDefiningOp<mlir::arith::ConstantOp>()) {
@@ -518,7 +520,8 @@ private:
   }
 
   llvm::FailureOr<mlir::Type> mlirGen(Type *type) {
-    if (auto t = dynamic_cast<PrimitiveType *>(type)) {
+    if (type->kind() == AstNodeKind::PrimitiveType) {
+      auto t = type->as<PrimitiveType>();
       if (t->type_kind == PrimitiveType::PrimitiveTypeKind::Bool) {
         return builder.getI1Type();
       } else if (t->type_kind == PrimitiveType::PrimitiveTypeKind::I8) {
@@ -549,10 +552,11 @@ private:
         the_module.emitError("unsupported primitive type");
         return mlir::failure();
       }
-    } else if (dynamic_cast<SliceType *>(type)) {
+    } else if (type->kind() == AstNodeKind::SliceType) {
       return mlir::LLVM::LLVMStructType::getIdentified(builder.getContext(),
                                                        "Slice");
-    } else if (auto t = dynamic_cast<IdentifierType *>(type)) {
+    } else if (type->kind() == AstNodeKind::IdentifierType) {
+      auto t = type->as<IdentifierType>();
       auto type = type_table.lookup(t->name);
       if (!type) {
         emitError(loc(t->token.span), "type not found");
@@ -565,30 +569,31 @@ private:
   }
 
   llvm::FailureOr<mlir::Value> mlirGen(Expression *expr) {
-    if (auto e = dynamic_cast<LiteralExpr *>(expr)) {
-      return mlirGen(e);
-    } else if (auto e = dynamic_cast<BinaryExpr *>(expr)) {
-      return mlirGen(e);
-    } else if (auto e = dynamic_cast<IdentifierExpr *>(expr)) {
-      return mlirGen(e);
-    } else if (auto e = dynamic_cast<ReturnExpr *>(expr)) {
-      return mlirGen(e);
-    } else if (auto e = dynamic_cast<IfExpr *>(expr)) {
-      return mlirGen(e);
-    } else if (auto e = dynamic_cast<CallExpr *>(expr)) {
-      return mlirGen(e);
-    } else if (auto e = dynamic_cast<UnaryExpr *>(expr)) {
-      return mlirGen(e);
-    } else if (auto e = dynamic_cast<TupleExpr *>(expr)) {
-      return mlirGen(e);
-    } else if (auto e = dynamic_cast<AssignExpr *>(expr)) {
-      return mlirGen(e);
-    } else if (auto e = dynamic_cast<FieldAccessExpr *>(expr)) {
-      return mlirGen(e);
+    switch (expr->kind()) {
+    case AstNodeKind::LiteralExpr:
+      return mlirGen(expr->as<LiteralExpr>());
+    case AstNodeKind::BinaryExpr:
+      return mlirGen(expr->as<BinaryExpr>());
+    case AstNodeKind::IdentifierExpr:
+      return mlirGen(expr->as<IdentifierExpr>());
+    case AstNodeKind::ReturnExpr:
+      return mlirGen(expr->as<ReturnExpr>());
+    case AstNodeKind::IfExpr:
+      return mlirGen(expr->as<IfExpr>());
+    case AstNodeKind::CallExpr:
+      return mlirGen(expr->as<CallExpr>());
+    case AstNodeKind::UnaryExpr:
+      return mlirGen(expr->as<UnaryExpr>());
+    case AstNodeKind::TupleExpr:
+      return mlirGen(expr->as<TupleExpr>());
+    case AstNodeKind::AssignExpr:
+      return mlirGen(expr->as<AssignExpr>());
+    case AstNodeKind::FieldAccessExpr:
+      return mlirGen(expr->as<FieldAccessExpr>());
+    default:
+      return the_module.emitError("unsupported expression, " +
+                                  toString(expr->kind()));
     }
-    emitError(loc(expr->token.span),
-              "unsupported expression, " + toString(expr->kind()));
-    return mlir::failure();
   }
 
   llvm::FailureOr<mlir::Value> mlirGen(TupleExpr *tuple) {
@@ -651,7 +656,7 @@ private:
     }
 
     if (lhs_kind == AstNodeKind::FieldAccessExpr) {
-      auto field_access = static_cast<FieldAccessExpr *>(expr->lhs.get());
+      auto field_access = expr->lhs->as<FieldAccessExpr>();
       auto lhs = mlirGen(field_access->base.get());
 
       if (failed(lhs)) {
@@ -1146,7 +1151,7 @@ private:
 
   // check mlir type is equal to ast type
   bool checkType(mlir::Type &mlir_type, Type *ast_type) {
-    if (auto t = dynamic_cast<PrimitiveType *>(ast_type)) {
+    if (auto t = ast_type->as<PrimitiveType>()) {
       if (t->type_kind == PrimitiveType::PrimitiveTypeKind::I32) {
         return mlir::isa<mlir::IntegerType>(mlir_type) &&
                mlir_type.getIntOrFloatBitWidth() == 32;
@@ -1215,7 +1220,7 @@ private:
 
     // check calllexpr arg 0 is a literal string
     std::string format_string;
-    if (auto str = dynamic_cast<LiteralExpr *>(call_expr->arguments[0].get())) {
+    if (auto str = call_expr->arguments[0]->as<LiteralExpr>()) {
       format_string = std::get<std::string>(str->value);
       // NOTE: Temp fix for string literal
       format_string = format_string.substr(1, format_string.size() - 2) + '\n';

@@ -8,6 +8,8 @@
 #include "compiler.hpp"
 #include "lexer.hpp"
 
+using PatternBindings = std::vector<std::pair<std::string, Type *>>;
+
 struct Parser {
   std::unique_ptr<Lexer> lexer;
   std::optional<Token> current_token;
@@ -108,4 +110,6 @@ struct Parser {
   parseNumberLiteral(const std::basic_string<char> &bytes);
   Operator tokenToOperator(const Token &op);
   std::unordered_set<Attribute> parseAttributes();
+
+  PatternBindings destructurePattern(Pattern *pattern, Type *type);
 };

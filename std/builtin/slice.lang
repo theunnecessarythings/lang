@@ -1,6 +1,6 @@
 pub fn Slice(comptime T: type) type {
     struct Impl {
-        base: @mlir_type("memref<?xT>"),
+        base: @mlir_type("memref<5xi32>"),
         offset: @mlir_type("index"),
         size: @mlir_type("index"),
         stride: @mlir_type("index"),

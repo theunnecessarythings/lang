@@ -238,35 +238,35 @@ void JsonDumper::dump(Program *node) {
 void JsonDumper::dump(TopLevelDecl *node) {
   switch (node->kind()) {
   case AstNodeKind::Module:
-    dump(static_cast<Module *>(node));
+    dump(node->as<Module>());
     break;
   case AstNodeKind::Function:
-    dump(static_cast<Function *>(node));
+    dump(node->as<Function>());
     break;
   case AstNodeKind::TopLevelVarDecl:
-    dump(static_cast<TopLevelVarDecl *>(node));
+    dump(node->as<TopLevelVarDecl>());
     break;
   case AstNodeKind::StructDecl:
-    dump(static_cast<StructDecl *>(node));
+    dump(node->as<StructDecl>());
     break;
   case AstNodeKind::TupleStructDecl:
-    dump(static_cast<TupleStructDecl *>(node));
+    dump(node->as<TupleStructDecl>());
     break;
   case AstNodeKind::EnumDecl:
-    dump(static_cast<EnumDecl *>(node));
+    dump(node->as<EnumDecl>());
     break;
   case AstNodeKind::UnionDecl:
-    dump(static_cast<UnionDecl *>(node));
+    dump(node->as<UnionDecl>());
     break;
   case AstNodeKind::TraitDecl:
-    dump(static_cast<TraitDecl *>(node));
+    dump(node->as<TraitDecl>());
     break;
   case AstNodeKind::ImplDecl:
-    dump(static_cast<ImplDecl *>(node));
+    dump(node->as<ImplDecl>());
     break;
   case AstNodeKind::ImportDecl:
     if (!skip_import) {
-      dump(static_cast<ImportDecl *>(node));
+      dump(node->as<ImportDecl>());
     }
     break;
   default:
@@ -1776,79 +1776,79 @@ void JsonDumper::dump(Parameter *node) {
 void JsonDumper::dump(Expression *node) {
   switch (node->kind()) {
   case AstNodeKind::IfExpr:
-    dump(static_cast<IfExpr *>(node));
+    dump(node->as<IfExpr>());
     break;
   case AstNodeKind::MatchExpr:
-    dump(static_cast<MatchExpr *>(node));
+    dump(node->as<MatchExpr>());
     break;
   case AstNodeKind::ForExpr:
-    dump(static_cast<ForExpr *>(node));
+    dump(node->as<ForExpr>());
     break;
   case AstNodeKind::WhileExpr:
-    dump(static_cast<WhileExpr *>(node));
+    dump(node->as<WhileExpr>());
     break;
   case AstNodeKind::ReturnExpr:
-    dump(static_cast<ReturnExpr *>(node));
+    dump(node->as<ReturnExpr>());
     break;
   case AstNodeKind::BreakExpr:
-    dump(static_cast<BreakExpr *>(node));
+    dump(node->as<BreakExpr>());
     break;
   case AstNodeKind::ContinueExpr:
-    dump(static_cast<ContinueExpr *>(node));
+    dump(node->as<ContinueExpr>());
     break;
   case AstNodeKind::LiteralExpr:
-    dump(static_cast<LiteralExpr *>(node));
+    dump(node->as<LiteralExpr>());
     break;
   case AstNodeKind::TupleExpr:
-    dump(static_cast<TupleExpr *>(node));
+    dump(node->as<TupleExpr>());
     break;
   case AstNodeKind::ArrayExpr:
-    dump(static_cast<ArrayExpr *>(node));
+    dump(node->as<ArrayExpr>());
     break;
   case AstNodeKind::BinaryExpr:
-    dump(static_cast<BinaryExpr *>(node));
+    dump(node->as<BinaryExpr>());
     break;
   case AstNodeKind::UnaryExpr:
-    dump(static_cast<UnaryExpr *>(node));
+    dump(node->as<UnaryExpr>());
     break;
   case AstNodeKind::CallExpr:
-    dump(static_cast<CallExpr *>(node));
+    dump(node->as<CallExpr>());
     break;
   case AstNodeKind::AssignExpr:
-    dump(static_cast<AssignExpr *>(node));
+    dump(node->as<AssignExpr>());
     break;
   case AstNodeKind::AssignOpExpr:
-    dump(static_cast<AssignOpExpr *>(node));
+    dump(node->as<AssignOpExpr>());
     break;
   case AstNodeKind::FieldAccessExpr:
-    dump(static_cast<FieldAccessExpr *>(node));
+    dump(node->as<FieldAccessExpr>());
     break;
   case AstNodeKind::IndexExpr:
-    dump(static_cast<IndexExpr *>(node));
+    dump(node->as<IndexExpr>());
     break;
   case AstNodeKind::RangeExpr:
-    dump(static_cast<RangeExpr *>(node));
+    dump(node->as<RangeExpr>());
     break;
   case AstNodeKind::IdentifierExpr:
-    dump(static_cast<IdentifierExpr *>(node));
+    dump(node->as<IdentifierExpr>());
     break;
   case AstNodeKind::BlockExpression:
-    dump(static_cast<BlockExpression *>(node));
+    dump(node->as<BlockExpression>());
     break;
   case AstNodeKind::ComptimeExpr:
-    dump(static_cast<ComptimeExpr *>(node));
+    dump(node->as<ComptimeExpr>());
     break;
   case AstNodeKind::MLIRAttribute:
-    dump(static_cast<MLIRAttribute *>(node));
+    dump(node->as<MLIRAttribute>());
     break;
   case AstNodeKind::MLIROp:
-    dump(static_cast<MLIROp *>(node));
+    dump(node->as<MLIROp>());
     break;
   case AstNodeKind::Type:
-    dump(static_cast<Type *>(node));
+    dump(node->as<Type>());
     break;
   case AstNodeKind::YieldExpr:
-    dump(static_cast<YieldExpr *>(node));
+    dump(node->as<YieldExpr>());
     break;
   default:
     output_stream << "{\n";
@@ -1865,16 +1865,16 @@ void JsonDumper::dump(Expression *node) {
 void JsonDumper::dump(Statement *node) {
   switch (node->kind()) {
   case AstNodeKind::VarDecl:
-    dump(static_cast<VarDecl *>(node));
+    dump(node->as<VarDecl>());
     break;
   case AstNodeKind::ExprStmt:
-    dump(static_cast<ExprStmt *>(node));
+    dump(node->as<ExprStmt>());
     break;
   case AstNodeKind::DeferStmt:
-    dump(static_cast<DeferStmt *>(node));
+    dump(node->as<DeferStmt>());
     break;
   case AstNodeKind::TopLevelDeclStmt:
-    dump(static_cast<TopLevelDeclStmt *>(node));
+    dump(node->as<TopLevelDeclStmt>());
     break;
   default:
     output_stream << "{\n";
@@ -1891,43 +1891,43 @@ void JsonDumper::dump(Statement *node) {
 void JsonDumper::dump(Type *node) {
   switch (node->kind()) {
   case AstNodeKind::PrimitiveType:
-    dump(static_cast<PrimitiveType *>(node));
+    dump(node->as<PrimitiveType>());
     break;
   case AstNodeKind::TupleType:
-    dump(static_cast<TupleType *>(node));
+    dump(node->as<TupleType>());
     break;
   case AstNodeKind::FunctionType:
-    dump(static_cast<FunctionType *>(node));
+    dump(node->as<FunctionType>());
     break;
   case AstNodeKind::ReferenceType:
-    dump(static_cast<ReferenceType *>(node));
+    dump(node->as<ReferenceType>());
     break;
   case AstNodeKind::SliceType:
-    dump(static_cast<SliceType *>(node));
+    dump(node->as<SliceType>());
     break;
   case AstNodeKind::ArrayType:
-    dump(static_cast<ArrayType *>(node));
+    dump(node->as<ArrayType>());
     break;
   case AstNodeKind::TraitType:
-    dump(static_cast<TraitType *>(node));
+    dump(node->as<TraitType>());
     break;
   case AstNodeKind::IdentifierType:
-    dump(static_cast<IdentifierType *>(node));
+    dump(node->as<IdentifierType>());
     break;
   case AstNodeKind::StructType:
-    dump(static_cast<StructType *>(node));
+    dump(node->as<StructType>());
     break;
   case AstNodeKind::EnumType:
-    dump(static_cast<EnumType *>(node));
+    dump(node->as<EnumType>());
     break;
   case AstNodeKind::UnionType:
-    dump(static_cast<UnionType *>(node));
+    dump(node->as<UnionType>());
     break;
   case AstNodeKind::ExprType:
-    dump(static_cast<ExprType *>(node));
+    dump(node->as<ExprType>());
     break;
   case AstNodeKind::MLIRType:
-    dump(static_cast<MLIRType *>(node));
+    dump(node->as<MLIRType>());
     break;
   default:
     output_stream << "{\n";
@@ -1944,34 +1944,34 @@ void JsonDumper::dump(Type *node) {
 void JsonDumper::dump(Pattern *node) {
   switch (node->kind()) {
   case AstNodeKind::LiteralPattern:
-    dump(static_cast<LiteralPattern *>(node));
+    dump(node->as<LiteralPattern>());
     break;
   case AstNodeKind::IdentifierPattern:
-    dump(static_cast<IdentifierPattern *>(node));
+    dump(node->as<IdentifierPattern>());
     break;
   case AstNodeKind::WildcardPattern:
-    dump(static_cast<WildcardPattern *>(node));
+    dump(node->as<WildcardPattern>());
     break;
   case AstNodeKind::TuplePattern:
-    dump(static_cast<TuplePattern *>(node));
+    dump(node->as<TuplePattern>());
     break;
   case AstNodeKind::StructPattern:
-    dump(static_cast<StructPattern *>(node));
+    dump(node->as<StructPattern>());
     break;
   case AstNodeKind::SlicePattern:
-    dump(static_cast<SlicePattern *>(node));
+    dump(node->as<SlicePattern>());
     break;
   case AstNodeKind::OrPattern:
-    dump(static_cast<OrPattern *>(node));
+    dump(node->as<OrPattern>());
     break;
   case AstNodeKind::ExprPattern:
-    dump(static_cast<ExprPattern *>(node));
+    dump(node->as<ExprPattern>());
     break;
   case AstNodeKind::RangePattern:
-    dump(static_cast<RangePattern *>(node));
+    dump(node->as<RangePattern>());
     break;
   case AstNodeKind::VariantPattern:
-    dump(static_cast<VariantPattern *>(node));
+    dump(node->as<VariantPattern>());
     break;
   default:
     output_stream << "{\n";

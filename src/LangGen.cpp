@@ -133,13 +133,13 @@ private:
 
   mlir::LogicalResult langGen(TopLevelDecl *decl) {
     if (decl->kind() == AstNodeKind::Function) {
-      return langGen(dynamic_cast<Function *>(decl));
+      return langGen(decl->as<Function>());
     } else if (decl->kind() == AstNodeKind::TupleStructDecl) {
-      return langGen(dynamic_cast<TupleStructDecl *>(decl));
+      return langGen(decl->as<TupleStructDecl>());
     } else if (decl->kind() == AstNodeKind::StructDecl) {
-      return langGen(dynamic_cast<StructDecl *>(decl));
+      return langGen(decl->as<StructDecl>());
     } else if (decl->kind() == AstNodeKind::ImplDecl) {
-      return langGen(dynamic_cast<ImplDecl *>(decl));
+      return langGen(decl->as<ImplDecl>());
     } else if (decl->kind() == AstNodeKind::ImportDecl) {
     }
     return the_module.emitError("unsupported top-level item");
@@ -154,8 +154,8 @@ private:
     }
     mlir::TypeRange return_types =
         func->decl->return_type->kind() == AstNodeKind::PrimitiveType &&
-                static_cast<PrimitiveType *>(func->decl->return_type.get())
-                        ->type_kind == PrimitiveType::PrimitiveTypeKind::Void
+                func->decl->return_type->as<PrimitiveType>()->type_kind ==
+                    PrimitiveType::PrimitiveTypeKind::Void
             ? mlir::TypeRange()
             : mlir::TypeRange(getType(func->decl->return_type.get()).value());
 
@@ -249,8 +249,7 @@ private:
 
     for (int i = 0; i < (int)params.size(); i++) {
       // Assume identifier pattern
-      auto &var_name =
-          dynamic_cast<IdentifierPattern *>(params[i]->pattern.get())->name;
+      auto &var_name = params[i]->pattern->as<IdentifierPattern>()->name;
       if (failed(declare(var_name, args[i]))) {
         the_module.emitError("redeclaration of parameter");
         return mlir::failure();
@@ -394,9 +393,8 @@ private:
     }
     // check the last statement is an expression statement or not
     if (!block->statements.empty()) {
-      if (auto exprStmt =
-              dynamic_cast<ExprStmt *>(block->statements.back().get())) {
-        return langGen(exprStmt->expr.get());
+      if (block->statements.back()->kind() == AstNodeKind::ExprStmt) {
+        return langGen(block->statements.back()->as<ExprStmt>()->expr.get());
       }
       if (failed(langGen(block->statements.back().get()))) {
         return mlir::failure();
@@ -407,12 +405,12 @@ private:
   }
 
   mlir::LogicalResult langGen(Statement *stmt) {
-    if (auto expr = dynamic_cast<VarDecl *>(stmt)) {
-      return langGen(expr);
-    } else if (auto expr = dynamic_cast<ExprStmt *>(stmt)) {
-      return langGen(expr->expr.get());
-    } else if (auto toplevel = dynamic_cast<TopLevelDeclStmt *>(stmt)) {
-      return langGen(toplevel->decl.get());
+    if (stmt->kind() == AstNodeKind::VarDecl) {
+      return langGen(stmt->as<VarDecl>());
+    } else if (stmt->kind() == AstNodeKind::ExprStmt) {
+      return langGen(stmt->as<ExprStmt>()->expr.get());
+    } else if (stmt->kind() == AstNodeKind::TopLevelDeclStmt) {
+      return langGen(stmt->as<TopLevelDeclStmt>()->decl.get());
     }
     return mlir::emitError(loc(stmt->token.span), "unsupported statement");
   }
@@ -424,8 +422,7 @@ private:
     }
 
     // assume the name is identifier pattern for now
-    auto &var_name =
-        dynamic_cast<IdentifierPattern *>(var_decl->pattern.get())->name;
+    auto &var_name = var_decl->pattern->as<IdentifierPattern>()->name;
     if (symbol_table.count(var_name)) {
       return mlir::emitError(loc(var_decl->token.span),
                              "a variable with name " + var_name +
@@ -453,7 +450,7 @@ private:
 
   mlir::FailureOr<mlir::Type> getType(Type *type) {
     if (type->kind() == AstNodeKind::PrimitiveType) {
-      auto primitive_type = static_cast<PrimitiveType *>(type);
+      auto primitive_type = type->as<PrimitiveType>();
       if (primitive_type->type_kind == PrimitiveType::PrimitiveTypeKind::I32) {
         return builder.getIntegerType(32);
       } else if (primitive_type->type_kind ==
@@ -481,11 +478,11 @@ private:
         mlir::emitError(loc(primitive_type->token.span), "unsupported type");
       }
     } else if (type->kind() == AstNodeKind::MLIRType) {
-      auto mlir_type = static_cast<MLIRType *>(type);
+      auto mlir_type = type->as<MLIRType>();
       llvm::StringRef type_name = mlir_type->type;
       return mlir::parseType(type_name.trim('"'), builder.getContext());
     } else if (type->kind() == AstNodeKind::IdentifierType) {
-      auto identifier_type = static_cast<IdentifierType *>(type);
+      auto identifier_type = type->as<IdentifierType>();
       auto type_name = identifier_type->name;
 
       mlir::Operation *op = nullptr;
@@ -504,7 +501,7 @@ private:
       }
       return op->getResult(0).getType();
     } else if (type->kind() == AstNodeKind::SliceType) {
-      auto slice_type = static_cast<SliceType *>(type);
+      auto slice_type = type->as<SliceType>();
       auto base_type = getType(slice_type->base.get());
       if (failed(base_type)) {
         return mlir::failure();
@@ -512,7 +509,7 @@ private:
       return mlir::lang::SliceType::get(builder.getContext(),
                                         base_type.value());
     } else if (type->kind() == AstNodeKind::ArrayType) {
-      auto array_type = static_cast<ArrayType *>(type);
+      auto array_type = type->as<ArrayType>();
       auto base_type = getType(array_type->base.get());
       if (failed(base_type)) {
         return mlir::failure();
@@ -535,7 +532,7 @@ private:
       //   return mlir::emitError(loc(size_expr->token.span),
       //                          "unsupported array size expression");
       // }
-      // auto size_literal = static_cast<LiteralExpr *>(size_expr);
+      // auto size_literal = size_expr->as<LiteralExpr>();
       // auto size = std::get<int>(size_literal->value);
       // return mlir::lang::ArrayType::get(base_type.value(), size);
     }
@@ -544,57 +541,56 @@ private:
   }
 
   mlir::FailureOr<mlir::Value> langGen(Expression *expr) {
-    if (auto e = dynamic_cast<LiteralExpr *>(expr)) {
-      return langGen(e);
-    } else if (auto e = dynamic_cast<MLIRAttribute *>(expr)) {
-      return langGen(e);
-    } else if (auto e = dynamic_cast<MLIRType *>(expr)) {
-      return langGen(e);
-    } else if (auto e = dynamic_cast<ReturnExpr *>(expr)) {
-      return langGen(e);
-    } else if (auto e = dynamic_cast<BlockExpression *>(expr)) {
-      return langGen(e);
-    } else if (auto e = dynamic_cast<VarDecl *>(expr)) {
-      return langGen(e);
-    } else if (auto e = dynamic_cast<CallExpr *>(expr)) {
-      return langGen(e);
-    } else if (auto e = dynamic_cast<FieldAccessExpr *>(expr)) {
-      return langGen(e);
-    } else if (auto e = dynamic_cast<IdentifierExpr *>(expr)) {
-      return langGen(e);
-    } else if (auto e = dynamic_cast<AssignExpr *>(expr)) {
-      return langGen(e);
-    } else if (auto e = dynamic_cast<MLIROp *>(expr)) {
-      return langGen(e);
-    } else if (auto e = dynamic_cast<BinaryExpr *>(expr)) {
-      return langGen(e);
-    } else if (auto e = dynamic_cast<IfExpr *>(expr)) {
-      return langGen(e);
-    } else if (auto e = dynamic_cast<YieldExpr *>(expr)) {
-      return langGen(e);
-    } else if (auto e = dynamic_cast<TupleExpr *>(expr)) {
-      return langGen(e);
-    } else if (auto e = dynamic_cast<UnaryExpr *>(expr)) {
-      return langGen(e);
-    } else if (auto e = dynamic_cast<IndexExpr *>(expr)) {
-      return langGen(e);
-    } else if (auto e = dynamic_cast<ComptimeExpr *>(expr)) {
-      return langGen(e);
-    } else if (auto e = dynamic_cast<ArrayExpr *>(expr)) {
-      return langGen(e);
-    } else
+    switch (expr->kind()) {
+    case AstNodeKind::LiteralExpr:
+      return langGen(expr->as<LiteralExpr>());
+    case AstNodeKind::MLIRAttribute:
+      return langGen(expr->as<MLIRAttribute>());
+    case AstNodeKind::MLIRType:
+      return langGen(expr->as<MLIRType>());
+    case AstNodeKind::ReturnExpr:
+      return langGen(expr->as<ReturnExpr>());
+    case AstNodeKind::BlockExpression:
+      return langGen(expr->as<BlockExpression>());
+    case AstNodeKind::CallExpr:
+      return langGen(expr->as<CallExpr>());
+    case AstNodeKind::FieldAccessExpr:
+      return langGen(expr->as<FieldAccessExpr>());
+    case AstNodeKind::IdentifierExpr:
+      return langGen(expr->as<IdentifierExpr>());
+    case AstNodeKind::AssignExpr:
+      return langGen(expr->as<AssignExpr>());
+    case AstNodeKind::MLIROp:
+      return langGen(expr->as<MLIROp>());
+    case AstNodeKind::BinaryExpr:
+      return langGen(expr->as<BinaryExpr>());
+    case AstNodeKind::IfExpr:
+      return langGen(expr->as<IfExpr>());
+    case AstNodeKind::YieldExpr:
+      return langGen(expr->as<YieldExpr>());
+    case AstNodeKind::TupleExpr:
+      return langGen(expr->as<TupleExpr>());
+    case AstNodeKind::UnaryExpr:
+      return langGen(expr->as<UnaryExpr>());
+    case AstNodeKind::IndexExpr:
+      return langGen(expr->as<IndexExpr>());
+    case AstNodeKind::ComptimeExpr:
+      return langGen(expr->as<ComptimeExpr>());
+    case AstNodeKind::ArrayExpr:
+      return langGen(expr->as<ArrayExpr>());
+    default:
       return mlir::emitError(loc(expr->token.span), "unsupported expression " +
                                                         toString(expr->kind()));
+    }
   }
 
   mlir::FailureOr<mlir::Value> langGen(ArrayExpr *expr) {
     // if const expr, then create a constant array
     if (expr->extra.is_const) {
       mlir::DenseElementsAttr attr;
-      auto base_type =
-          static_cast<LiteralExpr *>(expr->elements[0].get())->type;
+      auto base_type = expr->elements[0]->as<LiteralExpr>()->type;
       auto values = expr->elements | std::views::transform([](auto &e) {
-                      return static_cast<LiteralExpr *>(e.get())->value;
+                      return e->template as<LiteralExpr>()->value;
                     });
 
       switch (base_type) {
@@ -793,7 +789,8 @@ private:
       }
       if (isNonTerminatingBlock(expr->then_block.get())) {
         auto last_stmt = expr->then_block->statements.back().get();
-        if (auto expr_stmt = dynamic_cast<ExprStmt *>(last_stmt)) {
+        if (last_stmt->kind() == AstNodeKind::ExprStmt) {
+          auto expr_stmt = last_stmt->as<ExprStmt>();
           if (expr_stmt->expr->kind() == AstNodeKind::IfExpr) {
             auto nested_if_result = builder.getBlock()->back().getResult(0);
             builder.create<mlir::lang::YieldOp>(loc, nested_if_result);
@@ -810,7 +807,8 @@ private:
         llvm::errs() << "failed else block\n";
       if (isNonTerminatingBlock(expr->else_block.value().get())) {
         auto last_stmt = expr->else_block.value()->statements.back().get();
-        if (auto expr_stmt = dynamic_cast<ExprStmt *>(last_stmt)) {
+        if (last_stmt->kind() == AstNodeKind::ExprStmt) {
+          auto expr_stmt = last_stmt->as<ExprStmt>();
           if (expr_stmt->expr->kind() == AstNodeKind::IfExpr) {
             auto nested_if_result = builder.getBlock()->back().getResult(0);
             builder.create<mlir::lang::YieldOp>(loc, nested_if_result);
@@ -873,19 +871,21 @@ private:
     }
     auto last_stmt = block->statements.back().get();
     if (last_stmt->kind() == AstNodeKind::ExprStmt) {
-      auto expr = dynamic_cast<ExprStmt *>(last_stmt);
+      auto expr = last_stmt->as<ExprStmt>();
       if (expr->expr->kind() == AstNodeKind::YieldExpr) {
         return true;
+      } else if (expr->expr->kind() == AstNodeKind::IfExpr) {
+        auto if_expr = expr->expr->as<IfExpr>();
+        if (!if_expr->else_block.has_value()) {
+          return false;
+        }
+        // TODO:
+        return isTerminatedByYield(if_expr->then_block.get()) &&
+               isTerminatedByYield(if_expr->else_block.value().get());
+      } else if (expr->expr->kind() == AstNodeKind::BlockExpression) {
+        auto block_expr = expr->expr->as<BlockExpression>();
+        return isTerminatedByYield(block_expr);
       }
-    } else if (auto if_expr = dynamic_cast<IfExpr *>(last_stmt)) {
-      if (!if_expr->else_block.has_value()) {
-        return false;
-      }
-      // TODO:
-      return isTerminatedByYield(if_expr->then_block.get()) &&
-             isTerminatedByYield(if_expr->else_block.value().get());
-    } else if (auto block_expr = dynamic_cast<BlockExpression *>(last_stmt)) {
-      return isTerminatedByYield(block_expr);
     }
     return false;
   }
@@ -897,22 +897,23 @@ private:
     }
     for (auto &stmt : block->statements) {
       if (stmt->kind() == AstNodeKind::ExprStmt) {
-        auto expr = dynamic_cast<ExprStmt *>(stmt.get());
+        auto expr = stmt->as<ExprStmt>();
         if (expr->expr->kind() == AstNodeKind::ReturnExpr) {
           return true;
-        }
-      } else if (auto if_expr = dynamic_cast<IfExpr *>(stmt.get())) {
-        // check if either branches are terminated by a return
-        if (isTerminatedByReturn(if_expr->then_block.get())) {
-          return true;
-        }
-        if (isTerminatedByReturn(if_expr->else_block.value().get())) {
-          return true;
-        }
-      } else if (auto block_expr =
-                     dynamic_cast<BlockExpression *>(stmt.get())) {
-        if (isTerminatedByReturn(block_expr)) {
-          return true;
+        } else if (expr->expr->kind() == AstNodeKind::IfExpr) {
+          auto if_expr = expr->expr->as<IfExpr>();
+          // check if either branches are terminated by a return
+          if (isTerminatedByReturn(if_expr->then_block.get())) {
+            return true;
+          }
+          if (isTerminatedByReturn(if_expr->else_block.value().get())) {
+            return true;
+          }
+        } else if (expr->expr->kind() == AstNodeKind::BlockExpression) {
+          auto block_expr = expr->expr->as<BlockExpression>();
+          if (isTerminatedByReturn(block_expr)) {
+            return true;
+          }
         }
       }
     }
@@ -927,24 +928,26 @@ private:
     }
     for (auto &stmt : block->statements) {
       if (stmt->kind() == AstNodeKind::ExprStmt) {
-        auto expr = dynamic_cast<ExprStmt *>(stmt.get());
+        auto expr = stmt->as<ExprStmt>();
         if (expr->expr->kind() == AstNodeKind::ReturnExpr ||
             expr->expr->kind() == AstNodeKind::YieldExpr) {
           return false;
-        }
-      } else if (auto expr = dynamic_cast<IfExpr *>(stmt.get())) {
-        // check if both branches are non-terminating
-        // then_block
-        if (!isNonTerminatingBlock(expr->then_block.get()))
-          return false;
-        // else_block
-        if (expr->else_block.has_value())
-          if (expr->else_block.value())
-            if (!isNonTerminatingBlock(expr->else_block.value().get()))
-              return false;
-      } else if (auto block = dynamic_cast<BlockExpression *>(stmt.get())) {
-        if (!isNonTerminatingBlock(block)) {
-          return false;
+        } else if (expr->expr->kind() == AstNodeKind::IfExpr) {
+          auto if_expr = expr->expr->as<IfExpr>();
+          // check if both branches are non-terminating
+          // then_block
+          if (!isNonTerminatingBlock(if_expr->then_block.get()))
+            return false;
+          // else_block
+          if (if_expr->else_block.has_value())
+            if (if_expr->else_block.value())
+              if (!isNonTerminatingBlock(if_expr->else_block.value().get()))
+                return false;
+        } else if (expr->expr->kind() == AstNodeKind::BlockExpression) {
+          auto block = expr->expr->as<BlockExpression>();
+          if (!isNonTerminatingBlock(block)) {
+            return false;
+          }
         }
       }
     }
@@ -989,7 +992,7 @@ private:
   mlir::FailureOr<mlir::Value> langGen(AssignExpr *expr) {
     mlir::FailureOr<mlir::Value> lhs = mlir::failure();
     if (expr->lhs->kind() == AstNodeKind::IdentifierExpr) {
-      lhs = langGen(dynamic_cast<IdentifierExpr *>(expr->lhs.get()), false);
+      lhs = langGen(expr->lhs->as<IdentifierExpr>(), false);
     } else {
       lhs = langGen(expr->lhs.get());
     }
@@ -1066,12 +1069,10 @@ private:
                                "print function expects 1 argument");
       auto arg0 = expr->arguments[0].get();
       if (arg0->kind() != AstNodeKind::LiteralExpr ||
-          static_cast<LiteralExpr *>(arg0)->type !=
-              LiteralExpr::LiteralType::String)
+          arg0->as<LiteralExpr>()->type != LiteralExpr::LiteralType::String)
         return mlir::emitError(loc(expr->token.span),
                                "print function expects a string argument");
-      auto format_str =
-          std::get<std::string>(static_cast<LiteralExpr *>(arg0)->value);
+      auto format_str = std::get<std::string>(arg0->as<LiteralExpr>()->value);
       format_str = format_str.substr(1, format_str.size() - 2) + '\n' + '\0';
       args.front().getDefiningOp()->erase();
       mlir::ValueRange rest_args = llvm::ArrayRef(args).drop_front();

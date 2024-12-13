@@ -25,34 +25,34 @@ void Analyzer::analyze(Program *program) {
 void Analyzer::analyze(TopLevelDecl *decl) {
   switch (decl->kind()) {
   case AstNodeKind::Function:
-    analyze(static_cast<Function *>(decl));
+    analyze(decl->as<Function>());
     break;
   case AstNodeKind::StructDecl:
-    analyze(static_cast<StructDecl *>(decl));
+    analyze(decl->as<StructDecl>());
     break;
   case AstNodeKind::TupleStructDecl:
-    analyze(static_cast<TupleStructDecl *>(decl));
+    analyze(decl->as<TupleStructDecl>());
     break;
   case AstNodeKind::EnumDecl:
-    analyze(static_cast<EnumDecl *>(decl));
+    analyze(decl->as<EnumDecl>());
     break;
   case AstNodeKind::TraitDecl:
-    analyze(static_cast<TraitDecl *>(decl));
+    analyze(decl->as<TraitDecl>());
     break;
   case AstNodeKind::ImplDecl:
-    analyze(static_cast<ImplDecl *>(decl));
+    analyze(decl->as<ImplDecl>());
     break;
   case AstNodeKind::TopLevelVarDecl:
-    analyze(static_cast<TopLevelVarDecl *>(decl));
+    analyze(decl->as<TopLevelVarDecl>());
     break;
   case AstNodeKind::Module:
-    analyze(static_cast<Module *>(decl));
+    analyze(decl->as<Module>());
     break;
   case AstNodeKind::UnionDecl:
-    analyze(static_cast<UnionDecl *>(decl));
+    analyze(decl->as<UnionDecl>());
     break;
   case AstNodeKind::ImportDecl:
-    analyze(static_cast<ImportDecl *>(decl));
+    analyze(decl->as<ImportDecl>());
     break;
   default:
     assert(false && "not a top level decl or not implemented yet");
@@ -121,7 +121,7 @@ void Analyzer::analyze(ImplDecl *impl) {
       } else {
         auto &param = func->decl->parameters[0];
         if (param->type->kind() == AstNodeKind::IdentifierType) {
-          auto id_type = static_cast<IdentifierType *>(param->type.get());
+          auto id_type = param->type->as<IdentifierType>();
           if (id_type->name == "Self" || id_type->name == type) {
             func->decl->parameters.erase(func->decl->parameters.begin());
           } else {
@@ -155,37 +155,37 @@ void Analyzer::analyze(TraitDecl *decl) {}
 void Analyzer::analyze(Pattern *pattern) {
   switch (pattern->kind()) {
   case AstNodeKind::LiteralPattern:
-    analyze(static_cast<LiteralPattern *>(pattern));
+    analyze(pattern->as<LiteralPattern>());
     break;
   case AstNodeKind::IdentifierPattern:
-    analyze(static_cast<IdentifierPattern *>(pattern));
+    analyze(pattern->as<IdentifierPattern>());
     break;
   case AstNodeKind::WildcardPattern:
-    analyze(static_cast<WildcardPattern *>(pattern));
+    analyze(pattern->as<WildcardPattern>());
     break;
   case AstNodeKind::TuplePattern:
-    analyze(static_cast<TuplePattern *>(pattern));
+    analyze(pattern->as<TuplePattern>());
     break;
   case AstNodeKind::RestPattern:
-    analyze(static_cast<RestPattern *>(pattern));
+    analyze(pattern->as<RestPattern>());
     break;
   case AstNodeKind::StructPattern:
-    analyze(static_cast<StructPattern *>(pattern));
+    analyze(pattern->as<StructPattern>());
     break;
   case AstNodeKind::SlicePattern:
-    analyze(static_cast<SlicePattern *>(pattern));
+    analyze(pattern->as<SlicePattern>());
     break;
   case AstNodeKind::OrPattern:
-    analyze(static_cast<OrPattern *>(pattern));
+    analyze(pattern->as<OrPattern>());
     break;
   case AstNodeKind::ExprPattern:
-    analyze(static_cast<ExprPattern *>(pattern));
+    analyze(pattern->as<ExprPattern>());
     break;
   case AstNodeKind::RangePattern:
-    analyze(static_cast<RangePattern *>(pattern));
+    analyze(pattern->as<RangePattern>());
     break;
   case AstNodeKind::VariantPattern:
-    analyze(static_cast<VariantPattern *>(pattern));
+    analyze(pattern->as<VariantPattern>());
     break;
   default:
     assert(false && "not a pattern or not implemented yet");
@@ -224,16 +224,16 @@ void Analyzer::analyze(VariantPattern *pattern) {}
 void Analyzer::analyze(Statement *stmt) {
   switch (stmt->kind()) {
   case AstNodeKind::VarDecl:
-    analyze(static_cast<VarDecl *>(stmt));
+    analyze(stmt->as<VarDecl>());
     break;
   case AstNodeKind::DeferStmt:
-    analyze(static_cast<DeferStmt *>(stmt));
+    analyze(stmt->as<DeferStmt>());
     break;
   case AstNodeKind::ExprStmt:
-    analyze(static_cast<ExprStmt *>(stmt));
+    analyze(stmt->as<ExprStmt>());
     break;
   case AstNodeKind::TopLevelDeclStmt:
-    analyze(static_cast<TopLevelDeclStmt *>(stmt));
+    analyze(stmt->as<TopLevelDeclStmt>());
     break;
   default:
     assert(false && "not a statement or not implemented yet");
@@ -256,70 +256,70 @@ void Analyzer::analyze(TopLevelDeclStmt *stmt) {}
 void Analyzer::analyze(Expression *expr) {
   switch (expr->kind()) {
   case AstNodeKind::IfExpr:
-    analyze(static_cast<IfExpr *>(expr));
+    analyze(expr->as<IfExpr>());
     break;
   case AstNodeKind::MatchExpr:
-    analyze(static_cast<MatchExpr *>(expr));
+    analyze(expr->as<MatchExpr>());
     break;
   case AstNodeKind::ForExpr:
-    analyze(static_cast<ForExpr *>(expr));
+    analyze(expr->as<ForExpr>());
     break;
   case AstNodeKind::WhileExpr:
-    analyze(static_cast<WhileExpr *>(expr));
+    analyze(expr->as<WhileExpr>());
     break;
   case AstNodeKind::IdentifierExpr:
-    analyze(static_cast<IdentifierExpr *>(expr));
+    analyze(expr->as<IdentifierExpr>());
     break;
   case AstNodeKind::ReturnExpr:
-    analyze(static_cast<ReturnExpr *>(expr));
+    analyze(expr->as<ReturnExpr>());
     break;
   case AstNodeKind::BreakExpr:
-    analyze(static_cast<BreakExpr *>(expr));
+    analyze(expr->as<BreakExpr>());
     break;
   case AstNodeKind::ContinueExpr:
-    analyze(static_cast<ContinueExpr *>(expr));
+    analyze(expr->as<ContinueExpr>());
     break;
   case AstNodeKind::LiteralExpr:
-    analyze(static_cast<LiteralExpr *>(expr));
+    analyze(expr->as<LiteralExpr>());
     break;
   case AstNodeKind::TupleExpr:
-    analyze(static_cast<TupleExpr *>(expr));
+    analyze(expr->as<TupleExpr>());
     break;
   case AstNodeKind::ArrayExpr:
-    analyze(static_cast<ArrayExpr *>(expr));
+    analyze(expr->as<ArrayExpr>());
     break;
   case AstNodeKind::BinaryExpr:
-    analyze(static_cast<BinaryExpr *>(expr));
+    analyze(expr->as<BinaryExpr>());
     break;
   case AstNodeKind::UnaryExpr:
-    analyze(static_cast<UnaryExpr *>(expr));
+    analyze(expr->as<UnaryExpr>());
     break;
   case AstNodeKind::CallExpr:
-    analyze(static_cast<CallExpr *>(expr));
+    analyze(expr->as<CallExpr>());
     break;
   case AstNodeKind::AssignExpr:
-    analyze(static_cast<AssignExpr *>(expr));
+    analyze(expr->as<AssignExpr>());
     break;
   case AstNodeKind::AssignOpExpr:
-    analyze(static_cast<AssignOpExpr *>(expr));
+    analyze(expr->as<AssignOpExpr>());
     break;
   case AstNodeKind::FieldAccessExpr:
-    analyze(static_cast<FieldAccessExpr *>(expr));
+    analyze(expr->as<FieldAccessExpr>());
     break;
   case AstNodeKind::IndexExpr:
-    analyze(static_cast<IndexExpr *>(expr));
+    analyze(expr->as<IndexExpr>());
     break;
   case AstNodeKind::RangeExpr:
-    analyze(static_cast<RangeExpr *>(expr));
+    analyze(expr->as<RangeExpr>());
     break;
   case AstNodeKind::ComptimeExpr:
-    analyze(static_cast<ComptimeExpr *>(expr));
+    analyze(expr->as<ComptimeExpr>());
     break;
   case AstNodeKind::BlockExpression:
-    analyze(static_cast<BlockExpression *>(expr));
+    analyze(expr->as<BlockExpression>());
     break;
   case AstNodeKind::MLIROp:
-    analyze(static_cast<MLIROp *>(expr));
+    analyze(expr->as<MLIROp>());
     break;
   default:
     assert(false && "not an expression or not implemented yet");
@@ -357,12 +357,12 @@ void Analyzer::analyze(ArrayExpr *expr) {
     return;
   }
 
-  auto literal_kind = static_cast<LiteralExpr *>(first)->type;
+  auto literal_kind = first->as<LiteralExpr>()->type;
   for (auto &elem : expr->elements) {
     if (elem->kind() != AstNodeKind::LiteralExpr) {
       return;
     }
-    auto literal = static_cast<LiteralExpr *>(elem.get());
+    auto literal = elem->as<LiteralExpr>();
     if (literal->type != literal_kind) {
       return;
     }
@@ -400,43 +400,43 @@ void Analyzer::analyze(IdentifierExpr *expr) {}
 void Analyzer::analyze(Type *type) {
   switch (type->kind()) {
   case AstNodeKind::PrimitiveType:
-    analyze(static_cast<PrimitiveType *>(type));
+    analyze(type->as<PrimitiveType>());
     break;
   case AstNodeKind::TupleType:
-    analyze(static_cast<TupleType *>(type));
+    analyze(type->as<TupleType>());
     break;
   case AstNodeKind::FunctionType:
-    analyze(static_cast<FunctionType *>(type));
+    analyze(type->as<FunctionType>());
     break;
   case AstNodeKind::ReferenceType:
-    analyze(static_cast<ReferenceType *>(type));
+    analyze(type->as<ReferenceType>());
     break;
   case AstNodeKind::SliceType:
-    analyze(static_cast<SliceType *>(type));
+    analyze(type->as<SliceType>());
     break;
   case AstNodeKind::ArrayType:
-    analyze(static_cast<ArrayType *>(type));
+    analyze(type->as<ArrayType>());
     break;
   case AstNodeKind::TraitType:
-    analyze(static_cast<TraitType *>(type));
+    analyze(type->as<TraitType>());
     break;
   case AstNodeKind::IdentifierType:
-    analyze(static_cast<IdentifierType *>(type));
+    analyze(type->as<IdentifierType>());
     break;
   case AstNodeKind::StructType:
-    analyze(static_cast<StructType *>(type));
+    analyze(type->as<StructType>());
     break;
   case AstNodeKind::EnumType:
-    analyze(static_cast<EnumType *>(type));
+    analyze(type->as<EnumType>());
     break;
   case AstNodeKind::UnionType:
-    analyze(static_cast<UnionType *>(type));
+    analyze(type->as<UnionType>());
     break;
   case AstNodeKind::ExprType:
-    analyze(static_cast<ExprType *>(type));
+    analyze(type->as<ExprType>());
     break;
   case AstNodeKind::MLIRType:
-    analyze(static_cast<MLIRType *>(type));
+    analyze(type->as<MLIRType>());
     break;
   default:
     assert(false && "not a type or not implemented yet");

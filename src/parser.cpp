@@ -1,6 +1,7 @@
 #include "parser.hpp"
 #include "ast.hpp"
 #include "lexer.hpp"
+#include "llvm/Support/raw_ostream.h"
 #include <filesystem>
 #include <memory>
 #include <optional>
@@ -645,9 +646,12 @@ std::unique_ptr<Parameter> Parser::parseParam() {
   auto pattern = parsePattern();
   consumeKind(TokenKind::Colon);
   auto type = parseType();
+  // declare the parameter in the current scope
+
   std::vector<std::unique_ptr<Type>> trait_bounds;
   // if type is primitive type and it is "type" then check for impl Trait
-  if (auto primitive_type = dynamic_cast<PrimitiveType *>(type.get())) {
+  if (type->kind() == AstNodeKind::PrimitiveType) {
+    auto primitive_type = type->as<PrimitiveType>();
     if (primitive_type->type_kind == PrimitiveType::PrimitiveTypeKind::type) {
       if (isPeek(TokenKind::KeywordImpl)) {
         consume();
@@ -908,6 +912,9 @@ std::unique_ptr<Type> Parser::parseType() {
     if (isPeek2(TokenKind::RParen) || isPeek2(TokenKind::Comma) ||
         isPeek2(TokenKind::LBrace) || isPeek2(TokenKind::Equal)) {
       auto token = consume();
+      if (auto var = context->var_table.lookup(token_str)) {
+        llvm::errs() << "Found " << token_str << "\n";
+      }
       return std::make_unique<IdentifierType>(token.value(), token_str);
     }
   }
