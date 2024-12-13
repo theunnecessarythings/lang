@@ -409,11 +409,12 @@ struct TraitDecl : public TopLevelDecl {
 };
 
 struct ImplDecl : public TopLevelDecl {
-  std::string type;
+  // std::string type;
+  std::unique_ptr<Type> type;
   std::vector<std::unique_ptr<Type>> traits;
   std::vector<std::unique_ptr<Function>> functions;
 
-  ImplDecl(Token token, std::string type,
+  ImplDecl(Token token, std::unique_ptr<Type> type,
            std::vector<std::unique_ptr<Type>> traits,
            std::vector<std::unique_ptr<Function>> functions)
       : TopLevelDecl(std::move(token)), type(std::move(type)),
@@ -624,6 +625,10 @@ struct TupleExpr : public Expression {
 
 struct ArrayExpr : public Expression {
   std::vector<std::unique_ptr<Expression>> elements;
+
+  struct ExtraData {
+    bool is_const = false;
+  } extra;
 
   ArrayExpr(Token token, std::vector<std::unique_ptr<Expression>> elements)
       : Expression(std::move(token)), elements(std::move(elements)) {}
@@ -1147,6 +1152,7 @@ struct AstDumper {
   int cur_indent = 0;
   std::ostringstream output_stream;
   bool skip_import = false;
+  bool as_type = false;
 
   std::string toString() const { return output_stream.str(); }
 
@@ -1157,5 +1163,6 @@ struct AstDumper {
     return str;
   }
 
-  AstDumper(bool skip_import = false) : skip_import(skip_import) {}
+  AstDumper(bool skip_import = false, bool as_type = false)
+      : skip_import(skip_import), as_type(as_type) {}
 };

@@ -665,13 +665,13 @@ void AstDumper::dump(PrimitiveType *type) {
 }
 
 void AstDumper::dump(TupleType *type) {
-  output_stream << "(";
+  output_stream << (as_type ? "tuple<" : "(");
   for (size_t i = 0; i < type->elements.size(); i++) {
     dump(type->elements[i].get());
     if (i != type->elements.size() - 1)
       output_stream << ", ";
   }
-  output_stream << ")";
+  output_stream << (as_type ? ">" : ")");
 }
 
 void AstDumper::dump(FunctionType *type) {
@@ -697,10 +697,11 @@ void AstDumper::dump(SliceType *type) {
 }
 
 void AstDumper::dump(ArrayType *type) {
-  output_stream << "[";
+  output_stream << (as_type ? "array<" : "[");
   dump(type->size.get());
-  output_stream << "]";
+  output_stream << (as_type ? "x" : "]");
   dump(type->base.get());
+  output_stream << (as_type ? ">" : "");
 }
 
 void AstDumper::dump(TraitType *type) { output_stream << type->name; }
@@ -813,7 +814,10 @@ void AstDumper::dump(VariantPattern *pattern) {
 void AstDumper::dump(TopLevelDeclStmt *stmt) { dump(stmt->decl.get()); }
 
 void AstDumper::dump(MLIRType *type) {
-  output_stream << "@mlir_type(" << type->type << ")";
+  if (as_type)
+    output_stream << type->type.substr(1, type->type.size() - 2);
+  else
+    output_stream << "@mlir_type(" << type->type << ")";
 }
 
 void AstDumper::dump(MLIRAttribute *attr) {

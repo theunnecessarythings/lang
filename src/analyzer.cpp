@@ -97,15 +97,17 @@ void Analyzer::analyze(ImplDecl *impl) {
     analyze(trait.get());
   }
 
+  static AstDumper dumper;
   for (auto &func : impl->functions) {
+    auto type = dumper.dump<Type>(impl->type.get());
     func->decl->extra.is_method = true;
-    func->decl->extra.parent_name = impl->type;
+    func->decl->extra.parent_name = type;
     // check impl->type is a struct, enum or union
-    if (context->struct_table.count(impl->type)) {
+    if (context->struct_table.count(type)) {
       func->decl->extra.parent_kind = AstNodeKind::StructDecl;
-    } else if (context->enum_table.count(impl->type)) {
+    } else if (context->enum_table.count(type)) {
       func->decl->extra.parent_kind = AstNodeKind::EnumDecl;
-    } else if (context->union_table.count(impl->type)) {
+    } else if (context->union_table.count(type)) {
       func->decl->extra.parent_kind = AstNodeKind::UnionDecl;
     }
 
@@ -120,7 +122,7 @@ void Analyzer::analyze(ImplDecl *impl) {
         auto &param = func->decl->parameters[0];
         if (param->type->kind() == AstNodeKind::IdentifierType) {
           auto id_type = static_cast<IdentifierType *>(param->type.get());
-          if (id_type->name == "Self" || id_type->name == impl->type) {
+          if (id_type->name == "Self" || id_type->name == type) {
             func->decl->parameters.erase(func->decl->parameters.begin());
           } else {
             context->reportError(
@@ -239,7 +241,11 @@ void Analyzer::analyze(Statement *stmt) {
   }
 }
 
-void Analyzer::analyze(VarDecl *decl) {}
+void Analyzer::analyze(VarDecl *decl) {
+  if (decl->initializer) {
+    analyze(decl->initializer->get());
+  }
+}
 
 void Analyzer::analyze(DeferStmt *stmt) {}
 
@@ -312,6 +318,9 @@ void Analyzer::analyze(Expression *expr) {
   case AstNodeKind::BlockExpression:
     analyze(static_cast<BlockExpression *>(expr));
     break;
+  case AstNodeKind::MLIROp:
+    analyze(static_cast<MLIROp *>(expr));
+    break;
   default:
     assert(false && "not an expression or not implemented yet");
     break;
@@ -336,7 +345,30 @@ void Analyzer::analyze(LiteralExpr *expr) {}
 
 void Analyzer::analyze(TupleExpr *expr) {}
 
-void Analyzer::analyze(ArrayExpr *expr) {}
+void Analyzer::analyze(ArrayExpr *expr) {
+  // 1. all elements must have the same type (handles in MLIR)
+  // 2. if all elements are literals then mark it as a const array
+
+  if (expr->elements.size() == 0) {
+    return;
+  }
+  auto first = expr->elements[0].get();
+  if (first->kind() != AstNodeKind::LiteralExpr) {
+    return;
+  }
+
+  auto literal_kind = static_cast<LiteralExpr *>(first)->type;
+  for (auto &elem : expr->elements) {
+    if (elem->kind() != AstNodeKind::LiteralExpr) {
+      return;
+    }
+    auto literal = static_cast<LiteralExpr *>(elem.get());
+    if (literal->type != literal_kind) {
+      return;
+    }
+  }
+  expr->extra.is_const = true;
+}
 
 void Analyzer::analyze(BinaryExpr *expr) {}
 
@@ -356,7 +388,12 @@ void Analyzer::analyze(RangeExpr *expr) {}
 
 void Analyzer::analyze(ComptimeExpr *expr) {}
 
-void Analyzer::analyze(BlockExpression *expr) { NEW_SCOPE(); }
+void Analyzer::analyze(BlockExpression *expr) {
+  NEW_SCOPE();
+  for (auto &stmt : expr->statements) {
+    analyze(stmt.get());
+  }
+}
 
 void Analyzer::analyze(IdentifierExpr *expr) {}
 
@@ -398,6 +435,9 @@ void Analyzer::analyze(Type *type) {
   case AstNodeKind::ExprType:
     analyze(static_cast<ExprType *>(type));
     break;
+  case AstNodeKind::MLIRType:
+    analyze(static_cast<MLIRType *>(type));
+    break;
   default:
     assert(false && "not a type or not implemented yet");
     break;
@@ -427,6 +467,12 @@ void Analyzer::analyze(EnumType *type) {}
 void Analyzer::analyze(UnionType *type) {}
 
 void Analyzer::analyze(ExprType *type) {}
+
+void Analyzer::analyze(MLIRType *type) {}
+
+void Analyzer::analyze(MLIRAttribute *type) {}
+
+void Analyzer::analyze(MLIROp *type) {}
 
 void Analyzer::analyze(StructField *field) {}
 

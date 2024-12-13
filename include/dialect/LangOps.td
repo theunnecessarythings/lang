@@ -210,7 +210,7 @@ def StructAccessOp : Lang_Op<"struct_access", [Pure]> {
     Access the Nth element of a value returning a struct type.
   }];
 
-  let arguments = (ins Lang_StructType:$input, I64Attr:$index);
+  let arguments = (ins StructType:$input, I64Attr:$index);
   let results = (outs AnyType:$output);
 
   let assemblyFormat = [{
@@ -243,7 +243,7 @@ def StructConstantOp : Lang_Op<"struct_constant", [ConstantLike, Pure]> {
   }];
 
   let arguments = (ins ArrayAttr:$value);
-  let results = (outs Lang_StructType:$output);
+  let results = (outs StructType:$output);
 
   let assemblyFormat = "$value attr-dict `:` type($output)";
 
@@ -262,7 +262,7 @@ def CreateStructOp : Lang_Op<"struct_create"> {
   let arguments = (ins Variadic<AnyType>:$fields);
 
   // Define the result type
-  let results = (outs Lang_StructType:$result);
+  let results = (outs StructType:$result);
 
   // Assembly format for the operation
   let assemblyFormat = "$fields `:` type($fields) attr-dict `->` type($result)";
@@ -418,6 +418,20 @@ def TupleOp : Lang_Op<"tuple", []> {
   let assemblyFormat = "$operands `:` type($operands) attr-dict `->` type($result)";
 }
 
+def ArrayOp : Lang_Op<"array", []> {
+  let summary = "Array operation";
+  let description = [{
+    The `lang.array` operation creates an array value from a list of values.
+  }];
+
+  let arguments = (ins Variadic<AnyType>:$values);
+  let results = (outs AnyType:$result);
+
+  let assemblyFormat = "$values `:` type($values) attr-dict `->` type($result)";
+
+  let hasVerifier = 1;
+}
+
 def LoadOp : Lang_Op<"load", []> {
   let summary = "Load operation";
   let description = [{
@@ -464,19 +478,17 @@ def IndexAccessOp: Lang_Op<"index_access", []> {
   let assemblyFormat = "$container `[` $index `:` type($index) `]` attr-dict `:` type($container) `->` type($result)";
 }
 
-def ComptimeOp: Lang_Op<"comptime", [IsolatedFromAbove]> {
-  let summary = "Comptime operation";
+
+def CreateTypeOp: Lang_Op<"create_type", []> {
+  let summary = "Create type operation";
   let description = [{
-    The `lang.comptime` operation is used to evaluate a constant expression at compile time.
-    It essentially wraps any other operation or set of operations. 
-    Has a single region that takes arguments of the operation it wraps and returns the result.
+    The `lang.create_type` operation is used to create a new type from attributes.
   }];
 
-  let regions = (region AnyRegion:$body);
-  let arguments = (ins Variadic<AnyType>:$operands);
-  let results = (outs AnyType:$result);
+  let arguments = (ins AnyAttr:$attrs);
+  let results = (outs TypeValue:$result);
 
-  let assemblyFormat = "$operands `:` type($operands) attr-dict `->` type($result) $body";
+  let assemblyFormat = "attr-dict `->` type($result)";
 }
 
 #endif // LANG_OPS

@@ -4,16 +4,22 @@
 #include "dialect/LangDialect.h"
 #include "dialect/LangOps.h"
 #include "mlir/AsmParser/AsmParser.h"
+#include "mlir/AsmParser/AsmParserState.h"
+#include "mlir/IR/AsmState.h"
+#include "mlir/IR/Attributes.h"
 #include "mlir/IR/Builders.h"
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/IR/Diagnostics.h"
 #include "mlir/IR/MLIRContext.h"
 #include "mlir/IR/Verifier.h"
+#include "mlir/Support/LLVM.h"
 #include "llvm/ADT/ScopedHashTable.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/StringRef.h"
 #include <cassert>
 #include <memory>
+#include <ranges>
+#include <vector>
 
 using llvm::StringRef;
 
@@ -24,6 +30,27 @@ using llvm::StringRef;
       struct_table);                                                           \
   llvm::ScopedHashTableScope<mlir::lang::StructType, StringRef>                \
       struct_name_scope(struct_name_table);
+
+class AnnotatingListener : public mlir::OpBuilder::Listener {
+public:
+  AnnotatingListener(mlir::OpBuilder &builder, mlir::StringAttr key,
+                     mlir::Attribute value)
+      : key(key), value(value), builder(builder) {
+    builder.setListener(this);
+  }
+
+  void notifyOperationInserted(mlir::Operation *op,
+                               mlir::OpBuilder::InsertPoint prev) override {
+    op->setAttr(key, value);
+  }
+
+  ~AnnotatingListener() override { builder.setListener(nullptr); }
+
+private:
+  mlir::StringAttr key;
+  mlir::Attribute value;
+  mlir::OpBuilder &builder;
+};
 
 class LangGenImpl {
 public:
@@ -51,32 +78,10 @@ public:
     the_module = mlir::ModuleOp::create(builder.getUnknownLoc());
 
     for (auto &f : program->items) {
-      if (f->kind() == AstNodeKind::Function) {
-        auto func = langGen(dynamic_cast<Function *>(f.get()));
-        if (failed(func)) {
-          return nullptr;
-        }
-      } else if (f->kind() == AstNodeKind::TupleStructDecl) {
-        auto tuple_struct = langGen(dynamic_cast<TupleStructDecl *>(f.get()));
-        if (failed(tuple_struct)) {
-          return nullptr;
-        }
-      } else if (f->kind() == AstNodeKind::StructDecl) {
-        auto struct_decl = langGen(dynamic_cast<StructDecl *>(f.get()));
-        if (failed(struct_decl)) {
-          return nullptr;
-        }
-      } else if (f->kind() == AstNodeKind::ImplDecl) {
-        auto impl_decl = langGen(dynamic_cast<ImplDecl *>(f.get()));
-        if (failed(impl_decl)) {
-          return nullptr;
-        }
-      } else if (f->kind() == AstNodeKind::ImportDecl) {
-      } else {
-        the_module.emitError("unsupported top-level item");
+      if (failed(langGen(f.get()))) {
+        return nullptr;
       }
     }
-
     if (failed(mlir::verify(the_module))) {
       the_module.emitError("module verification error");
       return nullptr;
@@ -94,6 +99,8 @@ private:
   llvm::ScopedHashTable<mlir::lang::StructType, StringRef> struct_name_table;
   llvm::StringMap<mlir::lang::FuncOp> function_map;
 
+  llvm::SmallVector<mlir::Value, 16> type_values;
+
   AstDumper dumper;
 
   mlir::Location loc(const TokenSpan &loc) {
@@ -103,6 +110,13 @@ private:
             .Buffer->getBufferIdentifier(),
         loc.line_no, loc.col_start);
   }
+
+  int insertType(mlir::Value value) {
+    type_values.push_back(value);
+    return type_values.size() - 1;
+  }
+
+  mlir::Value getTypeValue(int index) { return type_values[index]; }
 
   std::string mangle(llvm::StringRef base, llvm::ArrayRef<mlir::Type> types) {
     std::string mangled_name = base.str();
@@ -115,6 +129,20 @@ private:
       rso << param;
     }
     return rso.str();
+  }
+
+  mlir::LogicalResult langGen(TopLevelDecl *decl) {
+    if (decl->kind() == AstNodeKind::Function) {
+      return langGen(dynamic_cast<Function *>(decl));
+    } else if (decl->kind() == AstNodeKind::TupleStructDecl) {
+      return langGen(dynamic_cast<TupleStructDecl *>(decl));
+    } else if (decl->kind() == AstNodeKind::StructDecl) {
+      return langGen(dynamic_cast<StructDecl *>(decl));
+    } else if (decl->kind() == AstNodeKind::ImplDecl) {
+      return langGen(dynamic_cast<ImplDecl *>(decl));
+    } else if (decl->kind() == AstNodeKind::ImportDecl) {
+    }
+    return the_module.emitError("unsupported top-level item");
   }
 
   mlir::LogicalResult langGen(Function *func) {
@@ -281,7 +309,8 @@ private:
       }
       field_types.push_back(type.value());
     }
-    auto struct_type = mlir::lang::StructType::get(field_types, decl->name);
+    auto struct_type = mlir::lang::StructType::get(builder.getContext(),
+                                                   decl->name, field_types);
     // declare struct type
     if (failed(declare(decl->name, struct_type))) {
       emitError(span, "redeclaration of struct type");
@@ -299,8 +328,8 @@ private:
       }
       element_types.push_back(field_type.value());
     }
-    auto struct_type =
-        mlir::lang::StructType::get(element_types, struct_decl->name);
+    auto struct_type = mlir::lang::StructType::get(
+        builder.getContext(), struct_decl->name, element_types);
     struct_table.insert(struct_decl->name, struct_decl);
     if (failed(declare(struct_decl->name, struct_type))) {
       return mlir::emitError(loc(struct_decl->token.span),
@@ -311,18 +340,28 @@ private:
   }
 
   mlir::LogicalResult langGen(ImplDecl *impl_decl) {
+    static AstDumper dumper(false, true);
+    auto type = dumper.dump<Type>(impl_decl->type.get());
     NEW_SCOPE()
     mlir::OpBuilder::InsertionGuard guard(builder);
-
-    auto parent_type = type_table.lookup(impl_decl->type);
+    auto parent_type = type_table.lookup(type);
     if (!parent_type) {
-      // check if its an mlir type
-      parent_type = mlir::parseType(impl_decl->type, builder.getContext());
+      // check if its an mlir type (TODO: add unranked tensor and memref)
+      // static const std::string mlir_types[] = {"complex", "function",
+      // "memref",
+      //                                          "opaque",  "tensor", "tuple",
+      //                                          "vector"};
+      // if (std::find(std::begin(mlir_types), std::end(mlir_types), type) !=
+      //     std::end(mlir_types)) {
+      //   return mlir::emitError(loc(impl_decl->token.span),
+      //                          "mlir type not found");
+      // }
+      parent_type = mlir::parseType(type, builder.getContext());
       if (!parent_type) {
         return mlir::emitError(loc(impl_decl->token.span),
                                "parent type not found");
       }
-      type_table.insert(impl_decl->type, parent_type);
+      type_table.insert(type, parent_type);
     }
     // auto struct_type = mlir::dyn_cast<mlir::lang::StructType>(parent_type);
     if (failed(declare("Self", parent_type))) {
@@ -372,6 +411,8 @@ private:
       return langGen(expr);
     } else if (auto expr = dynamic_cast<ExprStmt *>(stmt)) {
       return langGen(expr->expr.get());
+    } else if (auto toplevel = dynamic_cast<TopLevelDeclStmt *>(stmt)) {
+      return langGen(toplevel->decl.get());
     }
     return mlir::emitError(loc(stmt->token.span), "unsupported statement");
   }
@@ -433,6 +474,9 @@ private:
       } else if (primitive_type->type_kind ==
                  PrimitiveType::PrimitiveTypeKind::Void) {
         return builder.getNoneType();
+      } else if (primitive_type->type_kind ==
+                 PrimitiveType::PrimitiveTypeKind::type) {
+        return mlir::lang::LangType::get(builder.getContext());
       } else {
         mlir::emitError(loc(primitive_type->token.span), "unsupported type");
       }
@@ -465,96 +509,173 @@ private:
       if (failed(base_type)) {
         return mlir::failure();
       }
-      return mlir::lang::SliceType::get(base_type.value());
+      return mlir::lang::SliceType::get(builder.getContext(),
+                                        base_type.value());
     } else if (type->kind() == AstNodeKind::ArrayType) {
-      // auto array_type = static_cast<ArrayType *>(type);
-      // auto base_type = getType(array_type->base.get());
-      // if (failed(base_type)) {
-      //   return mlir::failure();
+      auto array_type = static_cast<ArrayType *>(type);
+      auto base_type = getType(array_type->base.get());
+      if (failed(base_type)) {
+        return mlir::failure();
+      }
+      auto size_expr = array_type->size.get();
+      AnnotatingListener listener(builder, builder.getStringAttr("comptime"),
+                                  builder.getBoolAttr(true));
+      auto size_value = langGen(size_expr);
+      if (failed(size_value)) {
+        return mlir::failure();
+      }
+      int64_t type_index = insertType(size_value.value());
+      return mlir::lang::ArrayType::get(builder.getContext(), base_type.value(),
+                                        builder.getI64IntegerAttr(type_index),
+                                        builder.getBoolAttr(true));
+      // return mlir::MemRefType::get(
+      //     {std::numeric_limits<int64_t>::min(), type_index},
+      //     base_type.value());
+      // if (size_expr->kind() != AstNodeKind::LiteralExpr) {
+      //   return mlir::emitError(loc(size_expr->token.span),
+      //                          "unsupported array size expression");
       // }
+      // auto size_literal = static_cast<LiteralExpr *>(size_expr);
+      // auto size = std::get<int>(size_literal->value);
+      // return mlir::lang::ArrayType::get(base_type.value(), size);
     }
     return mlir::emitError(loc(type->token.span),
                            "unsupported type " + toString(type->kind()));
   }
 
-  mlir::FailureOr<mlir::Value> langGen(Expression *expr,
-                                       bool is_comptime = false) {
-    mlir::FailureOr<mlir::Value> result;
+  mlir::FailureOr<mlir::Value> langGen(Expression *expr) {
     if (auto e = dynamic_cast<LiteralExpr *>(expr)) {
-      result = langGen(e);
+      return langGen(e);
     } else if (auto e = dynamic_cast<MLIRAttribute *>(expr)) {
-      result = langGen(e);
+      return langGen(e);
     } else if (auto e = dynamic_cast<MLIRType *>(expr)) {
-      result = langGen(e);
+      return langGen(e);
     } else if (auto e = dynamic_cast<ReturnExpr *>(expr)) {
-      result = langGen(e);
+      return langGen(e);
     } else if (auto e = dynamic_cast<BlockExpression *>(expr)) {
-      result = langGen(e);
+      return langGen(e);
     } else if (auto e = dynamic_cast<VarDecl *>(expr)) {
-      result = langGen(e);
+      return langGen(e);
     } else if (auto e = dynamic_cast<CallExpr *>(expr)) {
-      result = langGen(e);
+      return langGen(e);
     } else if (auto e = dynamic_cast<FieldAccessExpr *>(expr)) {
-      result = langGen(e);
+      return langGen(e);
     } else if (auto e = dynamic_cast<IdentifierExpr *>(expr)) {
-      result = langGen(e);
+      return langGen(e);
     } else if (auto e = dynamic_cast<AssignExpr *>(expr)) {
-      result = langGen(e);
+      return langGen(e);
     } else if (auto e = dynamic_cast<MLIROp *>(expr)) {
-      result = langGen(e);
+      return langGen(e);
     } else if (auto e = dynamic_cast<BinaryExpr *>(expr)) {
-      result = langGen(e);
+      return langGen(e);
     } else if (auto e = dynamic_cast<IfExpr *>(expr)) {
-      result = langGen(e);
+      return langGen(e);
     } else if (auto e = dynamic_cast<YieldExpr *>(expr)) {
-      result = langGen(e);
+      return langGen(e);
     } else if (auto e = dynamic_cast<TupleExpr *>(expr)) {
-      result = langGen(e);
+      return langGen(e);
     } else if (auto e = dynamic_cast<UnaryExpr *>(expr)) {
-      result = langGen(e);
+      return langGen(e);
     } else if (auto e = dynamic_cast<IndexExpr *>(expr)) {
-      result = langGen(e);
+      return langGen(e);
     } else if (auto e = dynamic_cast<ComptimeExpr *>(expr)) {
-      result = langGen(e);
+      return langGen(e);
+    } else if (auto e = dynamic_cast<ArrayExpr *>(expr)) {
+      return langGen(e);
     } else
       return mlir::emitError(loc(expr->token.span), "unsupported expression " +
                                                         toString(expr->kind()));
-    if (is_comptime) {
-      result->getDefiningOp()->setAttr("comptime", builder.getBoolAttr(true));
+  }
+
+  mlir::FailureOr<mlir::Value> langGen(ArrayExpr *expr) {
+    // if const expr, then create a constant array
+    if (expr->extra.is_const) {
+      mlir::DenseElementsAttr attr;
+      auto base_type =
+          static_cast<LiteralExpr *>(expr->elements[0].get())->type;
+      auto values = expr->elements | std::views::transform([](auto &e) {
+                      return static_cast<LiteralExpr *>(e.get())->value;
+                    });
+
+      switch (base_type) {
+      case LiteralExpr::LiteralType::Int: {
+        auto int_range = values | std::views::transform([](auto v) {
+                           return mlir::APInt(64, std::get<int>(v));
+                         });
+        std::vector<mlir::APInt> int_values(int_range.begin(), int_range.end());
+        auto shape = mlir::RankedTensorType::get(
+            {static_cast<long>(values.size())}, builder.getI64Type());
+        attr = mlir::DenseElementsAttr::get(shape, int_values);
+        break;
+      }
+      case LiteralExpr::LiteralType::Float: {
+        auto float_range = values | std::views::transform([](auto v) {
+                             return mlir::APFloat(std::get<double>(v));
+                           });
+        std::vector<mlir::APFloat> float_values(float_range.begin(),
+                                                float_range.end());
+        auto shape = mlir::RankedTensorType::get(
+            {static_cast<long>(values.size())}, builder.getF64Type());
+        attr = mlir::DenseElementsAttr::get(shape, float_values);
+        break;
+      }
+        // case LiteralExpr::LiteralType::Bool: {
+        //   auto bool_range = values | std::views::transform([](auto v) {
+        //                       return std::get<bool>(v);
+        //                     });
+        //   std::vector<bool> bool_values(bool_range.begin(),
+        //   bool_range.end()); auto shape = mlir::RankedTensorType::get(
+        //       {static_cast<long>(values.size())}, builder.getI1Type());
+        //   auto attr = mlir::DenseElementsAttr::get<bool>(shape,
+        // bool_values);
+        //   break;
+        // }
+
+      case LiteralExpr::LiteralType::Char: {
+        auto char_range = values | std::views::transform([](auto v) {
+                            return std::get<char>(v);
+                          });
+        std::vector<char> char_values(char_range.begin(), char_range.end());
+        auto shape = mlir::RankedTensorType::get(
+            {static_cast<long>(values.size())}, builder.getI8Type());
+        attr = mlir::DenseElementsAttr::get<char>(shape, char_values);
+        break;
+      }
+      default:
+        return mlir::emitError(loc(expr->token.span),
+                               "unsupported array element type");
+      }
+      return builder
+          .create<mlir::lang::ConstantOp>(loc(expr->token.span), attr.getType(),
+                                          attr)
+          .getResult();
     }
-    return result;
+
+    llvm::SmallVector<mlir::Value, 4> values;
+    for (auto &e : expr->elements) {
+      auto value = langGen(e.get());
+      if (failed(value)) {
+        return mlir::failure();
+      }
+      values.push_back(value.value());
+    }
+    auto base_type = values[0].getType();
+    auto array_type = mlir::lang::ArrayType::get(
+        builder.getContext(), base_type,
+        builder.getI64IntegerAttr(values.size()), builder.getBoolAttr(false));
+    return builder
+        .create<mlir::lang::ArrayOp>(loc(expr->token.span), array_type, values)
+        .getResult();
   }
 
   mlir::FailureOr<mlir::Value> langGen(ComptimeExpr *expr) {
-    // Wrap the expression in a comptime op
-    auto value = langGen(expr->expr.get(), true);
+    AnnotatingListener listener(builder, builder.getStringAttr("comptime"),
+                                builder.getBoolAttr(true));
+    auto value = langGen(expr->expr.get());
     if (failed(value)) {
       return mlir::failure();
     }
     return value;
-    // auto value_op = value->getDefiningOp();
-    // auto op = builder.create<mlir::lang::ComptimeOp>(
-    //     loc(expr->token.span), value->getType(),
-    //     value->getDefiningOp()->getOperands());
-    // auto &block = op.getBody().emplaceBlock();
-    // auto locations = llvm::to_vector<4>(
-    //     llvm::map_range(op.getOperands(), [](mlir::Value value) {
-    //       return value.getDefiningOp()->getLoc();
-    //     }));
-    // block.addArguments(op.getOperandTypes(), locations);
-    // value_op->moveBefore(&block, block.end());
-    // // replace operands with block arguments
-    // for (int i = 0; i < (int)op.getNumOperands(); i++) {
-    //   value_op->setOperand(i, block.getArgument(i));
-    // }
-    //
-    // // create a yield op that returns the value
-    // mlir::OpBuilder::InsertionGuard guard(builder);
-    // builder.setInsertionPointToEnd(&block);
-    // builder.create<mlir::lang::YieldOp>(loc(expr->token.span),
-    // value->getType(),
-    //                                     *value);
-    // return op.getResult();
   }
 
   mlir::FailureOr<mlir::Value> langGen(IndexExpr *expr) {
@@ -568,15 +689,42 @@ private:
     }
     auto index_type = index.value().getType();
     auto base_type = base.value().getType();
-    if (!mlir::isa<mlir::lang::SliceType, mlir::lang::ArrayType>(base_type)) {
-      return mlir::emitError(loc(expr->token.span), "base is not a slice type");
+    // if (!mlir::isa<mlir::IndexType>(index_type) &&
+    //     mlir::isa<mlir::IntegerType>(index_type)) {
+    //   // insert cast
+    //   index = builder
+    //               .create<mlir::arith::IndexCastOp>(loc(expr->token.span),
+    //                                                 builder.getIndexType(),
+    //                                                 index.value())
+    //               .getResult();
+    // } else {
+    //   return emitError(loc(expr->token.span), "unsupported index type");
+    // }
+    if (!mlir::isa<mlir::lang::SliceType, mlir::lang::ArrayType,
+                   mlir::TensorType>(base_type)) {
+      return mlir::emitError(loc(expr->token.span),
+                             "base is not a slice type, got ")
+             << base_type;
     }
-    if (index_type != builder.getIntegerType(64)) {
-      return mlir::emitError(loc(expr->token.span), "index is not i64");
+    std::string fn_name = "index__";
+    llvm::raw_string_ostream stream(fn_name);
+    stream << base_type << "_" << index_type;
+    fn_name = stream.str();
+
+    if (!function_map.count(fn_name)) {
+      return mlir::emitError(loc(expr->token.span),
+                             "function " + fn_name + " not found");
     }
-    auto index_op = builder.create<mlir::lang::IndexAccessOp>(
-        loc(expr->token.span), base_type, base.value(), index.value());
-    return index_op.getResult();
+    auto func = function_map[fn_name];
+
+    auto call_op = builder.create<mlir::lang::CallOp>(
+        loc(expr->token.span), func,
+        mlir::ValueRange{base.value(), index.value()});
+    return call_op.getResult(0);
+
+    // auto index_op = builder.create<mlir::lang::IndexAccessOp>(
+    //     loc(expr->token.span), base_type, base.value(), index.value());
+    // return index_op.getResult();
   }
 
   mlir::FailureOr<mlir::Value> langGen(UnaryExpr *expr) {
@@ -612,7 +760,8 @@ private:
       types.push_back(value.value().getType());
     }
     auto struct_name = mangle("anonymous_struct", types);
-    auto struct_type = mlir::lang::StructType::get(types, struct_name);
+    auto struct_type =
+        mlir::lang::StructType::get(builder.getContext(), struct_name, types);
     return builder
         .create<mlir::lang::TupleOp>(loc(expr->token.span), struct_type, values)
         .getResult();
@@ -960,7 +1109,8 @@ private:
 
     if (std::holds_alternative<std::unique_ptr<CallExpr>>(expr->field)) {
       // function/method call
-      auto call_expr = std::get<std::unique_ptr<CallExpr>>(expr->field).get();
+      // auto call_expr =
+      // std::get<std::unique_ptr<CallExpr>>(expr->field).get();
       auto struct_type = mlir::cast<mlir::lang::StructType>(base_type);
       auto struct_name = struct_name_table.lookup(struct_type);
       auto struct_decl = struct_table.lookup(struct_name);
@@ -1123,8 +1273,6 @@ private:
 
   mlir::FailureOr<mlir::Value> langGen(LiteralExpr *literal) {
     if (literal->type == LiteralExpr::LiteralType::Int) {
-      // Create an IntegerLiteral struct instance
-      // auto struct_type = type_table.lookup("IntLiteral");
       mlir::TypedAttr attr = builder.getIntegerAttr(
           builder.getIntegerType(64), std::get<int>(literal->value));
       auto field_value = builder
@@ -1132,11 +1280,6 @@ private:
                                  loc(literal->token.span), attr.getType(), attr)
                              .getResult();
       return field_value;
-      // return builder
-      //     .create<mlir::lang::CreateStructOp>(loc(literal->token.span),
-      //                                         struct_type,
-      //                                         mlir::ValueRange{field_value})
-      //     .getResult();
     } else if (literal->type == LiteralExpr::LiteralType::String) {
       return builder
           .create<mlir::lang::StringConstOp>(

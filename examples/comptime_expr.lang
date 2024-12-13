@@ -7,6 +7,7 @@ fn factorial(n: i64) i64 {
 }
 
 fn fib(n: i64) i64 {
+    // print("fib(%d)", n);
     if n <= 1 {
         return 0;
     } else if n == 1 {
@@ -65,4 +66,19 @@ pub fn main() void {
 }
 
 
+// pub fn main() void {
+//     const fib6 = comptime fib(6);
+//     const fib10 = comptime fib(10);
+//     print("fib(6) -> %d", fib6);
+//     print("fib(10) -> %d", fib10);
+// }
 
+// if a function is not dependent on any runtime values, it can be called at compile time.
+// It doesn't matter what it's predecessors are.
+// 
+// if cond {} else {}
+// for an if expression, the branches individually must be comptime
+
+fn compfn() void {
+
+}

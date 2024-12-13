@@ -827,7 +827,8 @@ std::unique_ptr<Variant> Parser::parseEnumVariant() {
 std::unique_ptr<ImplDecl> Parser::parseImplDecl() {
   NEW_SCOPE();
   auto impl_token = consumeKind(TokenKind::KeywordImpl);
-  auto type = consumeKind(TokenKind::Identifier);
+  auto type = parseType();
+  // auto type = consumeKind(TokenKind::Identifier);
 
   std::vector<std::unique_ptr<Type>> traits;
   if (isPeek(TokenKind::Colon)) {
@@ -853,7 +854,7 @@ std::unique_ptr<ImplDecl> Parser::parseImplDecl() {
     functions.emplace_back(std::move(function));
   }
   consumeKind(TokenKind::RBrace);
-  return std::make_unique<ImplDecl>(impl_token, lexer->tokenToString(type),
+  return std::make_unique<ImplDecl>(impl_token, std::move(type),
                                     std::move(traits), std::move(functions));
 }
 

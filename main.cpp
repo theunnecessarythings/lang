@@ -9,8 +9,11 @@
 #include "mlir/Conversion/ControlFlowToLLVM/ControlFlowToLLVM.h"
 #include "mlir/Conversion/FuncToLLVM/ConvertFuncToLLVM.h"
 #include "mlir/Conversion/MemRefToLLVM/MemRefToLLVM.h"
+#include "mlir/Conversion/Passes.h"
 #include "mlir/Dialect/Affine/Passes.h"
+#include "mlir/Dialect/Arith/Transforms/BufferizableOpInterfaceImpl.h"
 #include "mlir/Dialect/Func/Extensions/AllExtensions.h"
+#include "mlir/Dialect/Func/Transforms/Passes.h"
 #include "mlir/Dialect/LLVMIR/Transforms/InlinerInterfaceImpl.h"
 #include "mlir/Dialect/LLVMIR/Transforms/Passes.h"
 #include "mlir/Dialect/MemRef/IR/MemRef.h"
@@ -212,24 +215,34 @@ int runJit(mlir::ModuleOp module) {
 
 int dumpMLIRLang() {
   mlir::DialectRegistry registry;
+  mlir::registerAllDialects(registry);
   mlir::registerAllExtensions(registry);
+  mlir::arith::registerBufferizableOpInterfaceExternalModels(registry);
+  mlir::cf::registerBufferizableOpInterfaceExternalModels(registry);
+
+  mlir::registerAllPasses();
   mlir::LLVM::registerInlinerInterface(registry);
+  mlir::registerConvertMemRefToLLVMInterface(registry);
+
   mlir::MLIRContext context(registry);
 
   mlir::registerBuiltinDialectTranslation(context);
   mlir::registerLLVMDialectTranslation(context);
-  mlir::registerConvertMemRefToLLVMInterface(registry);
 
   // Load our Dialect in this MLIR Context.
   context.getOrLoadDialect<mlir::lang::LangDialect>();
-  context.getOrLoadDialect<mlir::arith::ArithDialect>();
-  context.getOrLoadDialect<mlir::scf::SCFDialect>();
-
-  context.getOrLoadDialect<mlir::affine::AffineDialect>();
-  context.getOrLoadDialect<mlir::memref::MemRefDialect>();
-  context.getOrLoadDialect<mlir::func::FuncDialect>();
-  context.getOrLoadDialect<mlir::cf::ControlFlowDialect>();
-  context.getOrLoadDialect<mlir::BuiltinDialect>();
+  context.getOrLoadDialect<mlir::tensor::TensorDialect>();
+  context.getOrLoadDialect<mlir::index::IndexDialect>();
+  // context.getOrLoadDialect<mlir::arith::ArithDialect>();
+  // context.getOrLoadDialect<mlir::scf::SCFDialect>();
+  //
+  // context.getOrLoadDialect<mlir::affine::AffineDialect>();
+  // context.getOrLoadDialect<mlir::memref::MemRefDialect>();
+  // context.getOrLoadDialect<mlir::func::FuncDialect>();
+  // context.getOrLoadDialect<mlir::cf::ControlFlowDialect>();
+  // context.getOrLoadDialect<mlir::BuiltinDialect>();
+  // context.getOrLoadDialect<mlir::tensor::TensorDialect>();
+  // context.getOrLoadDialect<mlir::linalg::LinalgDialect>();
 
   mlir::OwningOpRef<mlir::ModuleOp> module;
   llvm::SourceMgr source_mgr;
@@ -250,7 +263,6 @@ int dumpMLIRLang() {
   pm.addPass(mlir::createCSEPass());
 
   pm.addPass(mlir::lang::createComptimeEvalPass());
-  pm.addPass(mlir::lang::createComptimeLoweringPass());
   pm.addPass(mlir::lang::createLowerToAffinePass());
   pm.addPass(mlir::lang::createUnrealizedConversionCastResolverPass());
 
@@ -267,6 +279,12 @@ int dumpMLIRLang() {
   // Add passes to lower the module to LLVM dialect.
   pm.addPass(mlir::createConvertSCFToCFPass());
   pm.addPass(mlir::createCanonicalizerPass());
+
+  mlir::bufferization::OneShotBufferizationOptions bufferization_opts;
+  bufferization_opts.bufferizeFunctionBoundaries = true;
+  pm.addPass(
+      mlir::bufferization::createOneShotBufferizePass(bufferization_opts));
+
   pm.addPass(mlir::createConvertToLLVMPass());
   pm.addPass(mlir::LLVM::createDIScopeForLLVMFuncOpPass());
   pm.addPass(mlir::createReconcileUnrealizedCastsPass());
@@ -346,7 +364,7 @@ int dumpMLIR() {
   if (mlir::failed(pm.run(*module)))
     return 4;
 
-  module->dump();
+  // module->dump();
 
   // Compile the MLIR to LLVM IR.
   runJit(module.get());

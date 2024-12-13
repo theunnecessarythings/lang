@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 3.20.0)
 project(lang LANGUAGES CXX C)
 
 # Set up the project
-set(CMAKE_CXX_STANDARD 17) 
+set(CMAKE_CXX_STANDARD 20) 
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -fuse-ld=lld")
 set(CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} -fuse-ld=lld")
@@ -55,6 +55,7 @@ target_include_directories(liblang PUBLIC include/)
 get_property(dialect_libs GLOBAL PROPERTY MLIR_DIALECT_LIBS)
 get_property(conversion_libs GLOBAL PROPERTY MLIR_CONVERSION_LIBS)
 get_property(extension_libs GLOBAL PROPERTY MLIR_EXTENSION_LIBS)
+get_property(translation_libs GLOBAL PROPERTY MLIR_TRANSLATION_LIBS)
 set(LIBS
     ${dialect_libs}
     ${conversion_libs}

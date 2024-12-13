@@ -29,3 +29,5 @@
 - [ ] Move structs and tuple structs from LLVM to Memref
 - [ ] Field Access out of bounds compile time check
 - [x] MLIROp
+- [ ] Delegate some analysis to analyser.cpp (now empty)
+- [ ] Bug: functions and variables can have the same name

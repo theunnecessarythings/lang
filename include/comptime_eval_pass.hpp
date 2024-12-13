@@ -1,124 +1,67 @@
 #include "dialect/LangOps.h"
-#include "mlir/Analysis/DataFlow/SparseAnalysis.h"
+#include "mlir/Analysis/DataFlowFramework.h"
 #include "mlir/IR/Attributes.h"
 #include "mlir/IR/Operation.h"
 #include "mlir/Pass/Pass.h"
 
 namespace {
 
-/// This is a simple analysis state that represents whether the associated
-/// lattice anchor (either a block or a control-flow edge) is comptime.
-class Comptime : public mlir::AnalysisState {
+class ComptimeState : public mlir::AnalysisState {
 public:
-  Comptime(const Comptime &) = default;
-  Comptime(Comptime &&) = default;
-  Comptime &operator=(const Comptime &) = default;
-  Comptime &operator=(Comptime &&) = default;
-  using AnalysisState::AnalysisState;
+  enum class State { Comptime, Runtime, Uninitialized };
 
-  /// Set the state of the lattice anchor to comptime.
-  mlir::ChangeResult setToComptime();
+  ComptimeState(mlir::LatticeAnchor anchor)
+      : AnalysisState(anchor), currentState(State::Uninitialized) {}
+  ComptimeState(State state, mlir::LatticeAnchor anchor)
+      : AnalysisState(anchor), currentState(state) {}
 
-  mlir::ChangeResult setToRuntime();
+  mlir::ChangeResult join(const ComptimeState &other) {
+    if (currentState == State::Uninitialized) {
+      currentState = other.currentState;
+      return mlir::ChangeResult::Change;
+    }
+    if (other.currentState == State::Uninitialized) {
+      return mlir::ChangeResult::NoChange;
+    }
 
-  /// Get whether the lattice anchor is comptime.
-  bool isComptime() const { return comptime; }
+    if (currentState == State::Comptime &&
+        other.currentState == State::Runtime) {
+      currentState = State::Runtime;
+      return mlir::ChangeResult::Change;
+    }
+    return mlir::ChangeResult::NoChange;
+  }
 
-  /// Print the comptimeness.
-  void print(mlir::raw_ostream &os) const override;
+  State getState() const { return currentState; }
 
-  /// When the state of the lattice anchor is changed to comptime, re-invoke
-  /// subscribed analyses on the operations in the block and on the block
-  /// itself.
-  void onUpdate(mlir::DataFlowSolver *solver) const override;
+  void setState(State s) { currentState = s; }
 
-  /// Subscribe an analysis to changes to the comptimeness.
-  void blockContentSubscribe(mlir::DataFlowAnalysis *analysis) {
-    subscribers.insert(analysis);
+  void print(llvm::raw_ostream &os) const override {
+    os << (currentState == State::Comptime    ? "Comptime"
+           : (currentState == State::Runtime) ? "Runtime"
+                                              : "Uninitialized");
   }
 
 private:
-  /// Whether the lattice anchor is comptime. Optimistically assume that the
-  /// lattice anchor is comptime.
-  bool comptime = true;
-
-  /// A set of analyses that should be updated when this state changes.
-  mlir::SetVector<mlir::DataFlowAnalysis *,
-                  mlir::SmallVector<mlir::DataFlowAnalysis *, 4>,
-                  mlir::SmallPtrSet<mlir::DataFlowAnalysis *, 4>>
-      subscribers;
+  State currentState;
 };
 
-//===----------------------------------------------------------------------===//
-// ComptimeCodeAnalysis
-// ===----------------------------------------------------------------------===//
-
-/// This analysis uses a data-flow solver to determine which control-flow edges
-/// are comptime. This is done by visiting operations with control-flow
-/// semantics and deducing which of their successors are comptime.
-
-class ComptimeCodeAnalysis : public mlir::DataFlowAnalysis {
+class ComptimeStateAnalysis : public mlir::DataFlowAnalysis {
 public:
-  explicit ComptimeCodeAnalysis(mlir::DataFlowSolver &solver);
+  using DataFlowAnalysis::DataFlowAnalysis;
 
-  /// Initialize the analysis by visiting every operation with potential
-  /// control-flow semantics.
-  llvm::LogicalResult initialize(mlir::Operation *top) override;
-
-  /// Visit an operation with control-flow semantics and deduce which of its
-  /// successors are comptime.
-  llvm::LogicalResult visit(mlir::ProgramPoint *point) override;
+  mlir::LogicalResult initialize(mlir::Operation *op) override;
+  mlir::LogicalResult visit(mlir::ProgramPoint *) override;
 
 private:
-  /// Find and mark symbol callables with potentially unknown callsites as
-  /// having overdefined predecessors. `top` is the top-level operation that the
-  /// analysis is operating on.
-  void initializeSymbolCallables(mlir::Operation *top);
-
-  /// Recursively Initialize the analysis on nested regions.
-  llvm::LogicalResult initializeRecursively(mlir::Operation *op);
-
-  /// Visit the given call operation and compute any necessary lattice state.
-  void visitCallOperation(mlir::CallOpInterface call);
-
-  /// Visit the given branch operation with successors and try to determine
-  /// which are comptime from the current block.
-  void visitBranchOperation(mlir::BranchOpInterface branch);
-
-  /// Visit the given region branch operation, which defines regions, and
-  /// compute any necessary lattice state. This also resolves the lattice state
-  /// of both the operation results and any nested regions.
-  void visitRegionBranchOperation(mlir::RegionBranchOpInterface branch);
-
-  /// Visit the given terminator operation that exits a region under an
-  /// operation with control-flow semantics. These are terminators with no CFG
-  /// successors.
-  void visitRegionTerminator(mlir::Operation *op,
-                             mlir::RegionBranchOpInterface branch);
-
-  /// Visit the given terminator operation that exits a callable region. These
-  /// are terminators with no CFG successors.
-  void visitCallableTerminator(mlir::Operation *op,
-                               mlir::CallableOpInterface callable);
-
-  /// Mark the edge between `from` and `to` as runtime.
-  void markEdgeRuntime(mlir::Block *from, mlir::Block *to);
-
-  /// Mark the entry blocks of the operation as runtime.
-  void markEntryBlocksRuntime(mlir::Operation *op);
-
-  /// Get the constant values of the operands of the operation. Returns
-  /// std::nullopt if any of the operand lattices are uninitialized.
-  std::optional<mlir::SmallVector<mlir::Attribute>>
-  getOperandValues(mlir::Operation *op);
-
-  /// The top-level operation the analysis is running on. This is used to detect
-  /// if a callable is outside the scope of the analysis and thus must be
-  /// considered an external callable.
-  mlir::Operation *analysis_scope;
-
-  /// A symbol table used for O(1) symbol lookups during simplification.
-  mlir::SymbolTableCollection symbol_table;
+  mlir::LogicalResult handleOperation(mlir::Operation *op);
+  void setAllResultsComptime(mlir::ArrayRef<ComptimeState *> resultStates,
+                             mlir::ValueRange resultValues);
+  void setAllResultsRuntime(mlir::ArrayRef<ComptimeState *> resultStates,
+                            mlir::ValueRange resultValues);
+  mlir::LogicalResult
+  visitCallOperation(mlir::CallOpInterface op,
+                     mlir::SmallVector<ComptimeState *, 4> &);
 };
 
 } // end anonymous namespace

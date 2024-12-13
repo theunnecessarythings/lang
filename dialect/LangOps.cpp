@@ -66,6 +66,18 @@ void FuncOp::print(OpAsmPrinter &p) {
       getArgAttrsAttrName(), getResAttrsAttrName());
 }
 
+mlir::LogicalResult ArrayOp::verify() {
+  // Check all operands are of the same type.
+  llvm::SmallVector<Type, 4> operandTypes;
+  for (auto operand : getOperands())
+    operandTypes.push_back(operand.getType());
+  if (!llvm::all_of(operandTypes,
+                    [&](Type type) { return type == operandTypes[0]; })) {
+    return emitOpError("requires all operands to be of the same type");
+  }
+  return mlir::success();
+}
+
 // mlir::LogicalResult ReturnOp::verify() {
 //   auto function = cast<FuncOp>((*this)->getParentOp());
 //
@@ -118,7 +130,7 @@ mlir::LogicalResult VarDeclOp::verify() {
     if (mlir::isa<TypeValueType>(varType) &&
         !mlir::isa<TypeValueType>(initType)) {
       auto type_value = mlir::cast<TypeValueType>(varType);
-      varType = type_value.getAliasedType();
+      varType = type_value.getType();
     }
 
     // if literals then
@@ -137,16 +149,26 @@ mlir::LogicalResult VarDeclOp::verify() {
       return success();
     }
 
-    if (varType != initType) {
-      return emitOpError() << "type of 'init_value' (" << initType
-                           << ") does not match 'var_type' (" << varType << ")";
+    if (mlir::isa<mlir::lang::ArrayType>(varType) &&
+        mlir::isa<mlir::lang::ArrayType>(initType)) {
+      auto arrayType = mlir::cast<mlir::lang::ArrayType>(varType);
+      // if array size is comptime then skip for now
+      if (arrayType.getIsComptimeExpr())
+        return success();
     }
+    // TODO: pass through, for now. Add proper checks later
+    // if (varType != initType) {
+    //   return emitOpError() << "type of 'init_value' (" << initType
+    //                        << ") does not match 'var_type' (" << varType <<
+    //                        ")";
+    // }
   }
   return success();
 }
 
 void TypeConstOp::build(OpBuilder &builder, OperationState &state, Type type) {
-  build(builder, state, TypeValueType::get(type), TypeAttr::get(type));
+  build(builder, state, TypeValueType::get(builder.getContext(), type),
+        TypeAttr::get(type));
 }
 
 mlir::OpFoldResult mlir::lang::StructAccessOp::fold(FoldAdaptor adaptor) {

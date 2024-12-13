@@ -82,4 +82,7 @@ struct Analyzer {
   void analyze(EnumDecl *);
   void analyze(ImportDecl *);
   void analyze(TraitDecl *);
+  void analyze(MLIRType *);
+  void analyze(MLIRAttribute *);
+  void analyze(MLIROp *);
 };

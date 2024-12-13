@@ -1,0 +1,5 @@
+// impl @mlir_type("!lang.array<i64,5,false>") {
+//     fn index(self: Self, idx: i64) i64 {
+//         return 0;
+//     }
+// }

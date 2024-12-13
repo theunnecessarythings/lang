@@ -320,7 +320,9 @@ private:
   llvm::LogicalResult mlirGen(ImplDecl *decl) {
     NEW_SCOPE()
     auto span = this->loc(decl->token.span);
-    auto struct_type = type_table.lookup(decl->type);
+    static AstDumper dumper;
+    auto type = dumper.dump<Type>(decl->type.get());
+    auto struct_type = type_table.lookup(type);
     if (!struct_type) {
       emitError(span, "struct type not found");
       return mlir::failure();
