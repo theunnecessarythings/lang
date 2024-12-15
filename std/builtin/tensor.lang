@@ -1,9 +1,4 @@
-// impl tensor(i32) {
-//
-// }
-
 impl @mlir_type("tensor<5xi64>") {
-
     fn index(self: Self, idx: i64) i64 {
         const i = @mlir_op("index.castu", [idx], {}, ["index"]);
         return @mlir_op("tensor.extract", [self, i], {}, ["i64"]);

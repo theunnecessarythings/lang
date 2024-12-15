@@ -1,9 +1,21 @@
-fn Identity(comptime T: type, value: T) T {
-    return value;
+// fn Identity(comptime T: type, value: T) T {
+//     return value;
+// }
+//
+// pub fn main() void {
+//     const int_id = Identity(i32, 5);
+//     const float_id = Identity(f32, 3.14);
+//     const string_id = Identity(String, "hello");
+// }
+
+fn add_N(comptime N: i64, a: i64, b: i64) i64 {
+    return a + b + N + 3;
 }
 
 pub fn main() void {
-    const int_id = Identity(i32, 5);
-    const float_id = Identity(f32, 3.14);
-    const string_id = Identity(String, "hello");
+    const some_value = add_N(5, 10, 20);
+    const some_other_value = add_N(10, 20, 30);
+
+    print("some_value: %d", some_value);
+    print("some_other_value: %d", some_other_value);
 }

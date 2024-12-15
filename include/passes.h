@@ -16,7 +16,5 @@ std::unique_ptr<mlir::Pass> createLowerToAffinePass();
 std::unique_ptr<mlir::Pass> createLiteralCastPass();
 std::unique_ptr<mlir::Pass> createUnrealizedConversionCastResolverPass();
 std::unique_ptr<mlir::Pass> createComptimeEvalPass();
-std::unique_ptr<mlir::Pass> createComptimeLoweringPass();
-
 } // namespace lang
 } // namespace mlir

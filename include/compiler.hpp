@@ -23,7 +23,7 @@ struct Context {
   llvm::ScopedHashTable<llvm::StringRef, EnumDecl *> enum_table;
   llvm::ScopedHashTable<llvm::StringRef, UnionDecl *> union_table;
   llvm::ScopedHashTable<llvm::StringRef, TraitDecl *> trait_table;
-  llvm::ScopedHashTable<llvm::StringRef, VarDecl *> var_table;
+  llvm::ScopedHashTable<llvm::StringRef, Type *> var_table;
 
   llvm::SourceMgr source_mgr;
   mlir::MLIRContext context;
@@ -91,7 +91,7 @@ struct Context {
     trait_table.insert(name, decl);
   }
 
-  void declareVar(llvm::StringRef name, VarDecl *decl) {
+  void declareVar(llvm::StringRef name, Type *decl) {
     if (var_table.lookup(name)) {
       reportError("Variable " + name.str() + " already declared", &decl->token);
       return;

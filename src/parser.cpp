@@ -18,7 +18,7 @@
       context->union_table);                                                   \
   llvm::ScopedHashTableScope<llvm::StringRef, TraitDecl *> trait_scope(        \
       context->trait_table);                                                   \
-  llvm::ScopedHashTableScope<llvm::StringRef, VarDecl *> var_scope(            \
+  llvm::ScopedHashTableScope<llvm::StringRef, Type *> var_scope(               \
       context->var_table);
 
 static std::unordered_map<std::string, PrimitiveType::PrimitiveTypeKind>
@@ -39,6 +39,67 @@ static std::unordered_map<std::string, PrimitiveType::PrimitiveTypeKind>
         {"type", PrimitiveType::PrimitiveTypeKind::type},
         {"void", PrimitiveType::PrimitiveTypeKind::Void},
 };
+
+inline std::unique_ptr<Type> cloneType(Type *type) {
+  switch (type->kind()) {
+  case AstNodeKind::PrimitiveType: {
+    auto t = type->as<PrimitiveType>();
+    return std::make_unique<PrimitiveType>(t->token, t->type_kind);
+  }
+  case AstNodeKind::TupleType: {
+    auto t = type->as<TupleType>();
+    std::vector<std::unique_ptr<Type>> elements;
+    for (auto &elem : t->elements) {
+      elements.emplace_back(cloneType(elem.get()));
+    }
+    return std::make_unique<TupleType>(t->token, std::move(elements));
+  }
+  case AstNodeKind::FunctionType: {
+    auto t = type->as<FunctionType>();
+    std::vector<std::unique_ptr<Type>> params;
+    auto ret = cloneType(t->return_type.get());
+    return std::make_unique<FunctionType>(t->token, std::move(params),
+                                          std::move(ret));
+  }
+  // case AstNodeKind::ArrayType: {
+  //   auto t = type->as<ArrayType>();
+  //   auto elem = cloneType(t->element_type.get());
+  //   return std::make_unique<ArrayType>(t->token, std::move(elem));
+  // }
+  case AstNodeKind::SliceType: {
+    auto t = type->as<SliceType>();
+    auto base = cloneType(t->base.get());
+    return std::make_unique<SliceType>(t->token, std::move(base));
+  }
+  case AstNodeKind::StructType: {
+    auto t = type->as<StructType>();
+    return std::make_unique<StructType>(t->token, t->name);
+  }
+  case AstNodeKind::EnumType: {
+    auto t = type->as<EnumType>();
+    return std::make_unique<EnumType>(t->token, t->name);
+  }
+  case AstNodeKind::UnionType: {
+    auto t = type->as<UnionType>();
+    return std::make_unique<UnionType>(t->token, t->name);
+  }
+  case AstNodeKind::TraitType: {
+    auto t = type->as<TraitType>();
+    return std::make_unique<TraitType>(t->token, t->name);
+  }
+  case AstNodeKind::ReferenceType: {
+    auto t = type->as<ReferenceType>();
+    auto base = cloneType(t->base.get());
+    return std::make_unique<ReferenceType>(t->token, std::move(base));
+  }
+  // case AstNodeKind::ExprType: {
+  //   auto t = type->as<ExprType>();
+  //   return std::make_unique<ExprType>(t->token, t->expr);
+  // }
+  default:
+    break;
+  }
+}
 
 Token Parser::getErrorToken() {
   TokenSpan span;
@@ -646,7 +707,12 @@ std::unique_ptr<Parameter> Parser::parseParam() {
   auto pattern = parsePattern();
   consumeKind(TokenKind::Colon);
   auto type = parseType();
+
   // declare the parameter in the current scope
+  auto bindings = destructurePattern(pattern.get(), type.get());
+  for (auto &[name, type] : bindings) {
+    context->declareVar(name, type);
+  }
 
   std::vector<std::unique_ptr<Type>> trait_bounds;
   // if type is primitive type and it is "type" then check for impl Trait
@@ -912,8 +978,9 @@ std::unique_ptr<Type> Parser::parseType() {
     if (isPeek2(TokenKind::RParen) || isPeek2(TokenKind::Comma) ||
         isPeek2(TokenKind::LBrace) || isPeek2(TokenKind::Equal)) {
       auto token = consume();
-      if (auto var = context->var_table.lookup(token_str)) {
-        llvm::errs() << "Found " << token_str << "\n";
+      auto type = context->var_table.lookup(token_str);
+      if (type) {
+        return cloneType(type);
       }
       return std::make_unique<IdentifierType>(token.value(), token_str);
     }
@@ -1532,6 +1599,12 @@ std::unique_ptr<VarDecl> Parser::parseVarDecl(bool is_pub) {
     expr = parseExpr(0);
   }
   consumeKind(TokenKind::Semicolon);
+  // Add the variable to the symbol table
+  auto bindings =
+      destructurePattern(pattern.get(), type ? type->get() : nullptr);
+  for (auto [name, t] : bindings) {
+    context->declareVar(name, t);
+  }
   return std::make_unique<VarDecl>(token, std::move(pattern), std::move(type),
                                    std::move(expr), is_mut, is_pub);
 }
@@ -1850,4 +1923,248 @@ Operator Parser::tokenToOperator(const Token &op) {
     context->reportError("Invalid operator", &op);
     return Operator::Invalid;
   }
+}
+
+PatternBindings Parser::destructurePattern(Pattern *pattern, Type *type) {
+  PatternBindings result;
+  if (!pattern)
+    return result;
+
+  switch (pattern->kind()) {
+  case AstNodeKind::IdentifierPattern: {
+    auto p = static_cast<IdentifierPattern *>(pattern);
+    if (!p->name.empty()) {
+      result.emplace_back(p->name, type);
+    }
+    break;
+  }
+
+  case AstNodeKind::WildcardPattern:
+  case AstNodeKind::LiteralPattern:
+  case AstNodeKind::ExprPattern:
+  case AstNodeKind::RangePattern:
+    // These patterns do not bind variables
+    break;
+
+  case AstNodeKind::TuplePattern: {
+    auto p = static_cast<TuplePattern *>(pattern);
+    auto tuple_t = type->as<TupleType>();
+    if (!tuple_t) {
+      context->reportError("Pattern and type mismatch: Expected a tuple type",
+                           &pattern->token);
+      break;
+    }
+    if (p->elements.size() != tuple_t->elements.size()) {
+      context->reportError(
+          "Tuple pattern length does not match tuple type length",
+          &pattern->token);
+      break;
+    }
+    for (size_t i = 0; i < p->elements.size(); ++i) {
+      auto sub_bindings =
+          destructurePattern(p->elements[i].get(), tuple_t->elements[i].get());
+      result.insert(result.end(), sub_bindings.begin(), sub_bindings.end());
+    }
+    break;
+  }
+
+  case AstNodeKind::StructPattern: {
+    auto p = static_cast<StructPattern *>(pattern);
+    auto struct_t = type->as<StructType>();
+    if (!struct_t) {
+      context->reportError("Pattern and type mismatch: Expected a struct type",
+                           &pattern->token);
+      break;
+    }
+
+    llvm::StringRef struct_name =
+        p->name && !p->name->empty() ? *p->name : struct_t->name;
+    for (auto &field_var : p->fields) {
+      if (std::holds_alternative<std::unique_ptr<PatternField>>(field_var)) {
+        auto &f = std::get<std::unique_ptr<PatternField>>(field_var);
+        Type *field_type = getStructFieldType(struct_name, f->name);
+        if (!field_type) {
+          context->reportError(
+              "Field type not found for field '" + f->name + "'", &f->token);
+          break;
+        }
+        if (f->pattern.has_value() && f->pattern.value()) {
+          auto sub_bindings =
+              destructurePattern(f->pattern.value().get(), field_type);
+          result.insert(result.end(), sub_bindings.begin(), sub_bindings.end());
+        } else {
+          result.emplace_back(f->name, field_type);
+        }
+      } else {
+        // RestPattern inside a struct pattern does not produce named variables
+        // by default unless specifically handled.
+      }
+    }
+    break;
+  }
+
+  case AstNodeKind::SlicePattern: {
+    auto p = static_cast<SlicePattern *>(pattern);
+    auto slice_t = type->as<SliceType>();
+    auto array_t = type->as<ArrayType>();
+    Type *elem_type = nullptr;
+    if (slice_t) {
+      elem_type = slice_t->base.get();
+    } else if (array_t) {
+      elem_type = array_t->base.get();
+    } else {
+      context->reportError(
+          "Pattern and type mismatch: Expected a slice or array type",
+          &pattern->token);
+      break;
+    }
+    for (auto &elem_pattern : p->elements) {
+      auto sub_bindings = destructurePattern(elem_pattern.get(), elem_type);
+      result.insert(result.end(), sub_bindings.begin(), sub_bindings.end());
+    }
+    break;
+  }
+
+  case AstNodeKind::OrPattern: {
+    auto p = static_cast<OrPattern *>(pattern);
+    if (!p->patterns.empty()) {
+      // Ideally, we should verify that all patterns produce the same bindings.
+      result = destructurePattern(p->patterns[0].get(), type);
+    }
+    break;
+  }
+
+  case AstNodeKind::VariantPattern: {
+    auto p = static_cast<VariantPattern *>(pattern);
+    auto enum_t = type->as<EnumType>();
+    if (!enum_t) {
+      context->reportError("Pattern and type mismatch: Expected an enum type",
+                           &pattern->token);
+      break;
+    }
+    // Retrieve variant type info from the enum:
+    auto variant_type = getEnumVariantType(enum_t->name, p->name);
+    // getEnumVariantType should return either:
+    // - A tuple type for tuple variants
+    // - A struct type for struct variants
+    // - A single-field type for single-value variants
+    // - nullptr if the variant has no fields
+    if (p->field.has_value()) {
+      auto &var_field = p->field.value();
+      if (!variant_type) {
+        context->reportError("Variant '" + p->name +
+                                 "' does not have fields to destructure",
+                             &pattern->token);
+        break;
+      }
+
+      if (std::holds_alternative<std::unique_ptr<TuplePattern>>(var_field)) {
+        auto &tp = std::get<std::unique_ptr<TuplePattern>>(var_field);
+        auto variant_tuple_t = variant_type->as<TupleType>();
+        if (!variant_tuple_t) {
+          context->reportError("Variant '" + p->name +
+                                   "' is not a tuple variant",
+                               &pattern->token);
+          break;
+        }
+        if (tp->elements.size() != variant_tuple_t->elements.size()) {
+          context->reportError(
+              "Tuple pattern length does not match variant tuple type length",
+              &tp->token);
+          break;
+        }
+        for (size_t i = 0; i < tp->elements.size(); ++i) {
+          auto sub_bindings = destructurePattern(
+              tp->elements[i].get(), variant_tuple_t->elements[i].get());
+          result.insert(result.end(), sub_bindings.begin(), sub_bindings.end());
+        }
+      } else if (std::holds_alternative<std::unique_ptr<StructPattern>>(
+                     var_field)) {
+        auto &sp = std::get<std::unique_ptr<StructPattern>>(var_field);
+        auto variant_struct_t = variant_type->as<StructType>();
+        if (!variant_struct_t) {
+          context->reportError(
+              "Variant '" + p->name + "' is not a struct variant", &sp->token);
+          break;
+        }
+
+        llvm::StringRef variant_name = variant_struct_t->name;
+        for (auto &field_var : sp->fields) {
+          if (std::holds_alternative<std::unique_ptr<PatternField>>(
+                  field_var)) {
+            auto &f = std::get<std::unique_ptr<PatternField>>(field_var);
+            Type *field_type = getStructFieldType(variant_name, f->name);
+            if (!field_type) {
+              context->reportError("Field type not found for field '" +
+                                       f->name + "' in variant '" + p->name +
+                                       "'",
+                                   &f->token);
+              break;
+            }
+            if (f->pattern.has_value() && f->pattern.value()) {
+              auto sub_bindings =
+                  destructurePattern(f->pattern.value().get(), field_type);
+              result.insert(result.end(), sub_bindings.begin(),
+                            sub_bindings.end());
+            } else {
+              result.emplace_back(f->name, field_type);
+            }
+          } else {
+            // If there's a rest pattern in the variant struct pattern,
+            // handle it as in struct patterns.
+          }
+        }
+      }
+    }
+    // If the variant has no fields or the field is not provided, no bindings.
+    break;
+  }
+
+  case AstNodeKind::RestPattern: {
+    auto p = static_cast<RestPattern *>(pattern);
+    // Rest patterns do not bind named variables by default unless you define
+    // semantics for it. If p->name has a value, you could decide how to handle
+    // it. Without a defined semantic, we do nothing.
+    break;
+  }
+
+  default:
+    // No other patterns need handling
+    break;
+  }
+
+  return result;
+}
+
+Type *Parser::getStructFieldType(const llvm::StringRef struct_name,
+                                 const llvm::StringRef field_name) {
+  // lookup struct table for struct_name
+  auto struct_decl = context->struct_table.lookup(struct_name);
+  if (!struct_decl) {
+    return nullptr;
+  }
+  // lookup field in struct_decl
+  for (auto &field : struct_decl->fields) {
+    if (field->name == field_name) {
+      return field->type.get();
+    }
+  }
+  return nullptr;
+}
+
+// TODO: Implement this
+Type *Parser::getEnumVariantType(const llvm::StringRef enum_name,
+                                 const llvm::StringRef variant_name) {
+  // // lookup enum table for enum_name
+  // auto enum_decl = context->enum_table.lookup(enum_name);
+  // if (!enum_decl) {
+  //   return nullptr;
+  // }
+  // // lookup variant in enum_decl
+  // for (auto &variant : enum_decl->variants) {
+  //   if (variant->name == variant_name) {
+  //     return variant->type.get();
+  //   }
+  // }
+  return nullptr;
 }

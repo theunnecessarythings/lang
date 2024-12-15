@@ -78,6 +78,8 @@ public:
     });
 
     addConversion([](mlir::TensorType tensor_type) { return tensor_type; });
+
+    addConversion([](mlir::lang::TypeValueType type) { return type; });
   }
 };
 

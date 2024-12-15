@@ -190,13 +190,13 @@ def TypeConstOp : Lang_Op<"type_const", []> {
   }];
 
   let arguments = (ins TypeAttr:$type);
-  let results = (outs TypeValue:$result);
+  let results = (outs LangType:$result);
 
   let hasFolder = 1;
 
   let assemblyFormat = "$type attr-dict `:` type($result)";
   
-  let builders = [OpBuilder<(ins "Type":$type)>];
+  // let builders = [OpBuilder<(ins "Type":$type)>];
 }
 
 

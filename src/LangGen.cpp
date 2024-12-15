@@ -855,103 +855,138 @@ private:
     non_terminating = isNonTerminatingBlock(expr->then_block.get()) &&
                       isNonTerminatingBlock(expr->else_block.value().get());
     // 4. Both then and else are terminated by a return in all paths
-    terminated_by_return = isTerminatedByReturn(expr->then_block.get()) &&
-                           isTerminatedByReturn(expr->else_block.value().get());
+    terminated_by_return =
+        isTerminatedBy<AstNodeKind::ReturnExpr>(expr->then_block.get()) &&
+        isTerminatedBy<AstNodeKind::ReturnExpr>(expr->else_block.value().get());
     // 5. Both then and else are terminated by a yield in all paths
     // (different from above)
-    terminated_by_yield = isTerminatedByYield(expr->then_block.get()) &&
-                          isTerminatedByYield(expr->else_block.value().get());
+    terminated_by_yield =
+        isTerminatedBy<AstNodeKind::YieldExpr>(expr->then_block.get()) &&
+        isTerminatedBy<AstNodeKind::YieldExpr>(expr->else_block.value().get());
     return non_terminating || terminated_by_return || terminated_by_yield;
   }
 
-  bool isTerminatedByYield(BlockExpression *block) {
-    // Check the block is terminated by a yield in all paths
+  template <AstNodeKind kind> bool isTerminatedBy(BlockExpression *block) {
+    // If the block is empty, it doesn't always return.
     if (block->statements.empty()) {
       return false;
     }
-    auto last_stmt = block->statements.back().get();
-    if (last_stmt->kind() == AstNodeKind::ExprStmt) {
-      auto expr = last_stmt->as<ExprStmt>();
-      if (expr->expr->kind() == AstNodeKind::YieldExpr) {
-        return true;
-      } else if (expr->expr->kind() == AstNodeKind::IfExpr) {
-        auto if_expr = expr->expr->as<IfExpr>();
-        if (!if_expr->else_block.has_value()) {
-          return false;
-        }
-        // TODO:
-        return isTerminatedByYield(if_expr->then_block.get()) &&
-               isTerminatedByYield(if_expr->else_block.value().get());
-      } else if (expr->expr->kind() == AstNodeKind::BlockExpression) {
-        auto block_expr = expr->expr->as<BlockExpression>();
-        return isTerminatedByYield(block_expr);
-      }
-    }
-    return false;
-  }
 
-  bool isTerminatedByReturn(BlockExpression *block) {
-    // check if the block is terminated by a return in all paths
-    if (block->statements.empty()) {
-      return false;
-    }
     for (auto &stmt : block->statements) {
       if (stmt->kind() == AstNodeKind::ExprStmt) {
         auto expr = stmt->as<ExprStmt>();
-        if (expr->expr->kind() == AstNodeKind::ReturnExpr) {
+        switch (expr->expr->kind()) {
+        case kind:
+          // Found a guaranteed return; all paths hitting this statement return.
+          // No further checks needed because any code after this is
+          // unreachable.
           return true;
-        } else if (expr->expr->kind() == AstNodeKind::IfExpr) {
+
+        case AstNodeKind::IfExpr: {
           auto if_expr = expr->expr->as<IfExpr>();
-          // check if either branches are terminated by a return
-          if (isTerminatedByReturn(if_expr->then_block.get())) {
+          bool thenReturns = isTerminatedBy<kind>(if_expr->then_block.get());
+          bool elseReturns =
+              if_expr->else_block.has_value() &&
+              isTerminatedBy<kind>(if_expr->else_block.value().get());
+
+          if (thenReturns && elseReturns) {
+            // The if by itself ensures return on every path through it
             return true;
-          }
-          if (isTerminatedByReturn(if_expr->else_block.value().get())) {
-            return true;
-          }
-        } else if (expr->expr->kind() == AstNodeKind::BlockExpression) {
-          auto block_expr = expr->expr->as<BlockExpression>();
-          if (isTerminatedByReturn(block_expr)) {
-            return true;
+          } else {
+            // This if doesn't guarantee a return on all paths.
+            // Execution might continue to next statements, so keep checking.
+            break;
           }
         }
+        case AstNodeKind::BlockExpression: {
+          auto inner_block = expr->expr->as<BlockExpression>();
+          if (isTerminatedBy<kind>(inner_block)) {
+            return true;
+          } else {
+            // Inner block doesn't guarantee return, keep checking next
+            // statements.
+            break;
+          }
+        }
+        default:
+          // Just a normal statement that doesn't guarantee return.
+          // Keep scanning subsequent statements.
+          break;
+        }
+      } else {
+        // Non-expression statements won't guarantee return.
+        continue;
       }
     }
+    // If we finish scanning all statements without confirming that every path
+    // returns, then the block does not always return.
     return false;
   }
 
-  // recursively check if the block is non-terminating (i.e the last statement
-  // in a block is not a return or yield)
-  bool isNonTerminatingBlock(BlockExpression *block) {
+  bool allPathsTerminate(BlockExpression *block) {
+    // If the block is empty, there's no guaranteed return => not all paths
+    // terminate.
     if (block->statements.empty()) {
-      return true;
+      return false;
     }
+
     for (auto &stmt : block->statements) {
-      if (stmt->kind() == AstNodeKind::ExprStmt) {
-        auto expr = stmt->as<ExprStmt>();
-        if (expr->expr->kind() == AstNodeKind::ReturnExpr ||
-            expr->expr->kind() == AstNodeKind::YieldExpr) {
-          return false;
-        } else if (expr->expr->kind() == AstNodeKind::IfExpr) {
-          auto if_expr = expr->expr->as<IfExpr>();
-          // check if both branches are non-terminating
-          // then_block
-          if (!isNonTerminatingBlock(if_expr->then_block.get()))
-            return false;
-          // else_block
-          if (if_expr->else_block.has_value())
-            if (if_expr->else_block.value())
-              if (!isNonTerminatingBlock(if_expr->else_block.value().get()))
-                return false;
-        } else if (expr->expr->kind() == AstNodeKind::BlockExpression) {
-          auto block = expr->expr->as<BlockExpression>();
-          if (!isNonTerminatingBlock(block)) {
-            return false;
-          }
+      if (stmt->kind() != AstNodeKind::ExprStmt)
+        continue;
+
+      auto expr = stmt->as<ExprStmt>();
+      switch (expr->expr->kind()) {
+      case AstNodeKind::ReturnExpr:
+      case AstNodeKind::YieldExpr:
+        // Found a guaranteed termination.
+        return true;
+
+      case AstNodeKind::IfExpr: {
+        auto if_expr = expr->expr->as<IfExpr>();
+        bool thenTerm = allPathsTerminate(if_expr->then_block.get());
+        bool elseTerm =
+            if_expr->else_block.has_value()
+                ? allPathsTerminate(if_expr->else_block.value().get())
+                :
+                // No else block means if condition fails, we just continue
+                // after the if, so no guaranteed termination on that path yet:
+                false;
+
+        // For the if to guarantee termination on all paths, both branches must
+        // terminate. If not both terminate, we can’t confirm termination here,
+        // we must continue checking subsequent statements.
+        if (thenTerm && elseTerm) {
+          return true;
+        } else {
+          // Not guaranteed termination yet; continue scanning later statements.
         }
+        break;
+      }
+
+      case AstNodeKind::BlockExpression: {
+        auto inner_block = expr->expr->as<BlockExpression>();
+        if (allPathsTerminate(inner_block)) {
+          // The inner block itself guarantees termination,
+          // so we have a guaranteed termination here.
+          return true;
+        } else {
+          // No guaranteed termination yet, continue scanning.
+        }
+        break;
+      }
+      default:
+        // Just a normal statement; doesn't guarantee termination, continue
+        // scanning.
+        break;
       }
     }
-    return true;
+    // Reached the end without finding a guaranteed terminating path => not all
+    // paths terminate.
+    return false;
+  }
+
+  bool isNonTerminatingBlock(BlockExpression *block) {
+    return !allPathsTerminate(block);
   }
 
   mlir::FailureOr<mlir::Value> langGen(BinaryExpr *expr) {

@@ -12,7 +12,7 @@
       context->union_table);                                                   \
   llvm::ScopedHashTableScope<llvm::StringRef, TraitDecl *> trait_scope(        \
       context->trait_table);                                                   \
-  llvm::ScopedHashTableScope<llvm::StringRef, VarDecl *> var_scope(            \
+  llvm::ScopedHashTableScope<llvm::StringRef, Type *> var_scope(               \
       context->var_table);
 
 void Analyzer::analyze(Program *program) {

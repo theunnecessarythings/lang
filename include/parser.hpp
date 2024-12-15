@@ -8,7 +8,7 @@
 #include "compiler.hpp"
 #include "lexer.hpp"
 
-using PatternBindings = std::vector<std::pair<std::string, Type *>>;
+using PatternBindings = std::vector<std::pair<llvm::StringRef, Type *>>;
 
 struct Parser {
   std::unique_ptr<Lexer> lexer;
@@ -112,4 +112,8 @@ struct Parser {
   std::unordered_set<Attribute> parseAttributes();
 
   PatternBindings destructurePattern(Pattern *pattern, Type *type);
+  Type *getStructFieldType(const llvm::StringRef struct_name,
+                           const llvm::StringRef field_name);
+  Type *getEnumVariantType(const llvm::StringRef enum_name,
+                           const llvm::StringRef variant_name);
 };

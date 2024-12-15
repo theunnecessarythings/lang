@@ -9,7 +9,7 @@ auto parse(const std::string &path, std::string &str,
            bool print_tokens = false) {
 
   std::shared_ptr<Context> context = std::make_shared<Context>();
-  std::unique_ptr<Lexer> lexer = std::make_unique<Lexer>(str, 0);
+  std::unique_ptr<Lexer> lexer = std::make_unique<Lexer>(str, 1);
 
   if (print_tokens) {
     while (true) {

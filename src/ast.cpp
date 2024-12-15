@@ -252,7 +252,8 @@ void AstDumper::dump(TraitDecl *decl) {
 }
 
 void AstDumper::dump(ImplDecl *decl) {
-  output_stream << "impl " << decl->type;
+  output_stream << "impl ";
+  dump(decl->type.get());
   if (!decl->traits.empty()) {
     output_stream << " : ";
     for (size_t i = 0; i < decl->traits.size(); i++) {
@@ -860,7 +861,6 @@ void AstDumper::dump(MLIROp *op) {
       output_stream << ", ";
   }
   output_stream << "])";
-  output_stream << ")";
 }
 
 void AstDumper::dump(Pattern *pattern) {
@@ -992,6 +992,12 @@ void AstDumper::dump(Expression *expr) {
     break;
   case AstNodeKind::YieldExpr:
     dump(expr->as<YieldExpr>());
+    break;
+  case AstNodeKind::MLIROp:
+    dump(expr->as<MLIROp>());
+    break;
+  case AstNodeKind::MLIRAttribute:
+    dump(expr->as<MLIRAttribute>());
     break;
   default:
     std::cerr << "Unknown expression kind\n";

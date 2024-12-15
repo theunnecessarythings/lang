@@ -166,10 +166,11 @@ mlir::LogicalResult VarDeclOp::verify() {
   return success();
 }
 
-void TypeConstOp::build(OpBuilder &builder, OperationState &state, Type type) {
-  build(builder, state, TypeValueType::get(builder.getContext(), type),
-        TypeAttr::get(type));
-}
+// void TypeConstOp::build(OpBuilder &builder, OperationState &state, Type type)
+// {
+//   build(builder, state, TypeValueType::get(builder.getContext(), type),
+//         TypeAttr::get(type));
+// }
 
 mlir::OpFoldResult mlir::lang::StructAccessOp::fold(FoldAdaptor adaptor) {
   auto structAttr = mlir::dyn_cast_or_null<mlir::ArrayAttr>(adaptor.getInput());

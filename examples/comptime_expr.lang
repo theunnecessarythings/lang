@@ -65,7 +65,6 @@ pub fn main() void {
     print("fib(10) -> %d", fib10);
 }
 
-
 // pub fn main() void {
 //     const fib6 = comptime fib(6);
 //     const fib10 = comptime fib(10);
@@ -75,10 +74,8 @@ pub fn main() void {
 
 // if a function is not dependent on any runtime values, it can be called at compile time.
 // It doesn't matter what it's predecessors are.
-// 
+//
 // if cond {} else {}
 // for an if expression, the branches individually must be comptime
 
-fn compfn() void {
-
-}
+fn compfn() void {}

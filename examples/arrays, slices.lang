@@ -1,10 +1,10 @@
 // import "std/mem";
 
 // This function borrows a slice.
-fn analyze_slice(slice: []i32) void {
-    print("First element of the slice: {}", slice[0]);
-    // print("The slice has {} elements", slice.len());
-}
+// fn analyze_slice(slice: []i32) void {
+//     print("First element of the slice: {}", slice[0]);
+//     // print("The slice has {} elements", slice.len());
+// }
 
 fn main() void {
     // Fixed-size array (type signature is superfluous).

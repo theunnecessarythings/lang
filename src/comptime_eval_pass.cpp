@@ -19,6 +19,7 @@
 #include "mlir/Dialect/MemRef/IR/MemRef.h"
 #include "mlir/ExecutionEngine/ExecutionEngine.h"
 #include "mlir/IR/BuiltinAttributes.h"
+#include "mlir/IR/IRMapping.h"
 #include "mlir/IR/Operation.h"
 #include "mlir/InitAllExtensions.h"
 #include "mlir/Pass/PassManager.h"
@@ -37,6 +38,8 @@ namespace mlir {
 #include "dialect/LangPasses.h.inc"
 } // namespace mlir
 
+using DependencyGraph =
+    llvm::MapVector<mlir::Operation *, mlir::DenseSet<mlir::Operation *>>;
 //===----------------------------------------------------------------------===//
 // ComptimeCodeAnalysisPass
 //===----------------------------------------------------------------------===//
@@ -342,71 +345,72 @@ bool isComptimeOperation(mlir::Operation *op, mlir::DataFlowSolver &solver) {
   return true;
 }
 
-void collectComptimeOps(
-    mlir::ModuleOp &module, mlir::DataFlowSolver &solver,
+void collectDependencies(
+    mlir::Operation *op, mlir::ModuleOp &module, mlir::DataFlowSolver &solver,
     mlir::SetVector<mlir::Operation *> &comptimeOps,
     llvm::MapVector<mlir::Operation *, mlir::DenseSet<mlir::Operation *>>
         &dependencyGraph) {
+  if (dependencyGraph.count(op))
+    return;
 
-  std::function<void(mlir::Operation *)> collectDependencies =
-      [&](mlir::Operation *op) {
-        if (dependencyGraph.count(op))
-          return;
+  auto &deps = dependencyGraph[op];
+  for (mlir::Value operand : op->getOperands()) {
+    if (auto def_op = operand.getDefiningOp()) {
+      deps.insert(def_op);
+      // if (isComptimeOperation(defOp, solver)) {
+      comptimeOps.insert(def_op);
+      collectDependencies(def_op, module, solver, comptimeOps, dependencyGraph);
+      // }
+    }
+  }
 
-        auto &deps = dependencyGraph[op];
-        for (mlir::Value operand : op->getOperands()) {
-          if (auto def_op = operand.getDefiningOp()) {
-            deps.insert(def_op);
-            // if (isComptimeOperation(defOp, solver)) {
-            comptimeOps.insert(def_op);
-            collectDependencies(def_op);
-            // }
-          }
-        }
+  // Handle callable operations
+  if (auto call_op = mlir::dyn_cast<mlir::CallOpInterface>(op)) {
+    auto symbol = llvm::dyn_cast_if_present<mlir::SymbolRefAttr>(
+        call_op.getCallableForCallee());
+    if (!symbol) {
+      return;
+    }
+    auto callee = mlir::SymbolTable::lookupSymbolIn(module, symbol);
+    deps.insert(callee);
+    collectDependencies(callee, module, solver, comptimeOps, dependencyGraph);
+  }
 
-        // Handle callable operations
-        if (auto call_op = mlir::dyn_cast<mlir::CallOpInterface>(op)) {
-          auto symbol = llvm::dyn_cast_if_present<mlir::SymbolRefAttr>(
-              call_op.getCallableForCallee());
-          if (!symbol) {
-            return;
-          }
-          auto callee = mlir::SymbolTable::lookupSymbolIn(module, symbol);
-          deps.insert(callee);
-          collectDependencies(callee);
-        }
+  // Handle callable operations
+  if (auto callable_op = mlir::dyn_cast<mlir::CallableOpInterface>(op)) {
+    callable_op.walk([&](mlir::CallOpInterface callOp) {
+      auto symbol = llvm::dyn_cast_if_present<mlir::SymbolRefAttr>(
+          callOp.getCallableForCallee());
+      if (!symbol) {
+        return;
+      }
+      auto callee = mlir::SymbolTable::lookupSymbolIn(module, symbol);
+      deps.insert(callee);
+      collectDependencies(callee, module, solver, comptimeOps, dependencyGraph);
+    });
+  }
 
-        // Handle callable operations
-        if (auto callable_op = mlir::dyn_cast<mlir::CallableOpInterface>(op)) {
-          callable_op.walk([&](mlir::CallOpInterface callOp) {
-            auto symbol = llvm::dyn_cast_if_present<mlir::SymbolRefAttr>(
-                callOp.getCallableForCallee());
-            if (!symbol) {
-              return;
-            }
-            auto callee = mlir::SymbolTable::lookupSymbolIn(module, symbol);
-            deps.insert(callee);
-            collectDependencies(callee);
-          });
-        }
+  // Handle var decl operation
+  if (auto var_decl = mlir::dyn_cast<mlir::lang::VarDeclOp>(op)) {
+    if (auto init_value = var_decl.getInitValue()) {
+      auto init_op = init_value.getDefiningOp();
+      deps.insert(init_op);
+      if (isComptimeOperation(init_op, solver)) {
+        comptimeOps.insert(init_op);
+        collectDependencies(init_op, module, solver, comptimeOps,
+                            dependencyGraph);
+      }
+    }
+  }
+};
 
-        // Handle var decl operation
-        if (auto var_decl = mlir::dyn_cast<mlir::lang::VarDeclOp>(op)) {
-          if (auto init_value = var_decl.getInitValue()) {
-            auto init_op = init_value.getDefiningOp();
-            deps.insert(init_op);
-            if (isComptimeOperation(init_op, solver)) {
-              comptimeOps.insert(init_op);
-              collectDependencies(init_op);
-            }
-          }
-        }
-      };
-
+void collectComptimeOps(mlir::ModuleOp &module, mlir::DataFlowSolver &solver,
+                        mlir::SetVector<mlir::Operation *> &comptimeOps,
+                        DependencyGraph &dependencyGraph) {
   module.walk([&](mlir::Operation *op) {
     if (isComptimeOperation(op, solver)) {
       comptimeOps.insert(op);
-      collectDependencies(op);
+      collectDependencies(op, module, solver, comptimeOps, dependencyGraph);
     }
   });
 }
@@ -644,6 +648,99 @@ void printComptimeAnalysisResults(mlir::Operation *top,
   });
 }
 
+// NOTE: This is basically a hack now, need a better way
+std::string generateUniqueName(mlir::lang::FuncOp &op,
+                               mlir::lang::CallOp &call_op) {
+  std::stringstream ss;
+  ss << op.getName().str();
+
+  // Concatenate pointer values of all comptime arguments
+  for (const auto &it : llvm::enumerate(call_op.getArgOperands())) {
+    // Skip non-comptime arguments
+    auto attr = op.getArgAttr(it.index(), "lang.comptime");
+    if (!attr || !mlir::cast<mlir::BoolAttr>(attr).getValue())
+      continue;
+
+    const void *ptr = it.value().getAsOpaquePointer();
+    ss << "_" << reinterpret_cast<uintptr_t>(ptr);
+  }
+
+  // Hash the concatenated pointer values to produce a compact name
+  auto hash = llvm::hash_value(ss.str());
+  return op.getName().str() + "_" + std::to_string(hash);
+}
+
+bool isGenericFunc(mlir::lang::FuncOp &op) {
+  for (const auto &arg : op.getArguments()) {
+    auto attr = op.getArgAttr(arg.getArgNumber(), "lang.comptime");
+    if (attr && mlir::dyn_cast_or_null<mlir::BoolAttr>(attr).getValue()) {
+      return true;
+    }
+  }
+  return false;
+}
+
+mlir::lang::FuncOp isCalleeGenericFunc(mlir::lang::CallOp *op,
+                                       mlir::ModuleOp &module) {
+  auto callee_symbol = op->getCalleeAttr();
+  auto callee = mlir::SymbolTable::lookupSymbolIn(module, callee_symbol);
+  if (!callee) {
+    return nullptr;
+  }
+  auto callee_func = dyn_cast<mlir::lang::FuncOp>(callee);
+  if (!callee_func) {
+    return nullptr;
+  }
+  return isGenericFunc(callee_func) ? callee_func : nullptr;
+}
+
+void instantiateGenericType(mlir::lang::FuncOp &op, mlir::lang::CallOp &call_op,
+                            mlir::ModuleOp &module,
+                            mlir::DataFlowSolver &solver) {
+  mlir::OpBuilder builder(op.getContext());
+  mlir::IRMapping mapping;
+  builder.setInsertionPointAfter(op);
+
+  // Clone the function
+  auto new_func = op.clone();
+
+  // Replace every use of the arguments that are comptime with the actual value
+  // from the call
+  builder.setInsertionPointToStart(&new_func->getRegion(0).front());
+  for (const auto &it : llvm::enumerate(new_func.getArguments())) {
+    auto attr = op.getArgAttr(it.index(), "lang.comptime");
+    if (!attr || !mlir::cast<mlir::BoolAttr>(attr).getValue())
+      continue;
+
+    new_func.removeArgAttr(it.index(), "lang.comptime");
+    auto arg = it.value();
+    auto call_arg = call_op.getArgOperands()[it.index()];
+
+    DependencyGraph dependency_graph;
+    mlir::SetVector<mlir::Operation *> comptime_ops;
+    collectDependencies(call_arg.getDefiningOp(), module, solver, comptime_ops,
+                        dependency_graph);
+    if (!dependency_graph.contains(call_arg.getDefiningOp())) {
+      llvm::errs() << "No dependencies found for call arg\n";
+      continue;
+    }
+    auto dependencies = dependency_graph[call_arg.getDefiningOp()];
+    // copy the dependencies to the new function
+    for (auto dep : dependencies) {
+      builder.clone(*dep, mapping);
+    }
+    auto cloned_arg = builder.clone(*call_arg.getDefiningOp(), mapping);
+    arg.replaceAllUsesWith(cloned_arg->getResults()[0]);
+  }
+  // Generate a unique name for the new function
+  auto new_name = generateUniqueName(op, call_op);
+  new_func.setName(new_name);
+  module.push_back(new_func);
+
+  // Update the call op to call the new function
+  call_op.setCallee(new_name);
+}
+
 void ComptimeEvalPass::runOnOperation() {
   mlir::ModuleOp module = getOperation();
 
@@ -663,8 +760,7 @@ void ComptimeEvalPass::runOnOperation() {
 
   // Step 1: Collect compile-time operations and dependencies
   mlir::SetVector<mlir::Operation *> comptime_ops;
-  llvm::MapVector<mlir::Operation *, mlir::DenseSet<mlir::Operation *>>
-      dependency_graph;
+  DependencyGraph dependency_graph;
   collectComptimeOps(module, solver, comptime_ops, dependency_graph);
 
   LLVM_DEBUG({
@@ -684,6 +780,36 @@ void ComptimeEvalPass::runOnOperation() {
   if (!mlir::computeTopologicalSorting(sorted_ops_arr)) {
     llvm::errs() << "Failed to topologically sort the operations\n";
   }
+
+  // Step 2: Instantiate generic functions
+  mlir::OpBuilder builder(module.getContext());
+  llvm::SetVector<mlir::lang::FuncOp> generic_funcs;
+  module.walk([&](mlir::lang::CallOp op) {
+    // Check whether the callee is a generic function that returns a type
+    auto callee_func = isCalleeGenericFunc(&op, module);
+    if (!callee_func) {
+      return;
+    }
+    generic_funcs.insert(callee_func);
+    // Step 2: Instantiate the generic type
+    instantiateGenericType(callee_func, op, module, solver);
+  });
+
+  // Remove all generic functions
+  for (auto &op : generic_funcs) {
+    op->erase();
+  }
+
+  // Unwrap ImplDeclOp and move the FuncOp to the parent op
+  module.walk([&](mlir::lang::ImplDeclOp op) {
+    builder.setInsertionPoint(op.getOperation());
+    for (mlir::Operation &inner_op : op->getRegion(0).front()) {
+      if (isa<mlir::lang::FuncOp>(&inner_op)) {
+        builder.insert(inner_op.clone());
+      }
+    }
+    op->erase();
+  });
 
   // Step 3: Generate the compile-time module and main function
   mlir::IRMapping mapping;
