@@ -380,10 +380,10 @@ void JsonDumper::dump(FunctionDecl *node) {
 
   indent();
   output_stream << "\"parent_name\": ";
-  if (node->extra.parent_name)
-    output_stream << "\"" << *node->extra.parent_name << "\"";
-  else
-    output_stream << "null";
+  // if (node->extra.parent_name)
+  //   output_stream << "\"" << *node->extra.parent_name << "\"";
+  // else
+  output_stream << "null";
   output_stream << ",\n";
 
   indent();
@@ -408,7 +408,9 @@ void JsonDumper::dump(ImplDecl *node) {
   dumpNodeToken(node);
 
   indent();
-  output_stream << "\"type\": \"" << node->type << "\",\n";
+  output_stream << "\"type\": ";
+  dump(node->type.get());
+  output_stream << ",\n";
 
   indent();
   output_stream << "\"traits\": [\n";

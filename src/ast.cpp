@@ -615,7 +615,6 @@ void AstDumper::dump(IndexExpr *expr) {
   dump(expr->base.get());
   output_stream << "[";
   dump(expr->index.get());
-  output_stream << "]";
 }
 
 void AstDumper::dump(RangeExpr *expr) {
@@ -926,6 +925,7 @@ void AstDumper::dump(Statement *stmt) {
 }
 
 void AstDumper::dump(Expression *expr) {
+  output_stream << "(";
   switch (expr->kind()) {
   case AstNodeKind::LiteralExpr:
     dump(expr->as<LiteralExpr>());
@@ -1003,6 +1003,7 @@ void AstDumper::dump(Expression *expr) {
     std::cerr << "Unknown expression kind\n";
     break;
   }
+  output_stream << ")";
 }
 
 void AstDumper::dump(Type *type) {

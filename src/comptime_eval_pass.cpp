@@ -783,22 +783,24 @@ void ComptimeEvalPass::runOnOperation() {
 
   // Step 2: Instantiate generic functions
   mlir::OpBuilder builder(module.getContext());
-  llvm::SetVector<mlir::lang::FuncOp> generic_funcs;
   module.walk([&](mlir::lang::CallOp op) {
     // Check whether the callee is a generic function that returns a type
     auto callee_func = isCalleeGenericFunc(&op, module);
     if (!callee_func) {
       return;
     }
-    generic_funcs.insert(callee_func);
     // Step 2: Instantiate the generic type
     instantiateGenericType(callee_func, op, module, solver);
   });
 
   // Remove all generic functions
-  for (auto &op : generic_funcs) {
-    op->erase();
-  }
+  module.walk([&](mlir::lang::FuncOp op) {
+    llvm::errs() << "Func: " << op.getName() << "\n";
+    if (isGenericFunc(op)) {
+      llvm::errs() << "Removing generic function: " << op.getName() << "\n";
+      op.erase();
+    }
+  });
 
   // Unwrap ImplDeclOp and move the FuncOp to the parent op
   module.walk([&](mlir::lang::ImplDeclOp op) {

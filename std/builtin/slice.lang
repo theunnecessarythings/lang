@@ -1,16 +1,16 @@
-// pub fn Slice(comptime T: type) type {
-//     struct Impl {
-//         base: @mlir_type("memref<5xi32>"),
-//         offset: @mlir_type("index"),
-//         size: @mlir_type("index"),
-//         stride: @mlir_type("index"),
-//     }
-//
-//     impl Impl {
-//         fn index(self: Self, idx: i64) T {
-//             // TODO: Implement actual indexing later
-//             return 0;
-//         }
-//     }
-//     return Impl;
-// }
+pub fn Slice(comptime T: type) type {
+    struct Impl {
+        base: @mlir_type("memref<5xi32>"),
+        offset: @mlir_type("index"),
+        size: @mlir_type("index"),
+        stride: @mlir_type("index"),
+    }
+
+    impl Impl {
+        fn index(self: Self, idx: i64) T {
+            // TODO: Implement actual indexing later
+            return 0;
+        }
+    }
+    return Impl;
+}

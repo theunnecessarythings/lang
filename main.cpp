@@ -261,6 +261,7 @@ int dumpMLIRLang() {
   // pm.addPass(mlir::createInlinerPass());
   pm.addPass(mlir::createCanonicalizerPass());
   pm.addPass(mlir::createCSEPass());
+  // pm.addPass(mlir::createSymbolDCEPass());
 
   pm.addPass(mlir::lang::createComptimeEvalPass());
   pm.addPass(mlir::lang::createLowerToAffinePass());

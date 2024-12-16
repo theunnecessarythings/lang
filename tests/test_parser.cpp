@@ -5,7 +5,7 @@
 #include <iostream>
 #include <string>
 
-auto parse(const std::string &path, std::string &str,
+auto parse(const std::string &path, std::string &str, bool load_builtins = true,
            bool print_tokens = false) {
 
   std::shared_ptr<Context> context = std::make_shared<Context>();
@@ -23,7 +23,7 @@ auto parse(const std::string &path, std::string &str,
   }
 
   Parser parser(std::move(lexer), context);
-  auto tree = parser.parseProgram();
+  auto tree = parser.parseProgram(load_builtins);
   return tree;
 }
 
@@ -34,7 +34,7 @@ void testRepr(const std::string &path) {
     throw std::runtime_error("Could not open file " + path);
   std::string str((std::istreambuf_iterator<char>(file)),
                   std::istreambuf_iterator<char>());
-  auto tree = parse(path, str, false);
+  auto tree = parse(path, str);
 
   AstDumper dumper(true);
   dumper.dump(tree.get());

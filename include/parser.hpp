@@ -44,7 +44,7 @@ struct Parser {
   std::unique_ptr<Expression> nud(const Token &token);
   std::unique_ptr<Expression> led(std::unique_ptr<Expression> left, Token &op);
   std::unique_ptr<Program> parseSingleSource(std::string &path);
-  std::unique_ptr<Program> parseProgram();
+  std::unique_ptr<Program> parseProgram(bool load_builtins = true);
   void skipToNextTopLevelDecl();
   void skipToNextStmt();
   std::unique_ptr<ImportDecl> parseImportDecl();

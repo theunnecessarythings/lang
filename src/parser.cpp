@@ -421,7 +421,8 @@ std::unique_ptr<Program> Parser::parseSingleSource(std::string &path) {
 
 void Parser::loadBuiltins() {
   namespace fs = std::filesystem;
-  std::string path = "../std/builtin";
+  std::string path =
+      "/mnt/ubuntu/home/sreeraj/Documents/mlir-lang-cpp/std/builtin";
   for (const auto &entry : fs::directory_iterator(path)) {
     auto file_path = entry.path().string();
     if (fs::is_regular_file(entry.path())) {
@@ -436,9 +437,10 @@ void Parser::loadBuiltins() {
 }
 
 // program = top_level_decl*
-std::unique_ptr<Program> Parser::parseProgram() {
+std::unique_ptr<Program> Parser::parseProgram(bool load_builtins) {
   NEW_SCOPE();
-  loadBuiltins();
+  if (load_builtins)
+    loadBuiltins();
   while (true) {
     if (isPeek(TokenKind::Eof)) {
       break;

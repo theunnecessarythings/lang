@@ -78,6 +78,7 @@ public:
     the_module = mlir::ModuleOp::create(builder.getUnknownLoc());
 
     for (auto &f : program->items) {
+      builder.setInsertionPointToEnd(the_module.getBody());
       if (failed(langGen(f.get()))) {
         return nullptr;
       }
@@ -147,7 +148,7 @@ private:
 
   mlir::LogicalResult langGen(Function *func) {
     NEW_SCOPE()
-    builder.setInsertionPointToEnd(the_module.getBody());
+    // builder.setInsertionPointToEnd(the_module.getBody());
     auto param_types = langGen(func->decl->parameters);
     if (failed(param_types)) {
       return mlir::failure();
@@ -182,6 +183,12 @@ private:
         loc(func->token.span), func_name, func_type, attrs);
     function_map[func_name] = func_op;
     current_function = &func_op;
+    for (const auto &it : llvm::enumerate(func->decl->parameters)) {
+      if (it.value()->is_comptime) {
+        func_op.setArgAttr(it.index(), "lang.comptime",
+                           builder.getBoolAttr(true));
+      }
+    }
 
     auto entry_block = func_op.addEntryBlock();
     builder.setInsertionPointToStart(entry_block);
@@ -367,15 +374,18 @@ private:
       return mlir::emitError(loc(impl_decl->token.span),
                              "redeclaration of Self");
     }
-    builder.create<mlir::lang::ImplDeclOp>(loc(impl_decl->token.span),
-                                           parent_type);
+    auto decl = builder.create<mlir::lang::ImplDeclOp>(
+        loc(impl_decl->token.span), parent_type);
+    builder.setInsertionPointToStart(&decl.getRegion().emplaceBlock());
     for (auto &method : impl_decl->functions) {
+      mlir::OpBuilder::InsertionGuard guard(builder);
       auto func = langGen(method.get());
       if (failed(func)) {
         return mlir::failure();
       }
     }
-
+    // yield
+    builder.create<mlir::lang::YieldOp>(loc(impl_decl->token.span));
     return mlir::success();
   }
 
@@ -1048,18 +1058,27 @@ private:
   mlir::FailureOr<mlir::Value> langGen(IdentifierExpr *expr,
                                        bool get_value = true) {
     auto var = symbol_table.lookup(expr->name);
-    if (!var) {
-      return mlir::emitError(loc(expr->token.span),
-                             "undeclared variable " + expr->name);
+    if (var) {
+      // for mutable values and structs, by default return the value (automatic
+      // deref)
+      if (get_value && mlir::isa<mlir::MemRefType>(var.getType())) {
+        auto deref_op =
+            builder.create<mlir::lang::DerefOp>(loc(expr->token.span), var);
+        return deref_op.getResult();
+      }
+      return var;
     }
-    // for mutable values and structs, by default return the value (automatic
-    // deref)
-    if (get_value && mlir::isa<mlir::MemRefType>(var.getType())) {
-      auto deref_op =
-          builder.create<mlir::lang::DerefOp>(loc(expr->token.span), var);
-      return deref_op.getResult();
+    auto struct_type = type_table.lookup(expr->name);
+    if (struct_type && mlir::isa<mlir::lang::StructType>(struct_type)) {
+      // return type value of struct
+      return builder
+          .create<mlir::lang::TypeConstOp>(loc(expr->token.span), struct_type)
+          .getResult();
     }
-    return var;
+
+    // TODO: Check for other types here
+    return mlir::emitError(loc(expr->token.span),
+                           "undeclared variable " + expr->name);
   }
 
   mlir::FailureOr<mlir::Value> langGen(CallExpr *expr) {
