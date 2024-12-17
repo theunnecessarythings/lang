@@ -703,6 +703,8 @@ void instantiateGenericType(mlir::lang::FuncOp &op, mlir::lang::CallOp &call_op,
 
   // Clone the function
   auto new_func = op.clone();
+  auto function_type = new_func.getFunctionType();
+  auto input_types = llvm::to_vector<4>(function_type.getInputs());
 
   // Replace every use of the arguments that are comptime with the actual value
   // from the call
@@ -715,6 +717,14 @@ void instantiateGenericType(mlir::lang::FuncOp &op, mlir::lang::CallOp &call_op,
     new_func.removeArgAttr(it.index(), "lang.comptime");
     auto arg = it.value();
     auto call_arg = call_op.getArgOperands()[it.index()];
+    if (auto typeconst_op =
+            mlir::dyn_cast<mlir::lang::TypeConstOp>(call_arg.getDefiningOp())) {
+      // then we need to replace every use of the generic type with actual type
+      auto type = typeconst_op.getType();
+      input_types[it.index()] = type;
+      mlir::Block &entry_block = new_func.getBody().front();
+      entry_block.getArgument(it.index()).setType(type);
+    }
 
     DependencyGraph dependency_graph;
     mlir::SetVector<mlir::Operation *> comptime_ops;
@@ -735,6 +745,9 @@ void instantiateGenericType(mlir::lang::FuncOp &op, mlir::lang::CallOp &call_op,
   // Generate a unique name for the new function
   auto new_name = generateUniqueName(op, call_op);
   new_func.setName(new_name);
+  auto new_function_type = mlir::FunctionType::get(
+      new_func.getContext(), input_types, function_type.getResults());
+  new_func.setType(new_function_type);
   module.push_back(new_func);
 
   // Update the call op to call the new function
@@ -795,9 +808,7 @@ void ComptimeEvalPass::runOnOperation() {
 
   // Remove all generic functions
   module.walk([&](mlir::lang::FuncOp op) {
-    llvm::errs() << "Func: " << op.getName() << "\n";
     if (isGenericFunc(op)) {
-      llvm::errs() << "Removing generic function: " << op.getName() << "\n";
       op.erase();
     }
   });

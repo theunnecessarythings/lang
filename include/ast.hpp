@@ -383,6 +383,7 @@ struct FunctionDecl : public NodeBase<FunctionDecl> {
 
   struct ExtraData {
     bool is_method = false;
+    bool is_generic = false;
     std::optional<std::string> parent_name = std::nullopt;
     AstNodeKind parent_kind = AstNodeKind::InvalidNode;
   } extra;

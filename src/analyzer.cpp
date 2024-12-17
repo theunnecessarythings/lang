@@ -75,6 +75,11 @@ void Analyzer::analyze(Function *func) {
 
 void Analyzer::analyze(FunctionDecl *decl) {
   for (auto &param : decl->parameters) {
+    if (param->type->kind() == AstNodeKind::PrimitiveType &&
+        param->type->as<PrimitiveType>()->type_kind ==
+            PrimitiveType::PrimitiveTypeKind::type) {
+      decl->extra.is_generic = true;
+    }
     analyze(param.get());
   }
   analyze(decl->return_type.get());
@@ -142,15 +147,40 @@ void Analyzer::analyze(ImplDecl *impl) {
 
 void Analyzer::analyze(UnionDecl *decl) {}
 
-void Analyzer::analyze(TopLevelVarDecl *decl) {}
+void Analyzer::analyze(TopLevelVarDecl *decl) { analyze(decl->var_decl.get()); }
 
-void Analyzer::analyze(StructDecl *decl) {}
+void Analyzer::analyze(StructDecl *decl) {
+  for (auto &field : decl->fields) {
+    analyze(field.get());
+  }
+}
 
-void Analyzer::analyze(TupleStructDecl *decl) {}
+void Analyzer::analyze(TupleStructDecl *decl) {
+  for (auto &field : decl->fields) {
+    analyze(field.get());
+  }
+}
 
-void Analyzer::analyze(EnumDecl *decl) {}
+void Analyzer::analyze(EnumDecl *decl) {
+  for (auto &variant : decl->variants) {
+    analyze(variant.get());
+  }
+}
 
-void Analyzer::analyze(TraitDecl *decl) {}
+void Analyzer::analyze(TraitDecl *decl) {
+  for (auto &func : decl->functions) {
+    if (std::holds_alternative<std::unique_ptr<FunctionDecl>>(func)) {
+      auto &f = std::get<std::unique_ptr<FunctionDecl>>(func);
+      analyze(f.get());
+    } else {
+      auto &f = std::get<std::unique_ptr<Function>>(func);
+      analyze(f.get());
+    }
+  }
+  for (auto &trait : decl->super_traits) {
+    analyze(trait.get());
+  }
+}
 
 void Analyzer::analyze(Pattern *pattern) {
   switch (pattern->kind()) {
@@ -192,19 +222,43 @@ void Analyzer::analyze(Pattern *pattern) {
   }
 }
 
-void Analyzer::analyze(LiteralPattern *pattern) {}
+void Analyzer::analyze(LiteralPattern *pattern) {
+  analyze(pattern->literal.get());
+}
 
 void Analyzer::analyze(IdentifierPattern *pattern) {}
 
 void Analyzer::analyze(WildcardPattern *pattern) {}
 
-void Analyzer::analyze(TuplePattern *pattern) {}
+void Analyzer::analyze(TuplePattern *pattern) {
+  for (auto &p : pattern->elements) {
+    analyze(p.get());
+  }
+}
 
-void Analyzer::analyze(RestPattern *pattern) {}
+void Analyzer::analyze(RestPattern *pattern) {
+  if (pattern->name) {
+    analyze(&pattern->name.value());
+  }
+}
 
-void Analyzer::analyze(StructPattern *pattern) {}
+void Analyzer::analyze(StructPattern *pattern) {
+  for (auto &field : pattern->fields) {
+    if (std::holds_alternative<std::unique_ptr<PatternField>>(field)) {
+      auto &p = std::get<std::unique_ptr<PatternField>>(field);
+      analyze(p.get());
+    } else {
+      auto &p = std::get<std::unique_ptr<RestPattern>>(field);
+      analyze(p.get());
+    }
+  }
+}
 
-void Analyzer::analyze(SlicePattern *pattern) {}
+void Analyzer::analyze(SlicePattern *pattern) {
+  for (auto &p : pattern->elements) {
+    analyze(p.get());
+  }
+}
 
 void Analyzer::analyze(OrPattern *pattern) {
   for (auto &p : pattern->patterns) {
@@ -219,7 +273,19 @@ void Analyzer::analyze(RangePattern *pattern) {
   analyze(pattern->end.get());
 }
 
-void Analyzer::analyze(VariantPattern *pattern) {}
+void Analyzer::analyze(VariantPattern *pattern) {
+  if (pattern->field) {
+    if (std::holds_alternative<std::unique_ptr<TuplePattern>>(
+            pattern->field.value())) {
+      auto &p = std::get<std::unique_ptr<TuplePattern>>(pattern->field.value());
+      analyze(p.get());
+    } else {
+      auto &p =
+          std::get<std::unique_ptr<StructPattern>>(pattern->field.value());
+      analyze(p.get());
+    }
+  }
+}
 
 void Analyzer::analyze(Statement *stmt) {
   switch (stmt->kind()) {
@@ -242,16 +308,20 @@ void Analyzer::analyze(Statement *stmt) {
 }
 
 void Analyzer::analyze(VarDecl *decl) {
+  analyze(decl->pattern.get());
   if (decl->initializer) {
     analyze(decl->initializer->get());
+  }
+  if (decl->type) {
+    analyze(decl->type.value().get());
   }
 }
 
 void Analyzer::analyze(DeferStmt *stmt) {}
 
-void Analyzer::analyze(ExprStmt *stmt) {}
+void Analyzer::analyze(ExprStmt *stmt) { analyze(stmt->expr.get()); }
 
-void Analyzer::analyze(TopLevelDeclStmt *stmt) {}
+void Analyzer::analyze(TopLevelDeclStmt *stmt) { analyze(stmt->decl.get()); }
 
 void Analyzer::analyze(Expression *expr) {
   switch (expr->kind()) {
@@ -321,29 +391,71 @@ void Analyzer::analyze(Expression *expr) {
   case AstNodeKind::MLIROp:
     analyze(expr->as<MLIROp>());
     break;
+  case AstNodeKind::MLIRAttribute:
+    analyze(expr->as<MLIRAttribute>());
+    break;
   default:
     assert(false && "not an expression or not implemented yet");
     break;
   }
 }
 
-void Analyzer::analyze(IfExpr *expr) {}
+void Analyzer::analyze(IfExpr *expr) {
+  analyze(expr->condition.get());
+  analyze(expr->then_block.get());
+  if (expr->else_block) {
+    analyze(expr->else_block->get());
+  }
+}
 
-void Analyzer::analyze(MatchExpr *expr) {}
+void Analyzer::analyze(MatchExpr *expr) {
+  analyze(expr->expr.get());
+  for (auto &arm : expr->cases) {
+    analyze(arm.get());
+  }
+}
 
-void Analyzer::analyze(ForExpr *expr) {}
+void Analyzer::analyze(ForExpr *expr) {
+  analyze(expr->pattern.get());
+  analyze(expr->iterable.get());
+  analyze(expr->body.get());
+}
 
-void Analyzer::analyze(WhileExpr *expr) {}
+void Analyzer::analyze(WhileExpr *expr) {
+  if (expr->condition) {
+    analyze(expr->condition->get());
+  }
+  analyze(expr->body.get());
+  if (expr->continue_expr) {
+    analyze(expr->continue_expr->get());
+  }
+}
 
-void Analyzer::analyze(ReturnExpr *expr) {}
+void Analyzer::analyze(ReturnExpr *expr) {
+  if (expr->value) {
+    analyze(expr->value->get());
+  }
+}
 
-void Analyzer::analyze(BreakExpr *expr) {}
+void Analyzer::analyze(BreakExpr *expr) {
+  if (expr->value) {
+    analyze(expr->value->get());
+  }
+}
 
-void Analyzer::analyze(ContinueExpr *expr) {}
+void Analyzer::analyze(ContinueExpr *expr) {
+  if (expr->value) {
+    analyze(expr->value->get());
+  }
+}
 
 void Analyzer::analyze(LiteralExpr *expr) {}
 
-void Analyzer::analyze(TupleExpr *expr) {}
+void Analyzer::analyze(TupleExpr *expr) {
+  for (auto &elem : expr->elements) {
+    analyze(elem.get());
+  }
+}
 
 void Analyzer::analyze(ArrayExpr *expr) {
   // 1. all elements must have the same type (handles in MLIR)
@@ -370,23 +482,59 @@ void Analyzer::analyze(ArrayExpr *expr) {
   expr->extra.is_const = true;
 }
 
-void Analyzer::analyze(BinaryExpr *expr) {}
+void Analyzer::analyze(BinaryExpr *expr) {
+  analyze(expr->lhs.get());
+  analyze(expr->rhs.get());
+}
 
-void Analyzer::analyze(UnaryExpr *expr) {}
+void Analyzer::analyze(UnaryExpr *expr) { analyze(expr->operand.get()); }
 
-void Analyzer::analyze(CallExpr *expr) {}
+void Analyzer::analyze(CallExpr *expr) {
+  for (auto &arg : expr->arguments) {
+    analyze(arg.get());
+  }
+}
 
-void Analyzer::analyze(AssignExpr *expr) {}
+void Analyzer::analyze(AssignExpr *expr) {
+  analyze(expr->lhs.get());
+  analyze(expr->rhs.get());
+}
 
-void Analyzer::analyze(AssignOpExpr *expr) {}
+void Analyzer::analyze(AssignOpExpr *expr) {
+  analyze(expr->lhs.get());
+  analyze(expr->rhs.get());
+}
 
-void Analyzer::analyze(FieldAccessExpr *expr) {}
+void Analyzer::analyze(FieldAccessExpr *expr) {
+  analyze(expr->base.get());
+  if (std::holds_alternative<std::unique_ptr<IdentifierExpr>>(expr->field)) {
+    auto &id = std::get<std::unique_ptr<IdentifierExpr>>(expr->field);
+    analyze(id.get());
+  } else if (std::holds_alternative<std::unique_ptr<LiteralExpr>>(
+                 expr->field)) {
+    auto &field = std::get<std::unique_ptr<LiteralExpr>>(expr->field);
+    analyze(field.get());
+  } else {
+    auto &field = std::get<std::unique_ptr<CallExpr>>(expr->field);
+    analyze(field.get());
+  }
+}
 
-void Analyzer::analyze(IndexExpr *expr) {}
+void Analyzer::analyze(IndexExpr *expr) {
+  analyze(expr->base.get());
+  analyze(expr->index.get());
+}
 
-void Analyzer::analyze(RangeExpr *expr) {}
+void Analyzer::analyze(RangeExpr *expr) {
+  if (expr->start) {
+    analyze(expr->start->get());
+  }
+  if (expr->end) {
+    analyze(expr->end->get());
+  }
+}
 
-void Analyzer::analyze(ComptimeExpr *expr) {}
+void Analyzer::analyze(ComptimeExpr *expr) { analyze(expr->expr.get()); }
 
 void Analyzer::analyze(BlockExpression *expr) {
   NEW_SCOPE();
@@ -446,15 +594,27 @@ void Analyzer::analyze(Type *type) {
 
 void Analyzer::analyze(PrimitiveType *type) {}
 
-void Analyzer::analyze(TupleType *type) {}
+void Analyzer::analyze(TupleType *type) {
+  for (auto &elem : type->elements) {
+    analyze(elem.get());
+  }
+}
 
-void Analyzer::analyze(FunctionType *type) {}
+void Analyzer::analyze(FunctionType *type) {
+  for (auto &param : type->parameters) {
+    analyze(param.get());
+  }
+  analyze(type->return_type.get());
+}
 
-void Analyzer::analyze(ReferenceType *type) {}
+void Analyzer::analyze(ReferenceType *type) { analyze(type->base.get()); }
 
-void Analyzer::analyze(SliceType *type) {}
+void Analyzer::analyze(SliceType *type) { analyze(type->base.get()); }
 
-void Analyzer::analyze(ArrayType *type) {}
+void Analyzer::analyze(ArrayType *type) {
+  analyze(type->base.get());
+  analyze(type->size.get());
+}
 
 void Analyzer::analyze(TraitType *type) {}
 
@@ -466,24 +626,70 @@ void Analyzer::analyze(EnumType *type) {}
 
 void Analyzer::analyze(UnionType *type) {}
 
-void Analyzer::analyze(ExprType *type) {}
+void Analyzer::analyze(ExprType *type) { analyze(type->expr.get()); }
 
 void Analyzer::analyze(MLIRType *type) {}
 
 void Analyzer::analyze(MLIRAttribute *type) {}
 
-void Analyzer::analyze(MLIROp *type) {}
+void Analyzer::analyze(MLIROp *type) {
+  for (auto &operand : type->operands) {
+    analyze(operand.get());
+  }
+}
 
-void Analyzer::analyze(StructField *field) {}
+void Analyzer::analyze(StructField *field) { analyze(field->type.get()); }
 
-void Analyzer::analyze(FieldsNamed *fields) {}
+void Analyzer::analyze(FieldsNamed *fields) {
+  for (auto &field : fields->value) {
+    analyze(field.get());
+  }
+}
 
-void Analyzer::analyze(FieldsUnnamed *fields) {}
+void Analyzer::analyze(FieldsUnnamed *fields) {
+  for (auto &field : fields->value) {
+    analyze(field.get());
+  }
+}
 
-void Analyzer::analyze(Variant *variant) {}
+void Analyzer::analyze(Variant *variant) {
+  if (variant->field) {
+    if (std::holds_alternative<std::unique_ptr<FieldsNamed>>(
+            variant->field.value())) {
+      auto &fields =
+          std::get<std::unique_ptr<FieldsNamed>>(variant->field.value());
+      analyze(fields.get());
+    } else if (std::holds_alternative<std::unique_ptr<FieldsUnnamed>>(
+                   variant->field.value())) {
+      auto &fields =
+          std::get<std::unique_ptr<FieldsUnnamed>>(variant->field.value());
+      analyze(fields.get());
+    } else {
+      auto &field =
+          std::get<std::unique_ptr<Expression>>(variant->field.value());
+      analyze(field.get());
+    }
+  }
+}
 
 void Analyzer::analyze(UnionField *field) {}
 
-void Analyzer::analyze(MatchArm *arm) {}
+void Analyzer::analyze(MatchArm *arm) {
+  analyze(arm->pattern.get());
+  if (std::holds_alternative<std::unique_ptr<BlockExpression>>(arm->body)) {
+    auto &block = std::get<std::unique_ptr<BlockExpression>>(arm->body);
+    analyze(block.get());
+  } else {
+    auto &expr = std::get<std::unique_ptr<Expression>>(arm->body);
+    analyze(expr.get());
+  }
+  if (arm->guard) {
+    analyze(arm->guard->get());
+  }
+}
 
-void Analyzer::analyze(PatternField *field) {}
+void Analyzer::analyze(PatternField *field) {
+  if (field->pattern) {
+    analyze(field->pattern->get());
+  }
+}

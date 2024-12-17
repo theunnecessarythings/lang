@@ -31,4 +31,5 @@
 - [x] MLIROp
 - [ ] Delegate some analysis to analyser.cpp (now empty)
 - [ ] Bug: functions and variables can have the same name
-- [ ] Bug: Tests are broken again (roundtrip fails because builtins are double imported)
+- [x] Bug: Tests are broken again (roundtrip fails because builtins are double imported)
+- [ ] String Interning

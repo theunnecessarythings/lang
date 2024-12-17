@@ -22,6 +22,7 @@
 #include <vector>
 
 using llvm::StringRef;
+using PatternBindings = std::vector<std::pair<llvm::StringRef, Type *>>;
 
 #define NEW_SCOPE()                                                            \
   llvm::ScopedHashTableScope<StringRef, mlir::Value> var_scope(symbol_table);  \
@@ -29,7 +30,9 @@ using llvm::StringRef;
   llvm::ScopedHashTableScope<StringRef, StructDecl *> struct_scope(            \
       struct_table);                                                           \
   llvm::ScopedHashTableScope<mlir::lang::StructType, StringRef>                \
-      struct_name_scope(struct_name_table);
+      struct_name_scope(struct_name_table);                                    \
+  llvm::ScopedHashTableScope<StringRef, Type *> vardecl_scope(                 \
+      compiler_context.var_table);
 
 class AnnotatingListener : public mlir::OpBuilder::Listener {
 public:
@@ -76,7 +79,7 @@ public:
   mlir::ModuleOp langGen(Program *program) {
     NEW_SCOPE()
     the_module = mlir::ModuleOp::create(builder.getUnknownLoc());
-
+    declarePrimitiveTypes();
     for (auto &f : program->items) {
       builder.setInsertionPointToEnd(the_module.getBody());
       if (failed(langGen(f.get()))) {
@@ -99,6 +102,7 @@ private:
   llvm::ScopedHashTable<StringRef, StructDecl *> struct_table;
   llvm::ScopedHashTable<mlir::lang::StructType, StringRef> struct_name_table;
   llvm::StringMap<mlir::lang::FuncOp> function_map;
+  llvm::StringMap<Function *> function_table;
 
   llvm::SmallVector<mlir::Value, 16> type_values;
 
@@ -119,6 +123,30 @@ private:
 
   mlir::Value getTypeValue(int index) { return type_values[index]; }
 
+  llvm::StringRef str(llvm::StringRef string) {
+    return builder.getStringAttr(string);
+  }
+
+  void declarePrimitiveTypes() {
+
+    for (int i = 1; i <= 99; ++i) {
+      auto signless_type = builder.getIntegerType(i);
+      type_table.insert(str("i" + std::to_string(i)), signless_type);
+
+      auto signed_type = builder.getIntegerType(i, /*isSigned=*/true);
+      type_table.insert(str("si" + std::to_string(i)), signed_type);
+
+      auto unsigned_type = builder.getIntegerType(i, /*isSigned=*/false);
+      type_table.insert(str("ui" + std::to_string(i)), unsigned_type);
+    }
+
+    type_table.insert(str("f32"), builder.getF32Type());
+    type_table.insert(str("f64"), builder.getF64Type());
+    type_table.insert(str("bool"), builder.getIntegerType(1));
+    type_table.insert(str("char"), builder.getIntegerType(8));
+    type_table.insert(str("void"), builder.getNoneType());
+  }
+
   std::string mangle(llvm::StringRef base, llvm::ArrayRef<mlir::Type> types) {
     std::string mangled_name = base.str();
     llvm::raw_string_ostream rso(mangled_name);
@@ -131,6 +159,9 @@ private:
     }
     return rso.str();
   }
+
+  // TODO: Implement this
+  void demangle(llvm::StringRef mangled_name) {}
 
   mlir::LogicalResult langGen(TopLevelDecl *decl) {
     if (decl->kind() == AstNodeKind::Function) {
@@ -146,9 +177,8 @@ private:
     return the_module.emitError("unsupported top-level item");
   }
 
-  mlir::LogicalResult langGen(Function *func) {
+  mlir::FailureOr<mlir::lang::FuncOp> langGen(Function *func) {
     NEW_SCOPE()
-    // builder.setInsertionPointToEnd(the_module.getBody());
     auto param_types = langGen(func->decl->parameters);
     if (failed(param_types)) {
       return mlir::failure();
@@ -170,7 +200,9 @@ private:
           mlir::lang::PointerType::get(builder.getContext()));
       return_types = mlir::TypeRange();
     }
-    auto func_name = mangle(func->decl->name, param_types.value());
+    auto func_name = func->decl->extra.is_generic
+                         ? str(func->decl->name)
+                         : str(mangle(func->decl->name, param_types.value()));
     bool is_inline = func->attrs.count(Attribute::Inline);
     mlir::NamedAttrList attrs;
     if (is_inline) {
@@ -181,7 +213,6 @@ private:
     auto func_type = builder.getFunctionType(param_types.value(), return_types);
     auto func_op = builder.create<mlir::lang::FuncOp>(
         loc(func->token.span), func_name, func_type, attrs);
-    function_map[func_name] = func_op;
     current_function = &func_op;
     for (const auto &it : llvm::enumerate(func->decl->parameters)) {
       if (it.value()->is_comptime) {
@@ -189,6 +220,8 @@ private:
                            builder.getBoolAttr(true));
       }
     }
+    function_map[func_name] = func_op;
+    function_table[func_name] = func;
 
     auto entry_block = func_op.addEntryBlock();
     builder.setInsertionPointToStart(entry_block);
@@ -247,7 +280,8 @@ private:
     }
 
     current_function = nullptr;
-    return mlir::success();
+    // return mlir::success();
+    return func_op;
   }
 
   llvm::LogicalResult
@@ -256,7 +290,7 @@ private:
 
     for (int i = 0; i < (int)params.size(); i++) {
       // Assume identifier pattern
-      auto &var_name = params[i]->pattern->as<IdentifierPattern>()->name;
+      auto var_name = str(params[i]->pattern->as<IdentifierPattern>()->name);
       if (failed(declare(var_name, args[i]))) {
         the_module.emitError("redeclaration of parameter");
         return mlir::failure();
@@ -274,6 +308,14 @@ private:
         return mlir::failure();
       }
       arg_types.push_back(type.value());
+      auto bindings =
+          destructurePattern(param->pattern.get(), param->type.get());
+      if (failed(bindings)) {
+        return mlir::failure();
+      }
+      for (auto [name, t] : bindings.value()) {
+        compiler_context.declareVar(name, t);
+      }
     }
     return arg_types;
   }
@@ -426,6 +468,17 @@ private:
   }
 
   mlir::LogicalResult langGen(VarDecl *var_decl) {
+    // Add the variable to the symbol table
+    auto bindings =
+        destructurePattern(var_decl->pattern.get(),
+                           var_decl->type ? var_decl->type->get() : nullptr);
+    if (llvm::failed(bindings)) {
+      return mlir::failure();
+    }
+    for (auto [name, t] : bindings.value()) {
+      compiler_context.declareVar(name, t);
+    }
+
     mlir::Type var_type = nullptr;
     if (var_decl->type.has_value()) {
       var_type = getType(var_decl->type.value().get()).value();
@@ -494,22 +547,21 @@ private:
     } else if (type->kind() == AstNodeKind::IdentifierType) {
       auto identifier_type = type->as<IdentifierType>();
       auto type_name = identifier_type->name;
-
       mlir::Operation *op = nullptr;
       if (current_function) {
         mlir::SymbolTable symbol_table(current_function->getOperation());
         op = symbol_table.lookup(type_name);
+        if (op)
+          return op->getResult(0).getType();
       }
-      if (!op) {
-        // search in struct table
-        auto type = type_table.lookup(type_name);
-        if (!type) {
-          return mlir::emitError(loc(identifier_type->token.span),
-                                 "unknown type");
-        }
+      // search in struct table
+      auto type = type_table.lookup(type_name);
+      if (type)
         return type;
-      }
-      return op->getResult(0).getType();
+      auto vartype = compiler_context.var_table.lookup(type_name);
+      if (vartype)
+        return getType(vartype);
+      return mlir::emitError(loc(identifier_type->token.span), "unknown type");
     } else if (type->kind() == AstNodeKind::SliceType) {
       auto slice_type = type->as<SliceType>();
       auto base_type = getType(slice_type->base.get());
@@ -1068,15 +1120,14 @@ private:
       }
       return var;
     }
-    auto struct_type = type_table.lookup(expr->name);
-    if (struct_type && mlir::isa<mlir::lang::StructType>(struct_type)) {
-      // return type value of struct
+    auto type = type_table.lookup(expr->name);
+    if (type) {
       return builder
-          .create<mlir::lang::TypeConstOp>(loc(expr->token.span), struct_type)
+          .create<mlir::lang::TypeConstOp>(
+              loc(expr->token.span),
+              mlir::lang::TypeValueType::get(builder.getContext(), type), type)
           .getResult();
     }
-
-    // TODO: Check for other types here
     return mlir::emitError(loc(expr->token.span),
                            "undeclared variable " + expr->name);
   }
@@ -1091,6 +1142,7 @@ private:
     // get arguments
     llvm::SmallVector<mlir::Value, 4> args;
     llvm::SmallVector<mlir::Type, 4> arg_types;
+    bool is_generic = false;
     for (auto &arg : expr->arguments) {
       auto arg_value = langGen(arg.get());
       if (failed(arg_value)) {
@@ -1098,13 +1150,15 @@ private:
       }
       args.push_back(arg_value.value());
       arg_types.push_back(arg_value.value().getType());
+      is_generic |= mlir::isa<mlir::lang::TypeValueType>(arg_types.back());
     }
-    auto func_name = mangle(expr->callee, arg_types);
+
+    auto func_name =
+        is_generic ? str(expr->callee) : str(mangle(expr->callee, arg_types));
     // if return type is a struct type, then create a struct instance
     // and pass it as an argument
-    auto func_op = function_map[func_name];
-    if (func_op) {
-      auto func_type = func_op.getFunctionType();
+    if (function_map.lookup(func_name)) {
+      auto func_type = function_map[func_name].getFunctionType();
       mlir::Type return_type = nullptr;
       if (func_type && func_type.getNumResults() == 1) {
         return_type = func_type.getResult(0);
@@ -1141,6 +1195,25 @@ private:
     }
 
     auto func = function_map[func_name];
+    if (is_generic) {
+      auto func_decl = function_table.lookup(func_name);
+      if (!func_decl) {
+        return mlir::emitError(loc(expr->token.span),
+                               "function not found in function table " +
+                                   func_name);
+      }
+      mlir::OpBuilder::InsertionGuard guard(builder);
+      builder.setInsertionPointAfter(func);
+      auto new_func = instantiateGenericFunction(func_decl, args);
+      if (failed(new_func)) {
+        return mlir::emitError(loc(expr->token.span),
+                               "failed to instantiate generic function");
+      }
+      new_func->setName(str(mangle(func_name, new_func->getArgumentTypes())));
+      function_map[new_func->getName()] = new_func.value();
+      func = new_func.value();
+    }
+
     // call function
     auto call_op = builder.create<mlir::lang::CallOp>(
         loc(expr->token.span), func, mlir::ValueRange(args));
@@ -1148,6 +1221,43 @@ private:
       return mlir::success(mlir::Value());
     }
     return call_op.getResult(0);
+  }
+
+  mlir::FailureOr<mlir::lang::FuncOp>
+  instantiateGenericFunction(Function *func,
+                             llvm::SmallVector<mlir::Value, 4> &args) {
+    // Step 1. Identify the generic parameters and their types
+    for (const auto &it : llvm::enumerate(args)) {
+      if (mlir::isa<mlir::lang::TypeValueType>(it.value().getType())) {
+        auto type = mlir::cast<mlir::lang::TypeValueType>(it.value().getType())
+                        .getType();
+        auto pattern = func->decl->parameters[it.index()]->pattern.get();
+        // assume pattern is an identifier for now
+        auto pattern_name = str(pattern->as<IdentifierPattern>()->name);
+        // update type table
+        type_table.insert(pattern_name, type);
+      }
+    }
+    auto func_op = langGen(func);
+    if (llvm::failed(func_op)) {
+      return mlir::failure();
+    }
+    auto inputs_type =
+        llvm::to_vector<4>(func_op->getFunctionType().getInputs());
+    auto r_args = llvm::reverse(args);
+    // remove generic args from the func_op
+    for (const auto [idx, arg] : llvm::enumerate(r_args)) {
+      if (mlir::isa<mlir::lang::TypeValueType>(arg.getType())) {
+        func_op->getCallableRegion()->eraseArgument(args.size() - idx - 1);
+        args.erase(args.end() - idx - 1);
+        inputs_type.erase(inputs_type.end() - idx - 1);
+      }
+    }
+    auto function_type =
+        mlir::FunctionType::get(builder.getContext(), inputs_type,
+                                func_op->getFunctionType().getResults());
+    func_op->setType(function_type);
+    return func_op;
   }
 
   mlir::FailureOr<mlir::Value> langGen(FieldAccessExpr *expr) {
@@ -1239,7 +1349,9 @@ private:
       return mlir::failure();
     }
     auto type_op = builder.create<mlir::lang::TypeConstOp>(
-        loc(type->token.span), mlir_type.value());
+        loc(type->token.span),
+        mlir::lang::TypeValueType::get(builder.getContext(), mlir_type.value()),
+        mlir_type.value());
     return type_op.getResult();
   }
 
@@ -1366,6 +1478,249 @@ private:
           .getResult();
     }
     return mlir::emitError(loc(literal->token.span), "unsupported literal");
+  }
+
+  llvm::FailureOr<PatternBindings> destructurePattern(Pattern *pattern,
+                                                      Type *type) {
+    PatternBindings result;
+    if (!pattern)
+      return result;
+
+    switch (pattern->kind()) {
+    case AstNodeKind::IdentifierPattern: {
+      auto p = static_cast<IdentifierPattern *>(pattern);
+      if (!p->name.empty()) {
+        result.emplace_back(p->name, type);
+      }
+      break;
+    }
+
+    case AstNodeKind::WildcardPattern:
+    case AstNodeKind::LiteralPattern:
+    case AstNodeKind::ExprPattern:
+    case AstNodeKind::RangePattern:
+      // These patterns do not bind variables
+      break;
+
+    case AstNodeKind::TuplePattern: {
+      auto p = static_cast<TuplePattern *>(pattern);
+      auto tuple_t = type->as<TupleType>();
+      if (!tuple_t) {
+        return mlir::emitError(loc(pattern->token.span),
+                               "Pattern and type mismatch: Expected a tuple "
+                               "type");
+      }
+      if (p->elements.size() != tuple_t->elements.size()) {
+        return mlir::emitError(loc(pattern->token.span),
+                               "Tuple pattern length does not match tuple type "
+                               "length");
+      }
+      for (size_t i = 0; i < p->elements.size(); ++i) {
+        auto sub_bindings = destructurePattern(p->elements[i].get(),
+                                               tuple_t->elements[i].get());
+        result.insert(result.end(), sub_bindings->begin(), sub_bindings->end());
+      }
+      break;
+    }
+
+    case AstNodeKind::StructPattern: {
+      auto p = static_cast<StructPattern *>(pattern);
+      auto struct_t = type->as<StructType>();
+      if (!struct_t) {
+        return mlir::emitError(loc(pattern->token.span),
+                               "Pattern and type mismatch: Expected a struct "
+                               "type");
+      }
+
+      llvm::StringRef struct_name =
+          p->name && !p->name->empty() ? *p->name : struct_t->name;
+      for (auto &field_var : p->fields) {
+        if (std::holds_alternative<std::unique_ptr<PatternField>>(field_var)) {
+          auto &f = std::get<std::unique_ptr<PatternField>>(field_var);
+          Type *field_type = getStructFieldType(struct_name, f->name);
+          if (!field_type) {
+            return mlir::emitError(loc(f->token.span),
+                                   "Field type not found for field '" +
+                                       f->name + "'");
+          }
+          if (f->pattern.has_value() && f->pattern.value()) {
+            auto sub_bindings =
+                destructurePattern(f->pattern.value().get(), field_type);
+            result.insert(result.end(), sub_bindings->begin(),
+                          sub_bindings->end());
+          } else {
+            result.emplace_back(f->name, field_type);
+          }
+        } else {
+          // RestPattern inside a struct pattern does not produce named
+          // variables by default unless specifically handled.
+        }
+      }
+      break;
+    }
+
+    case AstNodeKind::SlicePattern: {
+      auto p = static_cast<SlicePattern *>(pattern);
+      auto slice_t = type->as<SliceType>();
+      auto array_t = type->as<ArrayType>();
+      Type *elem_type = nullptr;
+      if (slice_t) {
+        elem_type = slice_t->base.get();
+      } else if (array_t) {
+        elem_type = array_t->base.get();
+      } else {
+        return mlir::emitError(loc(pattern->token.span),
+                               "Pattern and type mismatch: Expected a slice or "
+                               "array type");
+      }
+      for (auto &elem_pattern : p->elements) {
+        auto sub_bindings = destructurePattern(elem_pattern.get(), elem_type);
+        result.insert(result.end(), sub_bindings->begin(), sub_bindings->end());
+      }
+      break;
+    }
+
+    case AstNodeKind::OrPattern: {
+      auto p = static_cast<OrPattern *>(pattern);
+      if (!p->patterns.empty()) {
+        // Ideally, we should verify that all patterns produce the same
+        // bindings.
+        result = destructurePattern(p->patterns[0].get(), type).value();
+      }
+      break;
+    }
+
+    case AstNodeKind::VariantPattern: {
+      auto p = static_cast<VariantPattern *>(pattern);
+      auto enum_t = type->as<EnumType>();
+      if (!enum_t) {
+        return mlir::emitError(
+            loc(pattern->token.span),
+            "Pattern and type mismatch: Expected an enum type");
+      }
+      // Retrieve variant type info from the enum:
+      auto variant_type = getEnumVariantType(enum_t->name, p->name);
+      // getEnumVariantType should return either:
+      // - A tuple type for tuple variants
+      // - A struct type for struct variants
+      // - A single-field type for single-value variants
+      // - nullptr if the variant has no fields
+      if (p->field.has_value()) {
+        auto &var_field = p->field.value();
+        if (!variant_type) {
+          return mlir::emitError(loc(pattern->token.span),
+                                 "Variant '" + p->name +
+                                     "' does not have fields to destructure");
+        }
+
+        if (std::holds_alternative<std::unique_ptr<TuplePattern>>(var_field)) {
+          auto &tp = std::get<std::unique_ptr<TuplePattern>>(var_field);
+          auto variant_tuple_t = variant_type->as<TupleType>();
+          if (!variant_tuple_t) {
+            return mlir::emitError(loc(pattern->token.span),
+                                   "Variant '" + p->name +
+                                       "' is not a tuple variant");
+          }
+          if (tp->elements.size() != variant_tuple_t->elements.size()) {
+            return mlir::emitError(loc(pattern->token.span),
+                                   "Tuple pattern length does not match "
+                                   "variant tuple type length");
+          }
+          for (size_t i = 0; i < tp->elements.size(); ++i) {
+            auto sub_bindings = destructurePattern(
+                tp->elements[i].get(), variant_tuple_t->elements[i].get());
+            result.insert(result.end(), sub_bindings->begin(),
+                          sub_bindings->end());
+          }
+        } else if (std::holds_alternative<std::unique_ptr<StructPattern>>(
+                       var_field)) {
+          auto &sp = std::get<std::unique_ptr<StructPattern>>(var_field);
+          auto variant_struct_t = variant_type->as<StructType>();
+          if (!variant_struct_t) {
+            return mlir::emitError(loc(pattern->token.span),
+                                   "Variant '" + p->name +
+                                       "' is not a struct variant");
+          }
+
+          llvm::StringRef variant_name = variant_struct_t->name;
+          for (auto &field_var : sp->fields) {
+            if (std::holds_alternative<std::unique_ptr<PatternField>>(
+                    field_var)) {
+              auto &f = std::get<std::unique_ptr<PatternField>>(field_var);
+              Type *field_type = getStructFieldType(variant_name, f->name);
+              if (!field_type) {
+                return mlir::emitError(loc(f->token.span),
+                                       "Field type not found for field '" +
+                                           f->name + "' in variant '" +
+                                           p->name + "'");
+              }
+              if (f->pattern.has_value() && f->pattern.value()) {
+                auto sub_bindings =
+                    destructurePattern(f->pattern.value().get(), field_type);
+                result.insert(result.end(), sub_bindings->begin(),
+                              sub_bindings->end());
+
+              } else {
+                result.emplace_back(f->name, field_type);
+              }
+            } else {
+              // If there's a rest pattern in the variant struct pattern,
+              // handle it as in struct patterns.
+            }
+          }
+        }
+      }
+      // If the variant has no fields or the field is not provided, no bindings.
+      break;
+    }
+
+    case AstNodeKind::RestPattern: {
+      // auto p = static_cast<RestPattern *>(pattern);
+      // Rest patterns do not bind named variables by default unless you define
+      // semantics for it. If p->name has a value, you could decide how to
+      // handle it. Without a defined semantic, we do nothing.
+      break;
+    }
+
+    default:
+      // No other patterns need handling
+      break;
+    }
+
+    return result;
+  }
+
+  Type *getStructFieldType(const llvm::StringRef struct_name,
+                           const llvm::StringRef field_name) {
+    // lookup struct table for struct_name
+    auto struct_decl = struct_table.lookup(struct_name);
+    if (!struct_decl) {
+      return nullptr;
+    }
+    // lookup field in struct_decl
+    for (auto &field : struct_decl->fields) {
+      if (field->name == field_name) {
+        return field->type.get();
+      }
+    }
+    return nullptr;
+  }
+
+  // TODO: Implement this
+  Type *getEnumVariantType(const llvm::StringRef enum_name,
+                           const llvm::StringRef variant_name) {
+    // // lookup enum table for enum_name
+    // auto enum_decl = context->enum_table.lookup(enum_name);
+    // if (!enum_decl) {
+    //   return nullptr;
+    // }
+    // // lookup variant in enum_decl
+    // for (auto &variant : enum_decl->variants) {
+    //   if (variant->name == variant_name) {
+    //     return variant->type.get();
+    //   }
+    // }
+    return nullptr;
   }
 };
 
