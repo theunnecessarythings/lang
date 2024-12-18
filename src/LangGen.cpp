@@ -1,6 +1,7 @@
 #include "LangGen.h"
 #include "ast.hpp"
 #include "compiler.hpp"
+#include "data_structures.hpp"
 #include "dialect/LangDialect.h"
 #include "dialect/LangOps.h"
 #include "mlir/AsmParser/AsmParser.h"
@@ -165,7 +166,8 @@ private:
 
   mlir::LogicalResult langGen(TopLevelDecl *decl) {
     if (decl->kind() == AstNodeKind::Function) {
-      return langGen(decl->as<Function>());
+      auto func = decl->as<Function>();
+      return langGen(func, isGenericFunction(func));
     } else if (decl->kind() == AstNodeKind::TupleStructDecl) {
       return langGen(decl->as<TupleStructDecl>());
     } else if (decl->kind() == AstNodeKind::StructDecl) {
@@ -177,7 +179,12 @@ private:
     return the_module.emitError("unsupported top-level item");
   }
 
-  mlir::FailureOr<mlir::lang::FuncOp> langGen(Function *func) {
+  mlir::Result<mlir::lang::FuncOp> langGen(Function *func,
+                                           bool is_generic = false) {
+    if (is_generic) {
+      function_table[str(func->decl->name)] = func;
+      return mlir::success();
+    }
     NEW_SCOPE()
     auto param_types = langGen(func->decl->parameters);
     if (failed(param_types)) {
@@ -230,7 +237,8 @@ private:
     if (failed(declareParameters(func->decl->parameters,
                                  entry_block->getArguments()))) {
       func_op.erase();
-      return emitError(loc(func->token.span), "parameter declaration error");
+      return mlir::emitError(loc(func->token.span),
+                             "parameter declaration error");
     }
 
     // Generate function body.
@@ -239,13 +247,12 @@ private:
         // Create a new struct instance
         auto struct_type = type_table.lookup("Self");
         if (!struct_type) {
-          emitError(loc(func->token.span), "Self not found");
-          return;
+          return emitError(loc(func->token.span), "Self not found");
         }
         auto struct_val = builder.create<mlir::lang::UndefOp>(
             loc(func->token.span), struct_type);
         if (failed(declare("self", struct_val))) {
-          emitError(loc(func->token.span), "redeclaration of self");
+          return emitError(loc(func->token.span), "redeclaration of self");
         }
       };
       if (failed(langGen(func->body.get(), create_self))) {
@@ -292,8 +299,7 @@ private:
       // Assume identifier pattern
       auto var_name = str(params[i]->pattern->as<IdentifierPattern>()->name);
       if (failed(declare(var_name, args[i]))) {
-        the_module.emitError("redeclaration of parameter");
-        return mlir::failure();
+        return the_module.emitError("redeclaration of parameter");
       }
     }
     return mlir::success();
@@ -328,8 +334,7 @@ private:
     }
     auto value = langGen(expr->value.value().get());
     if (failed(value)) {
-      emitError(loc, "unsupported return value");
-      return mlir::failure();
+      return emitError(loc, "unsupported return value");
     }
 
     // NOTE: Assuming only one return value for now
@@ -352,8 +357,7 @@ private:
     for (auto &field : decl->fields) {
       auto type = getType(field.get());
       if (failed(type)) {
-        emitError(span, "unsupported field type");
-        return mlir::failure();
+        return emitError(span, "unsupported field type");
       }
       field_types.push_back(type.value());
     }
@@ -361,8 +365,7 @@ private:
                                                    decl->name, field_types);
     // declare struct type
     if (failed(declare(decl->name, struct_type))) {
-      emitError(span, "redeclaration of struct type");
-      return mlir::failure();
+      return emitError(span, "redeclaration of struct type");
     }
     return mlir::success();
   }
@@ -1075,8 +1078,10 @@ private:
     fn_name = stream.str();
 
     if (!function_map.count(fn_name)) {
-      return mlir::emitError(loc(expr->token.span),
-                             "function " + fn_name + " not found");
+      return mlir::emitError(loc(expr->token.span))
+             << "operation `" << op_fns[static_cast<int>(expr->op)]
+             << "` not implemented for " << lhs.value().getType() << " and "
+             << rhs.value().getType();
     }
     auto func = function_map[fn_name];
 
@@ -1132,6 +1137,15 @@ private:
                            "undeclared variable " + expr->name);
   }
 
+  bool isGenericFunction(Function *func) {
+    for (auto &param : func->decl->parameters) {
+      if (param->is_comptime) {
+        return true;
+      }
+    }
+    return false;
+  }
+
   mlir::FailureOr<mlir::Value> langGen(CallExpr *expr) {
     // lookup callee in struct table
     auto struct_type = type_table.lookup(expr->callee);
@@ -1155,6 +1169,7 @@ private:
 
     auto func_name =
         is_generic ? str(expr->callee) : str(mangle(expr->callee, arg_types));
+
     // if return type is a struct type, then create a struct instance
     // and pass it as an argument
     if (function_map.lookup(func_name)) {
@@ -1171,30 +1186,9 @@ private:
       }
     }
 
-    if (expr->callee == "print") {
-      if (args.size() < 1)
-        return mlir::emitError(loc(expr->token.span),
-                               "print function expects 1 argument");
-      auto arg0 = expr->arguments[0].get();
-      if (arg0->kind() != AstNodeKind::LiteralExpr ||
-          arg0->as<LiteralExpr>()->type != LiteralExpr::LiteralType::String)
-        return mlir::emitError(loc(expr->token.span),
-                               "print function expects a string argument");
-      auto format_str = std::get<std::string>(arg0->as<LiteralExpr>()->value);
-      format_str = format_str.substr(1, format_str.size() - 2) + '\n' + '\0';
-      args.front().getDefiningOp()->erase();
-      mlir::ValueRange rest_args = llvm::ArrayRef(args).drop_front();
-      builder.create<mlir::lang::PrintOp>(loc(expr->token.span), format_str,
-                                          rest_args);
-      return mlir::success(mlir::Value());
-    }
+    if (expr->callee == "print")
+      return printCall(args, expr);
 
-    if (!function_map.count(func_name)) {
-      return mlir::emitError(loc(expr->token.span),
-                             "function " + func_name + " not found");
-    }
-
-    auto func = function_map[func_name];
     if (is_generic) {
       auto func_decl = function_table.lookup(func_name);
       if (!func_decl) {
@@ -1203,16 +1197,27 @@ private:
                                    func_name);
       }
       mlir::OpBuilder::InsertionGuard guard(builder);
-      builder.setInsertionPointAfter(func);
+      builder.setInsertionPointAfter(
+          builder.getInsertionBlock()->getParentOp());
       auto new_func = instantiateGenericFunction(func_decl, args);
       if (failed(new_func)) {
         return mlir::emitError(loc(expr->token.span),
                                "failed to instantiate generic function");
       }
-      new_func->setName(str(mangle(func_name, new_func->getArgumentTypes())));
-      function_map[new_func->getName()] = new_func.value();
-      func = new_func.value();
+      func_name = str(mangle(func_name, new_func->getArgumentTypes()));
+      if (function_map.count(func_name)) {
+        // function already exists, erase the new function
+        // (TODO: need to do this withouth creating the function)
+        new_func->erase();
+      } else {
+        new_func->setName(func_name);
+        function_map[func_name] = new_func.value();
+      }
     }
+    if (!function_map.count(func_name))
+      return mlir::emitError(loc(expr->token.span),
+                             "function " + func_name + " not found");
+    auto func = function_map[func_name];
 
     // call function
     auto call_op = builder.create<mlir::lang::CallOp>(
@@ -1221,6 +1226,25 @@ private:
       return mlir::success(mlir::Value());
     }
     return call_op.getResult(0);
+  }
+
+  mlir::FailureOr<mlir::Value> printCall(mlir::ArrayRef<mlir::Value> args,
+                                         CallExpr *expr) {
+    if (args.size() < 1)
+      return mlir::emitError(loc(expr->token.span),
+                             "print function expects 1 argument");
+    auto arg0 = expr->arguments[0].get();
+    if (arg0->kind() != AstNodeKind::LiteralExpr ||
+        arg0->as<LiteralExpr>()->type != LiteralExpr::LiteralType::String)
+      return mlir::emitError(loc(expr->token.span),
+                             "print function expects a string argument");
+    auto format_str = std::get<std::string>(arg0->as<LiteralExpr>()->value);
+    format_str = format_str.substr(1, format_str.size() - 2) + '\n' + '\0';
+    args.front().getDefiningOp()->erase();
+    mlir::ValueRange rest_args = llvm::ArrayRef(args).drop_front();
+    builder.create<mlir::lang::PrintOp>(loc(expr->token.span), format_str,
+                                        rest_args);
+    return mlir::success(mlir::Value());
   }
 
   mlir::FailureOr<mlir::lang::FuncOp>
@@ -1257,7 +1281,7 @@ private:
         mlir::FunctionType::get(builder.getContext(), inputs_type,
                                 func_op->getFunctionType().getResults());
     func_op->setType(function_type);
-    return func_op;
+    return *func_op;
   }
 
   mlir::FailureOr<mlir::Value> langGen(FieldAccessExpr *expr) {
