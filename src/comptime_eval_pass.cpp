@@ -209,6 +209,7 @@ bool functionHasSideEffects(mlir::FunctionOpInterface funcOp) {
 mlir::LogicalResult ComptimeStateAnalysis::visitCallOperation(
     mlir::CallOpInterface call_op,
     mlir::SmallVector<ComptimeState *, 4> &resultStates) {
+  llvm::errs() << "Visiting call operation: " << call_op << "\n";
   auto module = call_op->getParentOfType<mlir::ModuleOp>();
   if (!module) {
     return llvm::success();
@@ -764,6 +765,18 @@ void ComptimeEvalPass::runOnOperation() {
   solver.load<mlir::dataflow::DeadCodeAnalysis>();
   solver.load<ComptimeStateAnalysis>();
 
+  // Unwrap ImplDeclOp and move the FuncOp to the parent op
+  mlir::OpBuilder builder(module.getContext());
+  module.walk([&](mlir::lang::ImplDeclOp op) {
+    builder.setInsertionPoint(op.getOperation());
+    for (mlir::Operation &inner_op : op->getRegion(0).front()) {
+      if (isa<mlir::lang::FuncOp>(&inner_op)) {
+        builder.insert(inner_op.clone());
+      }
+    }
+    op->erase();
+  });
+
   if (failed(solver.initializeAndRun(module))) {
     llvm::errs() << "ComptimeEvalPass: Dataflow analysis failed\n";
     return signalPassFailure();
@@ -795,7 +808,6 @@ void ComptimeEvalPass::runOnOperation() {
   }
 
   // Step 2: Instantiate generic functions
-  mlir::OpBuilder builder(module.getContext());
   module.walk([&](mlir::lang::CallOp op) {
     // Check whether the callee is a generic function that returns a type
     auto callee_func = isCalleeGenericFunc(&op, module);
@@ -811,17 +823,6 @@ void ComptimeEvalPass::runOnOperation() {
     if (isGenericFunc(op)) {
       op.erase();
     }
-  });
-
-  // Unwrap ImplDeclOp and move the FuncOp to the parent op
-  module.walk([&](mlir::lang::ImplDeclOp op) {
-    builder.setInsertionPoint(op.getOperation());
-    for (mlir::Operation &inner_op : op->getRegion(0).front()) {
-      if (isa<mlir::lang::FuncOp>(&inner_op)) {
-        builder.insert(inner_op.clone());
-      }
-    }
-    op->erase();
   });
 
   // Step 3: Generate the compile-time module and main function
