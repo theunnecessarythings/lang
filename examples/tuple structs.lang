@@ -23,7 +23,7 @@ fn main() void {
     print("Just an integer: %d", (5));
 
     // Tuples can be destructured to create bindings.
-    const tuple = (1, "hello", 4.5, true);
+    const tuple1 = (1, "hello", 4.5, true);
 
 
     const matrix = Matrix(1.1, 1.2, 2.1, 2.2);

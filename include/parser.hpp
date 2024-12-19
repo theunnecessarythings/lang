@@ -15,11 +15,13 @@ struct Parser {
   std::optional<Token> next2_token;
   std::optional<Token> prev_token;
   std::shared_ptr<Context> context;
-
   std::vector<std::unique_ptr<TopLevelDecl>> top_level_decls;
+  int file_id;
 
-  Parser(std::unique_ptr<Lexer> _lexer, std::shared_ptr<Context> _context)
-      : lexer(std::move(_lexer)), context(std::move(_context)) {
+  Parser(std::unique_ptr<Lexer> _lexer, std::shared_ptr<Context> _context,
+         int file_id = 1)
+      : lexer(std::move(_lexer)), context(std::move(_context)),
+        file_id(file_id) {
     next_token = lexer->next();
     next2_token = lexer->next();
   }
@@ -78,7 +80,8 @@ struct Parser {
   std::unique_ptr<LiteralPattern> parseLiteralPattern();
   std::unique_ptr<IdentifierPattern> parseIdentifierPattern();
   std::unique_ptr<WildcardPattern> parseWildcardPattern();
-  std::unique_ptr<TuplePattern> parseTuplePattern();
+  std::unique_ptr<TuplePattern> parseTuplePattern(
+      std::optional<std::unique_ptr<Pattern>> first_pattern = std::nullopt);
   std::unique_ptr<StructPattern>
   parseStructPattern(std::optional<std::string> name = std::nullopt);
   std::unique_ptr<PatternField> parsePatternField();
@@ -95,8 +98,8 @@ struct Parser {
   parseForExpr(bool consume_for = true,
                std::optional<Token> label = std::nullopt);
   std::unique_ptr<CallExpr> parseCallExpr();
-  std::unique_ptr<ReturnExpr> parseReturnExpr();
-  std::unique_ptr<Statement> parseStmt();
+  std::unique_ptr<ReturnExpr> parseReturnExpr(bool consume_return = true);
+  std::unique_ptr<Statement> parseStatement();
   std::unique_ptr<VarDecl> parseVarDecl(bool is_pub = false);
   std::unique_ptr<BreakExpr> parseBreakExpr(bool consume_break = true);
   std::unique_ptr<ContinueExpr> parseContinueExpr(bool consume_continue = true);

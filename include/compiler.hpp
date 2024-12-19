@@ -1,5 +1,6 @@
 #pragma once
 
+#include "mlir/IR/BuiltinOps.h"
 #include "mlir/IR/Diagnostics.h"
 #include "llvm/ADT/ScopedHashTable.h"
 #include "llvm/ADT/StringRef.h"
@@ -7,6 +8,7 @@
 
 #include "ast.hpp"
 #include "lexer.hpp"
+#include "mlir/IR/OwningOpRef.h"
 #include <memory>
 #include <string>
 
@@ -98,4 +100,24 @@ struct Context {
     }
     var_table.insert(name, decl);
   }
+};
+
+enum InputType { Lang, MLIR };
+
+enum Action { None, DumpAST, DumpJSON, DumpMLIR, DumpMLIRLang, DumpMLIRAffine };
+
+struct Compiler {
+  static std::unique_ptr<Program>
+  parseInputFile(llvm::StringRef filename, std::shared_ptr<Context> context);
+  static int dumpJSON(InputType input_type, llvm::StringRef input_filename);
+  static int dumpAST(InputType input_type, llvm::StringRef input_filename);
+  static int loadMLIR(InputType input_type, llvm::StringRef input_filename,
+                      llvm::SourceMgr &sourceMgr, mlir::MLIRContext &context,
+                      mlir::OwningOpRef<mlir::ModuleOp> &module,
+                      bool lang = false);
+  static int runJit(mlir::ModuleOp module, bool enable_opt);
+  static int dumpMLIRLang(InputType input_type, llvm::StringRef input_filename,
+                          bool enable_opt);
+  static int dumpMLIR(InputType input_type, llvm::StringRef input_filename,
+                      bool enable_opt, Action action);
 };

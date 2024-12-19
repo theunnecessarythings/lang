@@ -209,7 +209,6 @@ bool functionHasSideEffects(mlir::FunctionOpInterface funcOp) {
 mlir::LogicalResult ComptimeStateAnalysis::visitCallOperation(
     mlir::CallOpInterface call_op,
     mlir::SmallVector<ComptimeState *, 4> &resultStates) {
-  llvm::errs() << "Visiting call operation: " << call_op << "\n";
   auto module = call_op->getParentOfType<mlir::ModuleOp>();
   if (!module) {
     return llvm::success();
@@ -842,7 +841,7 @@ void ComptimeEvalPass::runOnOperation() {
     return;
   }
 
-  comptime_module.dump();
+  LLVM_DEBUG(comptime_module.dump());
 
   // Step 4: Lower the module and create ExecutionEngine
   std::unique_ptr<mlir::ExecutionEngine> engine;

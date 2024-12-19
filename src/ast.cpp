@@ -615,6 +615,7 @@ void AstDumper::dump(IndexExpr *expr) {
   dump(expr->base.get());
   output_stream << "[";
   dump(expr->index.get());
+  output_stream << "]";
 }
 
 void AstDumper::dump(RangeExpr *expr) {
@@ -631,7 +632,7 @@ void AstDumper::dump(RangeExpr *expr) {
 void AstDumper::dump(PrimitiveType *type) {
   switch (type->type_kind) {
   case PrimitiveType::PrimitiveTypeKind::String:
-    output_stream << "string";
+    output_stream << "String";
     break;
   case PrimitiveType::PrimitiveTypeKind::Char:
     output_stream << "char";
@@ -925,8 +926,13 @@ void AstDumper::dump(Statement *stmt) {
 }
 
 void AstDumper::dump(Expression *expr) {
-  output_stream << "(";
-  switch (expr->kind()) {
+  auto kind = expr->kind();
+  if (kind != AstNodeKind::BlockExpression && kind != AstNodeKind::BreakExpr &&
+      kind != AstNodeKind::ForExpr && kind != AstNodeKind::WhileExpr &&
+      kind != AstNodeKind::IfExpr && kind != AstNodeKind::ContinueExpr &&
+      kind != AstNodeKind::MatchExpr)
+    output_stream << "(";
+  switch (kind) {
   case AstNodeKind::LiteralExpr:
     dump(expr->as<LiteralExpr>());
     break;
@@ -1000,10 +1006,14 @@ void AstDumper::dump(Expression *expr) {
     dump(expr->as<MLIRAttribute>());
     break;
   default:
-    std::cerr << "Unknown expression kind\n";
+    std::cerr << "Unknown expression kind " << ::toString(kind) << "\n";
     break;
   }
-  output_stream << ")";
+  if (kind != AstNodeKind::BlockExpression && kind != AstNodeKind::BreakExpr &&
+      kind != AstNodeKind::ForExpr && kind != AstNodeKind::WhileExpr &&
+      kind != AstNodeKind::IfExpr && kind != AstNodeKind::ContinueExpr &&
+      kind != AstNodeKind::MatchExpr)
+    output_stream << ")";
 }
 
 void AstDumper::dump(Type *type) {

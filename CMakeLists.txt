@@ -45,6 +45,7 @@ add_library(liblang STATIC
     src/MLIRGen.cpp
     src/LangGen.cpp
     src/analyzer.cpp
+    src/compiler.cpp
     src/lower_to_llvm.cpp
     src/lower_to_affine.cpp
     src/literal_cast_pass.cpp
@@ -94,6 +95,10 @@ FetchContent_Declare(
 FetchContent_MakeAvailable(Catch2)
 
 # Tests
-add_executable(tests tests/test_lexer.cpp tests/test_parser.cpp tests/test_analyzer.cpp)
+add_executable(tests 
+    tests/test_lexer.cpp 
+    tests/test_parser.cpp 
+    tests/test_analyzer.cpp
+    tests/test_behaviour.cpp)
 target_include_directories(tests PRIVATE include/)
 target_link_libraries(tests PRIVATE Catch2::Catch2WithMain liblang)

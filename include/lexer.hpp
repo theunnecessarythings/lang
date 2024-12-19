@@ -91,6 +91,7 @@ enum class TokenKind {
   KeywordPub,
   KeywordReturn,
   KeywordStruct,
+  KeywordTuple,
   KeywordVar,
   KeywordComptime,
   KeywordModule,
@@ -165,6 +166,7 @@ struct Lexer {
       {"match", TokenKind::KeywordMatch},
       {"union", TokenKind::KeywordUnion},
       {"trait", TokenKind::KeywordTrait},
+      {"tuple", TokenKind::KeywordTuple},
       {"is", TokenKind::KeywordIs},
       {"as", TokenKind::KeywordAs},
       {"and", TokenKind::KeywordAnd},
@@ -1237,6 +1239,8 @@ struct Lexer {
       return "trait";
     case TokenKind::KeywordMatch:
       return "match";
+    case TokenKind::KeywordTuple:
+      return "tuple";
     case TokenKind::KeywordIs:
       return "is";
     case TokenKind::KeywordAs:

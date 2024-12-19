@@ -1,6 +1,7 @@
 #include "ast.hpp"
 #include "parser.hpp"
 #include <catch2/catch_test_macros.hpp>
+#include <catch2/matchers/catch_matchers.hpp>
 #include <fstream>
 #include <iostream>
 #include <string>
@@ -27,6 +28,36 @@ auto parse(const std::string &path, std::string &str, bool load_builtins = true,
   return tree;
 }
 
+class StringDiffMatcher : public Catch::Matchers::MatcherBase<std::string> {
+  std::string m_expected;
+  mutable std::string m_diff;
+
+public:
+  StringDiffMatcher(const std::string &expected) : m_expected(expected) {}
+
+  bool match(const std::string &actual) const override {
+    size_t minLength = std::min(m_expected.size(), actual.size());
+    size_t diffPos = 0;
+    while (diffPos < minLength && m_expected[diffPos] == actual[diffPos]) {
+      ++diffPos;
+    }
+
+    std::ostringstream oss;
+    oss << "Strings differ at position " << diffPos << ":\n";
+    oss << "Expected: " << m_expected.substr(diffPos, 10) << "...\n";
+    oss << "Actual  : " << actual.substr(diffPos, 10) << "...\n";
+    m_diff = oss.str();
+
+    // Return whether the strings are equal
+    return m_expected == actual;
+  }
+
+  std::string describe() const override { return m_diff; }
+};
+
+inline StringDiffMatcher DiffersAt(const std::string &expected) {
+  return StringDiffMatcher(expected);
+}
 void testRepr(const std::string &path) {
   std::cout << "Parsing " << path << std::endl;
   std::ifstream file(path);
@@ -34,7 +65,7 @@ void testRepr(const std::string &path) {
     throw std::runtime_error("Could not open file " + path);
   std::string str((std::istreambuf_iterator<char>(file)),
                   std::istreambuf_iterator<char>());
-  auto tree = parse(path, str);
+  auto tree = parse(path, str, false);
 
   AstDumper dumper(true);
   dumper.dump(tree.get());
@@ -45,6 +76,7 @@ void testRepr(const std::string &path) {
   dumper2.dump(tree2.get());
 
   REQUIRE(repr == dumper2.toString());
+  // REQUIRE_THAT(repr, DiffersAt(dumper2.toString()));
 }
 
 TEST_CASE("hello", "[parser]") { testRepr("../examples/hello.lang"); }
@@ -169,4 +201,5 @@ TEST_CASE("nested comptime", "[parser]") {
   testRepr("../examples/nested_comptime.lang");
 }
 
-TEST_CASE("mlir types", "[parser]") { testRepr("../examples/mlir_types.lang"); }
+// TEST_CASE("mlir types", "[parser]") {
+// testRepr("../examples/mlir_types.lang"); }

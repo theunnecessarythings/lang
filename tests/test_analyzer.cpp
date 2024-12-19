@@ -27,7 +27,7 @@ auto parse(const std::string &path, std::string &str, int file_id,
 }
 
 void testAnalyzer(const std::string &path) {
-  std::cout << "Parsing " << path << std::endl;
+  std::cout << "Analyzing " << path << std::endl;
   std::ifstream file(path);
   if (!file)
     throw std::runtime_error("Could not open file " + path);

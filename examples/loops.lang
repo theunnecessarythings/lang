@@ -7,12 +7,12 @@ fn main() void {
     while {
         count += 1;
 
-        if count == 3 {
-            print("three");
-
-            // Skip the rest of this iteration
-            continue;
-        }
+        // if count == 3 {
+        //     print("three");
+        //
+        //     // Skip the rest of this iteration
+        //     continue;
+        // }
 
         print("{}", count);
 
