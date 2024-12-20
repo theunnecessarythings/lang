@@ -226,9 +226,6 @@ private:
                            builder.getBoolAttr(true));
       }
     }
-    function_map[func_name] = func_op;
-    function_table[func_name] = func;
-
     auto entry_block = func_op.addEntryBlock();
     builder.setInsertionPointToStart(entry_block);
 
@@ -242,19 +239,23 @@ private:
 
     // Generate function body.
     if (func->decl->extra.is_method && func->decl->name == "init") {
-      auto create_self = [this, &func]() {
+      auto create_self = [&]() {
         // Create a new struct instance
-        auto struct_type = type_table.lookup("Self");
-        if (!struct_type) {
+        auto self_type = type_table.lookup("Self");
+        if (!self_type) {
           emitError(loc(func->token.span), "Self not found");
           return;
         }
         auto struct_val = builder.create<mlir::lang::UndefOp>(
-            loc(func->token.span), struct_type);
+            loc(func->token.span), self_type);
         if (failed(declare("self", struct_val))) {
           emitError(loc(func->token.span), "redeclaration of self");
           return;
         }
+        // update func_name
+        param_types->insert(param_types->begin(), self_type);
+        func_name = str(mangle(func->decl->name, param_types.value()));
+        func_op.setName(func_name);
       };
       if (failed(langGen(func->body.get(), create_self))) {
         func_op.erase();
@@ -287,6 +288,8 @@ private:
       builder.create<mlir::lang::ReturnOp>(loc(func->token.span));
     }
 
+    function_map[func_name] = func_op;
+    function_table[func_name] = func;
     current_function = nullptr;
     // return mlir::success();
     return func_op;
@@ -512,6 +515,21 @@ private:
     } else {
       init_value = builder.create<mlir::lang::UndefOp>(
           loc(var_decl->token.span), var_type);
+    }
+
+    // If there is initializer and type is provided, then insert a cast
+    if (var_decl->initializer.has_value() && var_decl->type.has_value() &&
+        init_value->getType() != var_type) {
+      // Casting is done through method call "init__<type>_<type>"
+      auto func = getSpecialMethod(loc(var_decl->token.span), "init",
+                                   {var_type, init_value.value().getType()});
+      if (mlir::failed(func)) {
+        return mlir::failure();
+      }
+      auto cast_op = builder.create<mlir::lang::CallOp>(
+          loc(var_decl->token.span), func.value(),
+          mlir::ValueRange{init_value.value()});
+      init_value = cast_op.getResult(0);
     }
 
     auto op = builder.create<mlir::lang::VarDeclOp>(
@@ -755,42 +773,19 @@ private:
     }
     auto index_type = index.value().getType();
     auto base_type = base.value().getType();
-    // if (!mlir::isa<mlir::IndexType>(index_type) &&
-    //     mlir::isa<mlir::IntegerType>(index_type)) {
-    //   // insert cast
-    //   index = builder
-    //               .create<mlir::arith::IndexCastOp>(loc(expr->token.span),
-    //                                                 builder.getIndexType(),
-    //                                                 index.value())
-    //               .getResult();
-    // } else {
-    //   return emitError(loc(expr->token.span), "unsupported index type");
-    // }
     if (!mlir::isa<mlir::lang::SliceType, mlir::lang::ArrayType,
                    mlir::TensorType>(base_type)) {
       return mlir::emitError(loc(expr->token.span),
                              "base is not a slice type, got ")
              << base_type;
     }
-    std::string fn_name = "index__";
-    llvm::raw_string_ostream stream(fn_name);
-    stream << base_type << "_" << index_type;
-    fn_name = stream.str();
-
-    if (!function_map.count(fn_name)) {
-      return mlir::emitError(loc(expr->token.span),
-                             "function " + fn_name + " not found");
-    }
-    auto func = function_map[fn_name];
+    auto func = getSpecialMethod(loc(expr->token.span), "index",
+                                 {base_type, index_type});
 
     auto call_op = builder.create<mlir::lang::CallOp>(
-        loc(expr->token.span), func,
+        loc(expr->token.span), func.value(),
         mlir::ValueRange{base.value(), index.value()});
     return call_op.getResult(0);
-
-    // auto index_op = builder.create<mlir::lang::IndexAccessOp>(
-    //     loc(expr->token.span), base_type, base.value(), index.value());
-    // return index_op.getResult();
   }
 
   mlir::FailureOr<mlir::Value> langGen(UnaryExpr *expr) {
@@ -798,19 +793,15 @@ private:
     if (failed(operand)) {
       return mlir::failure();
     }
-    std::string fn_name = "";
-    llvm::raw_string_ostream stream(fn_name);
-    stream << (expr->op == Operator::Sub ? "neg__" : "logical_not__")
-           << operand.value().getType();
-    fn_name = stream.str();
-
-    if (!function_map.count(fn_name)) {
-      return mlir::emitError(loc(expr->token.span),
-                             "function " + fn_name + " not found");
+    auto func =
+        getSpecialMethod(loc(expr->token.span),
+                         expr->op == Operator::Sub ? "neg" : "logical_not",
+                         {operand.value().getType()});
+    if (mlir::failed(func)) {
+      return mlir::failure();
     }
-    auto func = function_map[fn_name];
     auto call_op = builder.create<mlir::lang::CallOp>(
-        loc(expr->token.span), func, mlir::ValueRange{operand.value()});
+        loc(expr->token.span), func.value(), mlir::ValueRange{operand.value()});
     return call_op.getResult(0);
   }
 
@@ -1076,24 +1067,45 @@ private:
         "bitwise_xor",  "bitwise_shl",   "bitwise_shr", "bitwise_not",
         "pow",          "invalid",
     };
+    auto func = getSpecialMethod(loc(expr->token.span),
+                                 op_fns[static_cast<int>(expr->op)],
+                                 {lhs->getType(), rhs->getType()});
+    if (failed(func)) {
+      return mlir::failure();
+    }
+
+    auto call_op = builder.create<mlir::lang::CallOp>(
+        loc(expr->token.span), func.value(),
+        mlir::ValueRange{lhs.value(), rhs.value()});
+    return call_op.getResult(0);
+  }
+
+  mlir::FailureOr<mlir::lang::FuncOp>
+  getSpecialMethod(mlir::Location loc, llvm::StringRef method_name,
+                   llvm::ArrayRef<mlir::Type> arg_types) {
     std::string fn_name = "";
     llvm::raw_string_ostream stream(fn_name);
-    stream << op_fns[static_cast<int>(expr->op)] << "__"
-           << lhs.value().getType() << "_" << rhs.value().getType();
+    stream << method_name << "__";
+    for (auto &arg_type : arg_types) {
+      stream << arg_type;
+      if (&arg_type != &arg_types.back())
+        stream << "_";
+    }
     fn_name = stream.str();
 
     if (!function_map.count(fn_name)) {
-      return mlir::emitError(loc(expr->token.span))
-             << "operation `" << op_fns[static_cast<int>(expr->op)]
-             << "` not implemented for " << lhs.value().getType() << " and "
-             << rhs.value().getType();
+      auto err = mlir::emitError(loc)
+                 << "operation `" << method_name << "` not implemented for ";
+      for (auto &arg_type : arg_types) {
+        err << arg_type;
+        if (&arg_type != &arg_types.back())
+          err << ", ";
+        else
+          err << "\n";
+      }
+      return err;
     }
-    auto func = function_map[fn_name];
-
-    auto call_op = builder.create<mlir::lang::CallOp>(
-        loc(expr->token.span), func,
-        mlir::ValueRange{lhs.value(), rhs.value()});
-    return call_op.getResult(0);
+    return function_map[fn_name];
   }
 
   mlir::FailureOr<mlir::Value> langGen(AssignStatement *expr) {

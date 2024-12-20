@@ -1,4 +1,8 @@
 impl f64 {
+    fn init(self: Self, value: f32) Self {
+        return @mlir_op("arith.extf", [value], {}, ["f64"]);
+    }
+
     fn add(self: Self, other: Self) Self {
         return @mlir_op("arith.addf", [self, other], {}, ["f64"]);
     }
@@ -29,5 +33,11 @@ impl f64 {
 
     fn neg(self: Self) Self {
         return @mlir_op("arith.mulf", [self, @mlir_attr("-1.0 : f64")], {}, ["f64"]);
+    }
+}
+
+impl f32 {
+    fn init(self: Self, value: f64) Self {
+        return @mlir_op("arith.truncf", [value], {}, ["f32"]);
     }
 }

@@ -4,34 +4,28 @@
 #include "analyzer.hpp"
 #include "ast.hpp"
 #include "dialect/LangDialect.h"
-#include "dialect/LangOps.h"
 #include "dialect/LangOpsDialect.cpp.inc"
 #include "json_dumper.hpp"
 #include "mlir/Conversion/ArithToLLVM/ArithToLLVM.h"
 #include "mlir/Conversion/ControlFlowToLLVM/ControlFlowToLLVM.h"
 #include "mlir/Conversion/FuncToLLVM/ConvertFuncToLLVM.h"
 #include "mlir/Conversion/MemRefToLLVM/MemRefToLLVM.h"
-#include "mlir/Conversion/Passes.h"
 #include "mlir/Dialect/Affine/Passes.h"
 #include "mlir/Dialect/Arith/Transforms/BufferizableOpInterfaceImpl.h"
 #include "mlir/Dialect/Func/Extensions/AllExtensions.h"
-#include "mlir/Dialect/Func/Transforms/Passes.h"
 #include "mlir/Dialect/LLVMIR/Transforms/InlinerInterfaceImpl.h"
 #include "mlir/Dialect/LLVMIR/Transforms/Passes.h"
 #include "mlir/Dialect/MemRef/IR/MemRef.h"
 #include "mlir/ExecutionEngine/ExecutionEngine.h"
 #include "mlir/ExecutionEngine/OptUtils.h"
 #include "mlir/IR/AsmState.h"
-#include "mlir/IR/Builders.h"
 #include "mlir/IR/BuiltinOps.h"
-#include "mlir/IR/Dialect.h"
 #include "mlir/IR/MLIRContext.h"
 #include "mlir/IR/Verifier.h"
 #include "mlir/InitAllDialects.h"
 #include "mlir/InitAllExtensions.h"
 #include "mlir/InitAllPasses.h"
 #include "mlir/Parser/Parser.h"
-#include "mlir/Pass/Pass.h"
 #include "mlir/Pass/PassManager.h"
 #include "mlir/Support/FileUtilities.h"
 #include "mlir/Target/LLVMIR/Dialect/Builtin/BuiltinToLLVMIRTranslation.h"
@@ -46,15 +40,12 @@
 #include "llvm/IR/Module.h"
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/ErrorOr.h"
-#include "llvm/Support/InitLLVM.h"
 #include "llvm/Support/MemoryBuffer.h"
 #include "llvm/Support/SourceMgr.h"
 #include "llvm/Support/TargetSelect.h"
-#include "llvm/Support/ToolOutputFile.h"
 #include "llvm/Support/raw_ostream.h"
 #include <cassert>
 #include <memory>
-#include <string>
 #include <system_error>
 #include <utility>
 
@@ -260,8 +251,10 @@ int Compiler::dumpMLIRLang(InputType input_type, llvm::StringRef input_filename,
   pm.addPass(mlir::createConvertToLLVMPass());
   pm.addPass(mlir::LLVM::createDIScopeForLLVMFuncOpPass());
   pm.addPass(mlir::createReconcileUnrealizedCastsPass());
-  if (mlir::failed(pm.run(*module)))
+  if (mlir::failed(pm.run(*module))) {
+    LLVM_DEBUG(module->dump());
     return 4;
+  }
   LLVM_DEBUG(llvm::errs() << "MLIR after lowering to LLVM:\n");
   LLVM_DEBUG(module->dump());
   runJit(module.get(), enable_opt);
