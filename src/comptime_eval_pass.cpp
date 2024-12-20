@@ -1,4 +1,5 @@
 #include "comptime_eval_pass.hpp"
+#include "dialect/LangOps.h"
 #include "mlir/Analysis/DataFlow/DeadCodeAnalysis.h"
 #include "mlir/Analysis/DataFlowFramework.h"
 #include "mlir/Analysis/TopologicalSortUtils.h"
@@ -28,6 +29,7 @@
 #include "mlir/Transforms/FoldUtils.h"
 #include "mlir/Transforms/Passes.h"
 #include "passes.h"
+#include "llvm/ADT/STLExtras.h"
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/TargetSelect.h"
 
@@ -677,7 +679,9 @@ bool isGenericFunc(mlir::lang::FuncOp &op) {
       return true;
     }
   }
-  return false;
+  return llvm::any_of(op.getResultTypes(), [](auto &x) {
+    return mlir::isa<mlir::lang::LangType>(x);
+  });
 }
 
 mlir::lang::FuncOp isCalleeGenericFunc(mlir::lang::CallOp *op,

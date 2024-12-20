@@ -553,10 +553,11 @@ void AstDumper::dump(CallExpr *expr) {
   output_stream << ")";
 }
 
-void AstDumper::dump(AssignExpr *expr) {
-  dump(expr->lhs.get());
+void AstDumper::dump(AssignStatement *expr) {
+  dump(expr->lhs.get(), false);
   output_stream << " = ";
   dump(expr->rhs.get());
+  output_stream << ";\n";
 }
 
 void AstDumper::dump(AssignOpExpr *expr) {
@@ -912,7 +913,9 @@ void AstDumper::dump(Statement *stmt) {
   case AstNodeKind::TopLevelDeclStmt:
     dump(stmt->as<TopLevelDeclStmt>());
     break;
-
+  case AstNodeKind::AssignStatement:
+    dump(stmt->as<AssignStatement>());
+    break;
   case AstNodeKind::VarDecl:
     dump(stmt->as<VarDecl>());
     break;
@@ -925,12 +928,12 @@ void AstDumper::dump(Statement *stmt) {
   }
 }
 
-void AstDumper::dump(Expression *expr) {
+void AstDumper::dump(Expression *expr, bool parens) {
   auto kind = expr->kind();
-  if (kind != AstNodeKind::BlockExpression && kind != AstNodeKind::BreakExpr &&
-      kind != AstNodeKind::ForExpr && kind != AstNodeKind::WhileExpr &&
-      kind != AstNodeKind::IfExpr && kind != AstNodeKind::ContinueExpr &&
-      kind != AstNodeKind::MatchExpr)
+  if (parens && kind != AstNodeKind::BlockExpression &&
+      kind != AstNodeKind::BreakExpr && kind != AstNodeKind::ForExpr &&
+      kind != AstNodeKind::WhileExpr && kind != AstNodeKind::IfExpr &&
+      kind != AstNodeKind::ContinueExpr && kind != AstNodeKind::MatchExpr)
     output_stream << "(";
   switch (kind) {
   case AstNodeKind::LiteralExpr:
@@ -953,9 +956,6 @@ void AstDumper::dump(Expression *expr) {
     break;
   case AstNodeKind::CallExpr:
     dump(expr->as<CallExpr>());
-    break;
-  case AstNodeKind::AssignExpr:
-    dump(expr->as<AssignExpr>());
     break;
   case AstNodeKind::AssignOpExpr:
     dump(expr->as<AssignOpExpr>());
@@ -1009,10 +1009,10 @@ void AstDumper::dump(Expression *expr) {
     std::cerr << "Unknown expression kind " << ::toString(kind) << "\n";
     break;
   }
-  if (kind != AstNodeKind::BlockExpression && kind != AstNodeKind::BreakExpr &&
-      kind != AstNodeKind::ForExpr && kind != AstNodeKind::WhileExpr &&
-      kind != AstNodeKind::IfExpr && kind != AstNodeKind::ContinueExpr &&
-      kind != AstNodeKind::MatchExpr)
+  if (parens && kind != AstNodeKind::BlockExpression &&
+      kind != AstNodeKind::BreakExpr && kind != AstNodeKind::ForExpr &&
+      kind != AstNodeKind::WhileExpr && kind != AstNodeKind::IfExpr &&
+      kind != AstNodeKind::ContinueExpr && kind != AstNodeKind::MatchExpr)
     output_stream << ")";
 }
 
@@ -1113,7 +1113,7 @@ std::string &toString(AstNodeKind kind) {
       "BinaryExpr",
       "UnaryExpr",
       "CallExpr",
-      "AssignExpr",
+      "AssignStatement",
       "AssignOpExpr",
       "FieldAccessExpr",
       "IndexExpr",

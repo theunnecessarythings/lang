@@ -14,5 +14,6 @@ fn OuterFunction(comptime T: type impl Cloneable) type {
 pub fn main() void {
     const Outer = OuterFunction(cloneable_type);
     const Inner = Outer(comparable_type);
-    const instance = Inner(item1 = cloneable_instance, item2 = comparable_instance);
+    // const instance = Inner(item1 = cloneable_instance, item2 = comparable_instance);
+    const instance = Inner(cloneable_instance, comparable_instance);
 }

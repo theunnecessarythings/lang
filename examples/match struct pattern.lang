@@ -5,7 +5,8 @@ fn main() void {
     }
 
     // Try changing the values in the struct to see what happens
-    const foo = Foo(x=(1, 2), y=3);
+    // const foo = Foo(x=(1, 2), y=3);
+    const foo = Foo((1, 2), 3);
 
     match foo {
         is Foo { x: (1, b), y } => print("First of x is 1, b = {},  y = {} ", b, y),
@@ -30,7 +31,8 @@ fn main() void {
         foo: Foo,
     }
 
-    const bar = Bar(foo=faa);
+    // const bar = Bar(foo=faa);
+    const bar = Bar(faa);
     const Bar { foo: Foo { x: nested_x, y: nested_y } } = bar;
     print("Nested: nested_x = {nested_x}, nested_y = {nested_y}");
 }

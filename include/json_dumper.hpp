@@ -35,7 +35,7 @@ struct JsonDumper {
   void dump(BinaryExpr *node);
   void dump(UnaryExpr *node);
   void dump(CallExpr *node);
-  void dump(AssignExpr *node);
+  void dump(AssignStatement *node);
   void dump(AssignOpExpr *node);
   void dump(FieldAccessExpr *node);
   void dump(IndexExpr *node);
@@ -199,8 +199,8 @@ private:
       return "UnaryExpr";
     case AstNodeKind::CallExpr:
       return "CallExpr";
-    case AstNodeKind::AssignExpr:
-      return "AssignExpr";
+    case AstNodeKind::AssignStatement:
+      return "AssignStatement";
     case AstNodeKind::AssignOpExpr:
       return "AssignOpExpr";
     case AstNodeKind::FieldAccessExpr:

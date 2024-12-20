@@ -1079,6 +1079,7 @@ void LangToAffineLoweringPass::runOnOperation() {
                                        std::move(patterns)))) {
 
     llvm::errs() << "LangToAffineLoweringPass: Full conversion failed for\n";
+    getOperation().dump();
     signalPassFailure();
   }
 }

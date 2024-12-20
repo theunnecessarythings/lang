@@ -1009,7 +1009,7 @@ void JsonDumper::dump(CallExpr *node) {
   output_stream << "}";
 }
 
-void JsonDumper::dump(AssignExpr *node) {
+void JsonDumper::dump(AssignStatement *node) {
   output_stream << "{\n";
   cur_indent++;
 
@@ -1816,9 +1816,6 @@ void JsonDumper::dump(Expression *node) {
   case AstNodeKind::CallExpr:
     dump(node->as<CallExpr>());
     break;
-  case AstNodeKind::AssignExpr:
-    dump(node->as<AssignExpr>());
-    break;
   case AstNodeKind::AssignOpExpr:
     dump(node->as<AssignOpExpr>());
     break;
@@ -1877,6 +1874,9 @@ void JsonDumper::dump(Statement *node) {
     break;
   case AstNodeKind::TopLevelDeclStmt:
     dump(node->as<TopLevelDeclStmt>());
+    break;
+  case AstNodeKind::AssignStatement:
+    dump(node->as<AssignStatement>());
     break;
   default:
     output_stream << "{\n";

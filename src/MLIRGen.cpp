@@ -415,6 +415,12 @@ private:
         return mlir::failure();
       }
       return mlir::success();
+    } else if (stmt->kind() == AstNodeKind::AssignStatement) {
+      auto expr = stmt->as<AssignStatement>();
+      if (failed(mlirGen(expr))) {
+        emitError(loc(expr->token.span), "error in assignment statement");
+        return mlir::failure();
+      }
     }
     the_module.emitError("unsupported statement");
     return mlir::failure();
@@ -586,8 +592,6 @@ private:
       return mlirGen(expr->as<UnaryExpr>());
     case AstNodeKind::TupleExpr:
       return mlirGen(expr->as<TupleExpr>());
-    case AstNodeKind::AssignExpr:
-      return mlirGen(expr->as<AssignExpr>());
     case AstNodeKind::FieldAccessExpr:
       return mlirGen(expr->as<FieldAccessExpr>());
     default:
@@ -637,7 +641,7 @@ private:
     return static_cast<mlir::Value>(struct_ptr);
   }
 
-  llvm::FailureOr<mlir::Value> mlirGen(AssignExpr *expr) {
+  llvm::FailureOr<mlir::Value> mlirGen(AssignStatement *expr) {
     auto loc = this->loc(expr->token.span);
     auto value = mlirGen(expr->rhs.get());
     if (failed(value)) {
@@ -645,17 +649,7 @@ private:
       return mlir::failure();
     }
 
-    // if lhs is not an identifier expr, index expr or field access expr
-    // then it is not a valid lvalue
-    auto lhs_kind = expr->lhs->kind();
-    if (lhs_kind != AstNodeKind::IdentifierExpr &&
-        lhs_kind != AstNodeKind::IndexExpr &&
-        lhs_kind != AstNodeKind::FieldAccessExpr) {
-      emitError(loc, "invalid lvalue");
-      return mlir::failure();
-    }
-
-    if (lhs_kind == AstNodeKind::FieldAccessExpr) {
+    if (expr->lhs->kind() == AstNodeKind::FieldAccessExpr) {
       auto field_access = expr->lhs->as<FieldAccessExpr>();
       auto lhs = mlirGen(field_access->base.get());
 

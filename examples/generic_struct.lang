@@ -41,7 +41,8 @@ fn MultiCollection(
 
 pub fn main() void {
     const MyCollection = Collection(serializable_comparable_type, comparable_with_serializable_type);
-    var my_collection = MyCollection(item1=some_val1, item2=some_val2);
+    // var my_collection = MyCollection(item1=some_val1, item2=some_val2);
+    var my_collection = MyCollection(some_val1, some_val2);
     my_collection.compare_and_serialize();
 
     const ComplexCollection = MultiCollection(
@@ -49,6 +50,7 @@ pub fn main() void {
         some_comparable_with_serializable,
         some_hashable_equatable
     );
-    const collection_instance = ComplexCollection(item1=val1, item2=val2, item3=val3);
+    // const collection_instance = ComplexCollection(item1=val1, item2=val2, item3=val3);
+    const collection_instance = ComplexCollection(val1, val2, val3);
     collection_instance.serialize_all();
 }

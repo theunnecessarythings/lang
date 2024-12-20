@@ -155,7 +155,6 @@ void Parser::consumeOptionalSemicolon() {
 
 int Parser::bindingPow(const Token &token) {
   switch (token.kind) {
-  case TokenKind::Equal:
   case TokenKind::PlusEqual:
   case TokenKind::MinusEqual:
   case TokenKind::StarEqual:
@@ -318,9 +317,6 @@ std::unique_ptr<Expression> Parser::led(std::unique_ptr<Expression> left,
                                         Token &op) {
   auto precedence = bindingPow(op);
   switch (op.kind) {
-  case TokenKind::Equal:
-    return std::make_unique<AssignExpr>(op, std::move(left),
-                                        parseExpr(precedence - 1));
   case TokenKind::PlusEqual:
   case TokenKind::MinusEqual:
   case TokenKind::StarEqual:
@@ -1590,8 +1586,19 @@ std::unique_ptr<Statement> Parser::parseStatement() {
   } else {
     auto token = peek().value();
     auto expr = parseExpr(0);
-    if (expr->kind() != AstNodeKind::BlockExpression &&
-        !isPeek(TokenKind::Semicolon)) {
+    auto kind = expr->kind();
+    if ((kind == AstNodeKind::IndexExpr ||
+         kind == AstNodeKind::FieldAccessExpr ||
+         kind == AstNodeKind::IdentifierExpr) &&
+        isPeek(TokenKind::Equal)) {
+      // assignment statement
+      consumeKind(TokenKind::Equal);
+      auto rhs = parseExpr(0);
+      consumeKind(TokenKind::Semicolon);
+      return std::make_unique<AssignStatement>(token, std::move(expr),
+                                               std::move(rhs));
+    }
+    if (kind != AstNodeKind::BlockExpression && !isPeek(TokenKind::Semicolon)) {
       // if not block expression, then it is an implicit yield
       expr = std::make_unique<YieldExpr>(token, std::nullopt, std::move(expr));
       return std::make_unique<ExprStmt>(token, std::move(expr));

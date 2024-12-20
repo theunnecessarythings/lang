@@ -53,7 +53,7 @@ enum class AstNodeKind {
   BinaryExpr,
   UnaryExpr,
   CallExpr,
-  AssignExpr,
+  AssignStatement,
   AssignOpExpr,
   FieldAccessExpr,
   IndexExpr,
@@ -775,31 +775,6 @@ struct CallExpr : public ExpressionBase<CallExpr> {
   AstNodeKind kind() const override { return AstNodeKind::CallExpr; }
 };
 
-struct AssignExpr : public ExpressionBase<AssignExpr> {
-  std::unique_ptr<Expression> lhs;
-  std::unique_ptr<Expression> rhs;
-
-  AssignExpr(Token token, std::unique_ptr<Expression> lhs,
-             std::unique_ptr<Expression> rhs)
-      : ExpressionBase<AssignExpr>(std::move(token)), lhs(std::move(lhs)),
-        rhs(std::move(rhs)) {}
-
-  AstNodeKind kind() const override { return AstNodeKind::AssignExpr; }
-};
-
-struct AssignOpExpr : public ExpressionBase<AssignOpExpr> {
-  Operator op;
-  std::unique_ptr<Expression> lhs;
-  std::unique_ptr<Expression> rhs;
-
-  AssignOpExpr(Token token, Operator op, std::unique_ptr<Expression> lhs,
-               std::unique_ptr<Expression> rhs)
-      : ExpressionBase<AssignOpExpr>(std::move(token)), op(op),
-        lhs(std::move(lhs)), rhs(std::move(rhs)) {}
-
-  AstNodeKind kind() const override { return AstNodeKind::AssignOpExpr; }
-};
-
 struct FieldAccessExpr : public ExpressionBase<FieldAccessExpr> {
   std::unique_ptr<Expression> base;
   using Field =
@@ -824,6 +799,36 @@ struct IndexExpr : public ExpressionBase<IndexExpr> {
         index(std::move(index)) {}
 
   AstNodeKind kind() const override { return AstNodeKind::IndexExpr; }
+};
+
+struct AssignStatement : public StatementBase<AssignStatement> {
+  std::unique_ptr<Expression> lhs;
+  std::unique_ptr<Expression> rhs;
+
+  AssignStatement(Token token, std::unique_ptr<Expression> lhs,
+                  std::unique_ptr<Expression> rhs)
+      : StatementBase<AssignStatement>(std::move(token)), rhs(std::move(rhs)) {
+    assert((lhs->kind() == AstNodeKind::IdentifierExpr ||
+            lhs->kind() == AstNodeKind::FieldAccessExpr ||
+            lhs->kind() == AstNodeKind::IndexExpr) &&
+           "lhs must be an lvalue");
+    this->lhs = std::move(lhs);
+  }
+
+  AstNodeKind kind() const override { return AstNodeKind::AssignStatement; }
+};
+
+struct AssignOpExpr : public ExpressionBase<AssignOpExpr> {
+  Operator op;
+  std::unique_ptr<Expression> lhs;
+  std::unique_ptr<Expression> rhs;
+
+  AssignOpExpr(Token token, Operator op, std::unique_ptr<Expression> lhs,
+               std::unique_ptr<Expression> rhs)
+      : ExpressionBase<AssignOpExpr>(std::move(token)), op(op),
+        lhs(std::move(lhs)), rhs(std::move(rhs)) {}
+
+  AstNodeKind kind() const override { return AstNodeKind::AssignOpExpr; }
 };
 
 struct RangeExpr : public ExpressionBase<RangeExpr> {
@@ -1180,7 +1185,7 @@ struct AstDumper {
   void dump(BinaryExpr *);
   void dump(UnaryExpr *);
   void dump(CallExpr *);
-  void dump(AssignExpr *);
+  void dump(AssignStatement *);
   void dump(AssignOpExpr *);
   void dump(FieldAccessExpr *);
   void dump(IndexExpr *);
@@ -1213,7 +1218,7 @@ struct AstDumper {
   void dump(ComptimeExpr *);
   void dump(BlockExpression *);
   void dump(Parameter *);
-  void dump(Expression *);
+  void dump(Expression *, bool parens = true);
   void dump(Statement *);
   void dump(Type *);
   void dump(Pattern *);

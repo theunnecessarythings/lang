@@ -33,7 +33,7 @@ struct Analyzer {
   void analyze(BinaryExpr *);
   void analyze(UnaryExpr *);
   void analyze(CallExpr *);
-  void analyze(AssignExpr *);
+  void analyze(AssignStatement *);
   void analyze(AssignOpExpr *);
   void analyze(FieldAccessExpr *);
   void analyze(IndexExpr *);

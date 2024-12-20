@@ -13,7 +13,8 @@ impl Pair {
 }
 
 fn main() void {
-    const rectange = Rectangle(p1=Point.origin(), p2=Point(3.0, 4.0));
+    // const rectange = Rectangle(p1=Point.origin(), p2=Point(3.0, 4.0));
+    const rectangle = Rectangle(Point.origin(), Point(3.0, 4.0));
 
     // Methods are called using the dot operator
     // Note that the first argument `self` is implicitly passed, i.e.
@@ -21,7 +22,8 @@ fn main() void {
     print("Rectangle perimeter: {}", rectangle.perimeter());
     print("Rectangle area: {}", rectangle.area());
 
-    var square = Rectangle(p1=Point.origin(), p2=Point(1.0, 1.0));
+    // var square = Rectangle(p1=Point.origin(), p2=Point(1.0, 1.0));
+    var square = Rectangle(Point.origin(), Point(1.0, 1.0));
 
     // Error! `rectangle` is immutable, but this method requires a mutable
     // object

@@ -68,9 +68,8 @@ void testRepr(const std::string &path) {
   auto tree = parse(path, str, false);
 
   AstDumper dumper(true);
-  dumper.dump(tree.get());
   auto repr = dumper.toString();
-
+  std::cout << repr << std::endl;
   auto tree2 = parse(path, repr, false);
   AstDumper dumper2(true);
   dumper2.dump(tree2.get());

@@ -1,8 +1,6 @@
-#include "dialect/LangOps.h"
 #include "mlir/Analysis/DataFlowFramework.h"
-#include "mlir/IR/Attributes.h"
 #include "mlir/IR/Operation.h"
-#include "mlir/Pass/Pass.h"
+#include "mlir/Interfaces/CallInterfaces.h"
 
 namespace {
 

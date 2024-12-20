@@ -301,6 +301,9 @@ void Analyzer::analyze(Statement *stmt) {
   case AstNodeKind::TopLevelDeclStmt:
     analyze(stmt->as<TopLevelDeclStmt>());
     break;
+  case AstNodeKind::AssignStatement:
+    analyze(stmt->as<AssignStatement>());
+    break;
   default:
     assert(false && "not a statement or not implemented yet");
     break;
@@ -366,9 +369,6 @@ void Analyzer::analyze(Expression *expr) {
     break;
   case AstNodeKind::CallExpr:
     analyze(expr->as<CallExpr>());
-    break;
-  case AstNodeKind::AssignExpr:
-    analyze(expr->as<AssignExpr>());
     break;
   case AstNodeKind::AssignOpExpr:
     analyze(expr->as<AssignOpExpr>());
@@ -495,7 +495,7 @@ void Analyzer::analyze(CallExpr *expr) {
   }
 }
 
-void Analyzer::analyze(AssignExpr *expr) {
+void Analyzer::analyze(AssignStatement *expr) {
   analyze(expr->lhs.get());
   analyze(expr->rhs.get());
 }

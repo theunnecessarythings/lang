@@ -2,7 +2,6 @@
 #include "ast.hpp"
 #include "compiler.hpp"
 #include "data_structures.hpp"
-#include "dialect/LangDialect.h"
 #include "dialect/LangOps.h"
 #include "mlir/AsmParser/AsmParser.h"
 #include "mlir/AsmParser/AsmParserState.h"
@@ -247,12 +246,14 @@ private:
         // Create a new struct instance
         auto struct_type = type_table.lookup("Self");
         if (!struct_type) {
-          return emitError(loc(func->token.span), "Self not found");
+          emitError(loc(func->token.span), "Self not found");
+          return;
         }
         auto struct_val = builder.create<mlir::lang::UndefOp>(
             loc(func->token.span), struct_type);
         if (failed(declare("self", struct_val))) {
-          return emitError(loc(func->token.span), "redeclaration of self");
+          emitError(loc(func->token.span), "redeclaration of self");
+          return;
         }
       };
       if (failed(langGen(func->body.get(), create_self))) {
@@ -466,6 +467,8 @@ private:
       return langGen(stmt->as<ExprStmt>()->expr.get());
     } else if (stmt->kind() == AstNodeKind::TopLevelDeclStmt) {
       return langGen(stmt->as<TopLevelDeclStmt>()->decl.get());
+    } else if (stmt->kind() == AstNodeKind::AssignStatement) {
+      return langGen(stmt->as<AssignStatement>());
     }
     return mlir::emitError(loc(stmt->token.span), "unsupported statement");
   }
@@ -484,7 +487,11 @@ private:
 
     mlir::Type var_type = nullptr;
     if (var_decl->type.has_value()) {
-      var_type = getType(var_decl->type.value().get()).value();
+      auto type = getType(var_decl->type.value().get());
+      if (failed(type)) {
+        return mlir::failure();
+      }
+      var_type = type.value();
     }
 
     // assume the name is identifier pattern for now
@@ -502,6 +509,9 @@ private:
         return mlir::failure();
       }
       init_value = v.value();
+    } else {
+      init_value = builder.create<mlir::lang::UndefOp>(
+          loc(var_decl->token.span), var_type);
     }
 
     auto op = builder.create<mlir::lang::VarDeclOp>(
@@ -590,16 +600,13 @@ private:
       return mlir::lang::ArrayType::get(builder.getContext(), base_type.value(),
                                         builder.getI64IntegerAttr(type_index),
                                         builder.getBoolAttr(true));
-      // return mlir::MemRefType::get(
-      //     {std::numeric_limits<int64_t>::min(), type_index},
-      //     base_type.value());
-      // if (size_expr->kind() != AstNodeKind::LiteralExpr) {
-      //   return mlir::emitError(loc(size_expr->token.span),
-      //                          "unsupported array size expression");
-      // }
-      // auto size_literal = size_expr->as<LiteralExpr>();
-      // auto size = std::get<int>(size_literal->value);
-      // return mlir::lang::ArrayType::get(base_type.value(), size);
+    } else if (type->kind() == AstNodeKind::ExprType) {
+      auto expr_type = type->as<ExprType>();
+      auto type_value = langGen(expr_type->expr.get());
+      if (failed(type_value)) {
+        return mlir::failure();
+      }
+      return type_value.value().getType();
     }
     return mlir::emitError(loc(type->token.span),
                            "unsupported type " + toString(type->kind()));
@@ -623,8 +630,6 @@ private:
       return langGen(expr->as<FieldAccessExpr>());
     case AstNodeKind::IdentifierExpr:
       return langGen(expr->as<IdentifierExpr>());
-    case AstNodeKind::AssignExpr:
-      return langGen(expr->as<AssignExpr>());
     case AstNodeKind::MLIROp:
       return langGen(expr->as<MLIROp>());
     case AstNodeKind::BinaryExpr:
@@ -1091,13 +1096,19 @@ private:
     return call_op.getResult(0);
   }
 
-  mlir::FailureOr<mlir::Value> langGen(AssignExpr *expr) {
+  mlir::FailureOr<mlir::Value> langGen(AssignStatement *expr) {
     mlir::FailureOr<mlir::Value> lhs = mlir::failure();
     if (expr->lhs->kind() == AstNodeKind::IdentifierExpr) {
       lhs = langGen(expr->lhs->as<IdentifierExpr>(), false);
+    } else if (expr->lhs->kind() == AstNodeKind::FieldAccessExpr) {
+      lhs = langGen(expr->lhs->as<FieldAccessExpr>());
+    } else if (expr->lhs->kind() == AstNodeKind::IndexExpr) {
+      lhs = langGen(expr->lhs->as<IndexExpr>());
     } else {
-      lhs = langGen(expr->lhs.get());
+      return mlir::emitError(loc(expr->token.span),
+                             "unsupported lhs expression");
     }
+
     if (failed(lhs)) {
       return mlir::failure();
     }
