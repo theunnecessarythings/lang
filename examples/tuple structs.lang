@@ -12,7 +12,7 @@ fn main() void {
     // Tuples can be tuple members.
     const tuple_of_tuples = ((1, 2, 2), (4, -1), -2);
 
-    print("tuple of tuples: %d", (tuple_of_tuples.1).1);
+    print("tuple of tuples: %d", (tuple_of_tuples.1).0);
 
     const pair = (1, false);
     print("Pair is (%d, %d)", pair.0, pair.1);

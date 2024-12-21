@@ -1,4 +1,5 @@
 #include "comptime_eval_pass.hpp"
+#include "dialect/LangDialect.h"
 #include "dialect/LangOps.h"
 #include "mlir/Analysis/DataFlow/DeadCodeAnalysis.h"
 #include "mlir/Analysis/DataFlowFramework.h"
@@ -27,6 +28,7 @@
 #include "mlir/Target/LLVMIR/Export.h"
 #include "mlir/Transforms/DialectConversion.h"
 #include "mlir/Transforms/FoldUtils.h"
+#include "mlir/Transforms/InliningUtils.h"
 #include "mlir/Transforms/Passes.h"
 #include "passes.h"
 #include "llvm/ADT/STLExtras.h"
@@ -404,7 +406,7 @@ void collectDependencies(
       }
     }
   }
-};
+}
 
 void collectComptimeOps(mlir::ModuleOp &module, mlir::DataFlowSolver &solver,
                         mlir::SetVector<mlir::Operation *> &comptimeOps,
@@ -758,6 +760,94 @@ void instantiateGenericType(mlir::lang::FuncOp &op, mlir::lang::CallOp &call_op,
   call_op.setCallee(new_name);
 }
 
+struct LangInlinerInterface : public mlir::InlinerInterface {
+  using mlir::InlinerInterface::InlinerInterface;
+
+  bool isLegalToInline(mlir::Operation *call, mlir::Operation *callable,
+                       bool wouldBeCloned) const final {
+    return true;
+  }
+
+  bool isLegalToInline(mlir::Operation *, mlir::Region *, bool,
+                       mlir::IRMapping &) const final {
+    return true;
+  }
+
+  bool isLegalToInline(mlir::Region *, mlir::Region *, bool,
+                       mlir::IRMapping &) const final {
+    return true;
+  }
+  void handleTerminator(mlir::Operation *op, mlir::Block *newDest) const final {
+    auto return_op = mlir::dyn_cast<mlir::lang::ReturnOp>(op);
+    if (!return_op)
+      return;
+    mlir::OpBuilder builder(op);
+    builder.create<mlir::cf::BranchOp>(op->getLoc(), newDest,
+                                       return_op.getOperands());
+    op->erase();
+  }
+
+  void handleTerminator(mlir::Operation *op,
+                        mlir::ValueRange valuesToRepl) const final {
+    auto return_op = mlir::cast<mlir::lang::ReturnOp>(op);
+    assert(return_op.getNumOperands() == valuesToRepl.size());
+    for (const auto &it : llvm::enumerate(return_op.getOperands()))
+      valuesToRepl[it.index()].replaceAllUsesWith(it.value());
+  }
+};
+
+void inlineTypeConstFuncs(mlir::ModuleOp &module) {
+  module.walk([&](mlir::lang::CallOp call_op) {
+    // get the callee
+    auto callee_symbol = call_op.getCalleeAttr();
+    auto callee = mlir::SymbolTable::lookupSymbolIn(module, callee_symbol);
+    if (!callee) {
+      return;
+    }
+    auto callee_func = dyn_cast<mlir::lang::FuncOp>(callee);
+    if (!callee_func) {
+      return;
+    }
+    // check if the callee returns a type
+    if (!llvm::any_of(callee_func.getResultTypes(), [](auto &x) {
+          return mlir::isa<mlir::lang::LangType>(x);
+        })) {
+      return;
+    }
+
+    // inline the function
+    LangInlinerInterface inliner_interface(module.getContext());
+
+    mlir::Region &src_region = callee_func.getBody();
+    if (src_region.empty())
+      return;
+
+    mlir::IRMapping mapping;
+    auto &entry_block = src_region.front();
+    if (call_op.getArgOperands().size() != entry_block.getNumArguments()) {
+      call_op.emitError("Mismatch between call operands and callee arguments");
+      return;
+    }
+
+    for (auto [operand, arg] :
+         llvm::zip(call_op.getArgOperands(), entry_block.getArguments())) {
+      mapping.map(arg, operand);
+    }
+
+    if (mlir::failed(inlineRegion(inliner_interface, &src_region, call_op,
+                                  mapping, call_op.getResults(),
+                                  callee_func.getResultTypes()))) {
+      call_op.emitError("Failed to inline the function");
+      return;
+    }
+    call_op.erase();
+  });
+  LLVM_DEBUG({
+    llvm::errs() << "After inlining type const functions\n";
+    module.dump();
+  });
+}
+
 void ComptimeEvalPass::runOnOperation() {
   mlir::ModuleOp module = getOperation();
 
@@ -809,6 +899,9 @@ void ComptimeEvalPass::runOnOperation() {
   if (!mlir::computeTopologicalSorting(sorted_ops_arr)) {
     llvm::errs() << "Failed to topologically sort the operations\n";
   }
+
+  // Inline function that returns a type
+  inlineTypeConstFuncs(module);
 
   // Step 2: Instantiate generic functions
   module.walk([&](mlir::lang::CallOp op) {

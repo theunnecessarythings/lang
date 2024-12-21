@@ -164,16 +164,18 @@ def VarDeclOp : Lang_Op<"var_decl", [IsolatedFromAbove, InferTypeOpAdaptor, Infe
     The initial value can be a constant or a reference to a previously defined variable.
   }];
 
-  let arguments = (ins OptionalAttr<TypeAttr>:$var_type,
+  let arguments = (ins 
+      // OptionalAttr<TypeAttr>:$var_type,
+      Optional<AnyType>:$var_type_value,
       SymbolNameAttr:$sym_name, 
-      Optional<AnyType>:$init_value,
+      AnyType:$init_value,
       BoolAttr:$is_mutable,
       BoolAttr:$is_public);
 
   let results = (outs AnyType:$result);
 
   let assemblyFormat = [{
-    $sym_name attr-dict `:` $var_type `=` $init_value `:` type($init_value) `->` type($result)
+    $sym_name attr-dict `:` `(` type($var_type_value) `:` $var_type_value `)` `=` $init_value `:` type($init_value) `->` type($result)
   }];
 
    let builders = [OpBuilder<(ins "StringRef", "Type", "Value")>];

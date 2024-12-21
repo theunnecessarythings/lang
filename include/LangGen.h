@@ -1,4 +1,5 @@
 #pragma once
+#include "analyzer.hpp"
 #include "ast.hpp"
 #include "compiler.hpp"
 

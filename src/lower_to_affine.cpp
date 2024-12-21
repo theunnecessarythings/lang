@@ -29,6 +29,7 @@
 #include <utility>
 
 #include "mlir/AsmParser/AsmParser.h"
+#include "llvm/ADT/SmallVector.h"
 
 namespace mlir {
 namespace lang {
@@ -130,22 +131,21 @@ struct FuncOpLowering : public mlir::OpConversionPattern<mlir::lang::FuncOp> {
 
     // auto new_func_op = rewriter.create<mlir::func::FuncOp>(
     //     op.getLoc(), op.getName(), converted_func_type);
-    auto new_func_op = createOp<mlir::func::FuncOp>(
+    auto func_op = createOp<mlir::func::FuncOp>(
         rewriter, op, op.getLoc(), op.getName(), converted_func_type);
 
-    rewriter.inlineRegionBefore(op.getBody(), new_func_op.getBody(),
-                                new_func_op.end());
+    rewriter.inlineRegionBefore(op.getBody(), func_op.getBody(), func_op.end());
 
-    if (failed(rewriter.convertRegionTypes(&new_func_op.getRegion(),
+    if (failed(rewriter.convertRegionTypes(&func_op.getRegion(),
                                            *this->getTypeConverter(),
                                            &signature_conversion))) {
       return rewriter.notifyMatchFailure(op, "failed to convert region types");
     }
     llvm::SmallVector<mlir::Location, 4> locations(result_types.size(),
                                                    rewriter.getUnknownLoc());
-    auto return_block = rewriter.createBlock(
-        &new_func_op.getBody(), new_func_op.getBody().end(),
-        new_func_op.getResultTypes(), locations);
+    auto return_block =
+        rewriter.createBlock(&func_op.getBody(), func_op.getBody().end(),
+                             func_op.getResultTypes(), locations);
     rewriter.setInsertionPointToStart(return_block);
     rewriter.create<mlir::func::ReturnOp>(op.getLoc(),
                                           return_block->getArguments());
@@ -160,12 +160,33 @@ struct CallOpLowering : public mlir::OpConversionPattern<mlir::lang::CallOp> {
   mlir::LogicalResult
   matchAndRewrite(mlir::lang::CallOp op, OpAdaptor adaptor,
                   mlir::ConversionPatternRewriter &rewriter) const final {
-    // auto call = rewriter.create<mlir::func::CallOp>(
-    //     op.getLoc(), op.getCalleeAttr(), op.getResultTypes(),
-    //     op.getOperands());
+    auto args = llvm::to_vector<4>(adaptor.getOperands());
     auto call = createOp<mlir::func::CallOp>(
         rewriter, op, op.getLoc(), op.getCalleeAttr(), op.getResultTypes(),
         adaptor.getOperands());
+
+    auto module_op = op->getParentOfType<mlir::ModuleOp>();
+    auto func_op = module_op.lookupSymbol<mlir::lang::FuncOp>(op.getCallee());
+    if (func_op) {
+      auto inputs_type =
+          llvm::to_vector<4>(func_op.getFunctionType().getInputs());
+      auto r_args = llvm::reverse(args);
+      // remove generic args from the func_op
+      auto args_size = args.size();
+      for (const auto [idx, arg] : llvm::enumerate(r_args)) {
+        if (mlir::isa<mlir::lang::TypeValueType>(arg.getType())) {
+          func_op.getCallableRegion()->eraseArgument(args_size - idx - 1);
+          // args.erase(args.end() - idx - 1);
+          call.getArgOperandsMutable().erase(args_size - idx - 1);
+          inputs_type.erase(inputs_type.end() - idx - 1);
+        }
+      }
+      // update the function type
+      auto function_type =
+          mlir::FunctionType::get(rewriter.getContext(), inputs_type,
+                                  func_op.getFunctionType().getResults());
+      func_op.setType(function_type);
+    }
     rewriter.replaceOp(op, call);
     return mlir::success();
   }
@@ -792,24 +813,14 @@ struct VarDeclOpLowering
   matchAndRewrite(mlir::lang::VarDeclOp op, OpAdaptor adaptor,
                   mlir::ConversionPatternRewriter &rewriter) const final {
 
-    mlir::Type var_type = op.getVarType().value_or(op.getInitValue().getType());
-
-    if (mlir::isa<mlir::lang::StructType>(var_type)) {
-      // NOTE: Check this
-      rewriter.replaceOp(op, adaptor.getInitValue());
-      return mlir::success();
-    }
-
-    if (mlir::isa<mlir::lang::StringType>(var_type)) {
-      rewriter.replaceOp(op, adaptor.getInitValue());
-      return mlir::success();
-    }
+    mlir::Type var_type = op.getVarTypeValue() ? op.getVarTypeValue().getType()
+                                               : (op.getInitValue().getType());
+    mlir::Value init_value = adaptor.getInitValue();
 
     // If the variable type is a TypeValueType, get the aliased type
     if (mlir::isa<mlir::lang::TypeValueType>(var_type)) {
       // if the init value is also a TypeValueType, we can erase the VarDeclOp
-      if (mlir::isa<mlir::lang::TypeValueType>(
-              adaptor.getInitValue().getType())) {
+      if (mlir::isa<mlir::lang::TypeValueType>(init_value.getType())) {
         rewriter.eraseOp(op);
         return mlir::success();
       }
@@ -830,34 +841,32 @@ struct VarDeclOpLowering
         rewriter.create<mlir::memref::StoreOp>(
             op.getLoc(), adaptor.getInitValue(), alloca_op);
       }
-      rewriter.replaceOp(op, alloca_op.getResult());
-
-      return mlir::success();
+      init_value = alloca_op.getResult();
     }
 
-    if (mlir::isa<mlir::IntegerType, mlir::FloatType, mlir::VectorType,
+    if (!adaptor.getInitValue() &&
+        mlir::isa<mlir::IntegerType, mlir::FloatType, mlir::VectorType,
                   mlir::TensorType, mlir::lang::IntLiteralType>(var_type)) {
-      if (!adaptor.getInitValue()) {
-        auto zero = rewriter.getZeroAttr(var_type);
-        rewriter.replaceOpWithNewOp<mlir::arith::ConstantOp>(op, var_type,
-                                                             zero);
-      } else {
-        rewriter.replaceOp(op, adaptor.getInitValue());
-      }
-      return mlir::success();
+      auto zero = rewriter.getZeroAttr(var_type);
+      init_value =
+          rewriter.create<mlir::arith::ConstantOp>(op.getLoc(), var_type, zero)
+              .getResult();
     }
 
-    if (mlir::isa<mlir::lang::ArrayType>(var_type)) {
-      // if (adaptor.getInitValue().getType() != var_type) {
-      //   return op.emitError("init value type does not match variable type");
-      // }
-      rewriter.replaceOp(op, adaptor.getInitValue());
-      return mlir::success();
+    if (op.getVarTypeValue() && init_value.getType() != var_type &&
+        !mlir::isa<mlir::lang::LangType>(var_type)) {
+      // Casting is done through method call "init__<type>_<type>"
+      std::string fn_name = "";
+      llvm::raw_string_ostream stream(fn_name);
+      stream << "init__" << var_type << "_" << init_value.getType();
+      fn_name = stream.str();
+      auto cast_op = rewriter.create<mlir::lang::CallOp>(
+          op.getLoc(), fn_name, var_type, mlir::ValueRange{init_value});
+
+      init_value = cast_op.getResult(0);
     }
-    rewriter.replaceOp(op, adaptor.getInitValue());
-    return mlir::success();
-    // return mlir::emitError(op.getLoc(), "lowering of variable type ")
-    //        << var_type << " not supported";
+
+    rewriter.replaceOp(op, init_value);
     return mlir::success();
   }
 };

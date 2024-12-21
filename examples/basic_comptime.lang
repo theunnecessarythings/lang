@@ -2,8 +2,8 @@ fn Identity(comptime T: type, comptime mod: T, value: T) T {
     return value / mod;
 }
 
-fn F32() type {
-    return f32;
+fn Type(comptime T: type) type {
+    return T;
 }
 
 pub fn main() void {
@@ -14,9 +14,9 @@ pub fn main() void {
     print("float_id: %f", float_id);
     print("float_id2: %f", float_id_2);
 
-    const d_f32: f32 = 3.14 + 3.14;
+    const d_f32: Type(f32) = 3.14 + 3.14;
     const d_f64: f64 = d_f32;
-    print("d_f32: %f", d_f32);
+    // print("d_f32: %f", d_f32);
     print("d_f64: %f", d_f64);
 }
 

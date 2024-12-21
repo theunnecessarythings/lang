@@ -124,8 +124,8 @@ void VarDeclOp::build(OpBuilder &builder, OperationState &state,
 }
 
 mlir::LogicalResult VarDeclOp::verify() {
-  if (auto varTypeAttr = getVarType()) {
-    Type varType = varTypeAttr.value();
+  if (auto varTypeAttr = getVarTypeValue()) {
+    Type varType = varTypeAttr.getType();
     Type initType = getInitValue().getType();
     if (mlir::isa<TypeValueType>(varType) &&
         !mlir::isa<TypeValueType>(initType)) {

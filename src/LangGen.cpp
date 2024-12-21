@@ -103,9 +103,7 @@ private:
   llvm::ScopedHashTable<mlir::lang::StructType, StringRef> struct_name_table;
   llvm::StringMap<mlir::lang::FuncOp> function_map;
   llvm::StringMap<Function *> function_table;
-
   llvm::SmallVector<mlir::Value, 16> type_values;
-
   AstDumper dumper;
 
   mlir::Location loc(const TokenSpan &loc) {
@@ -128,7 +126,6 @@ private:
   }
 
   void declarePrimitiveTypes() {
-
     for (int i = 1; i <= 99; ++i) {
       auto signless_type = builder.getIntegerType(i);
       type_table.insert(str("i" + std::to_string(i)), signless_type);
@@ -139,7 +136,6 @@ private:
       auto unsigned_type = builder.getIntegerType(i, /*isSigned=*/false);
       type_table.insert(str("ui" + std::to_string(i)), unsigned_type);
     }
-
     type_table.insert(str("f32"), builder.getF32Type());
     type_table.insert(str("f64"), builder.getF64Type());
     type_table.insert(str("bool"), builder.getIntegerType(1));
@@ -488,13 +484,28 @@ private:
       compiler_context.declareVar(name, t);
     }
 
-    mlir::Type var_type = nullptr;
+    mlir::Value var_type_value = nullptr;
     if (var_decl->type.has_value()) {
-      auto type = getType(var_decl->type.value().get());
-      if (failed(type)) {
-        return mlir::failure();
+      if (var_decl->type.value()->kind() == AstNodeKind::ExprType) {
+        auto type_value =
+            langGen(var_decl->type.value()->as<ExprType>()->expr.get());
+        if (failed(type_value)) {
+          return mlir::failure();
+        }
+        var_type_value = type_value.value();
+      } else {
+        auto type = getType(var_decl->type.value().get());
+        if (failed(type)) {
+          return mlir::failure();
+        }
+        var_type_value = builder
+                             .create<mlir::lang::TypeConstOp>(
+                                 loc(var_decl->token.span),
+                                 mlir::lang::TypeValueType::get(
+                                     builder.getContext(), type.value()),
+                                 type.value())
+                             .getResult();
       }
-      var_type = type.value();
     }
 
     // assume the name is identifier pattern for now
@@ -514,28 +525,16 @@ private:
       init_value = v.value();
     } else {
       init_value = builder.create<mlir::lang::UndefOp>(
-          loc(var_decl->token.span), var_type);
+          loc(var_decl->token.span), var_type_value.getType());
     }
 
-    // If there is initializer and type is provided, then insert a cast
-    if (var_decl->initializer.has_value() && var_decl->type.has_value() &&
-        init_value->getType() != var_type) {
-      // Casting is done through method call "init__<type>_<type>"
-      auto func = getSpecialMethod(loc(var_decl->token.span), "init",
-                                   {var_type, init_value.value().getType()});
-      if (mlir::failed(func)) {
-        return mlir::failure();
-      }
-      auto cast_op = builder.create<mlir::lang::CallOp>(
-          loc(var_decl->token.span), func.value(),
-          mlir::ValueRange{init_value.value()});
-      init_value = cast_op.getResult(0);
-    }
-
+    // auto op = builder.create<mlir::lang::VarDeclOp>(
+    //     loc(var_decl->token.span),
+    //     var_type ? mlir::TypeAttr::get(var_type) : nullptr, var_name,
+    //     init_value.value(), var_decl->is_mut, var_decl->is_pub);
     auto op = builder.create<mlir::lang::VarDeclOp>(
-        loc(var_decl->token.span),
-        var_type ? mlir::TypeAttr::get(var_type) : nullptr, var_name,
-        init_value.value(), var_decl->is_mut, var_decl->is_pub);
+        loc(var_decl->token.span), var_type_value, var_name, init_value.value(),
+        var_decl->is_mut, var_decl->is_pub);
     if (failed(declare(var_name, op.getResult()))) {
       return mlir::failure();
     }
@@ -1289,21 +1288,21 @@ private:
     if (llvm::failed(func_op)) {
       return mlir::failure();
     }
-    auto inputs_type =
-        llvm::to_vector<4>(func_op->getFunctionType().getInputs());
-    auto r_args = llvm::reverse(args);
+    // auto inputs_type =
+    //     llvm::to_vector<4>(func_op->getFunctionType().getInputs());
+    // auto r_args = llvm::reverse(args);
     // remove generic args from the func_op
-    for (const auto [idx, arg] : llvm::enumerate(r_args)) {
-      if (mlir::isa<mlir::lang::TypeValueType>(arg.getType())) {
-        func_op->getCallableRegion()->eraseArgument(args.size() - idx - 1);
-        args.erase(args.end() - idx - 1);
-        inputs_type.erase(inputs_type.end() - idx - 1);
-      }
-    }
-    auto function_type =
-        mlir::FunctionType::get(builder.getContext(), inputs_type,
-                                func_op->getFunctionType().getResults());
-    func_op->setType(function_type);
+    // for (const auto [idx, arg] : llvm::enumerate(r_args)) {
+    //   if (mlir::isa<mlir::lang::TypeValueType>(arg.getType())) {
+    //     func_op->getCallableRegion()->eraseArgument(args.size() - idx - 1);
+    //     args.erase(args.end() - idx - 1);
+    //     inputs_type.erase(inputs_type.end() - idx - 1);
+    //   }
+    // }
+    // auto function_type =
+    //     mlir::FunctionType::get(builder.getContext(), inputs_type,
+    //                             func_op->getFunctionType().getResults());
+    // func_op->setType(function_type);
     return *func_op;
   }
 

@@ -626,7 +626,10 @@ void Analyzer::analyze(EnumType *type) {}
 
 void Analyzer::analyze(UnionType *type) {}
 
-void Analyzer::analyze(ExprType *type) { analyze(type->expr.get()); }
+void Analyzer::analyze(ExprType *type) {
+  expr_types.push_back(type);
+  analyze(type->expr.get());
+}
 
 void Analyzer::analyze(MLIRType *type) {}
 

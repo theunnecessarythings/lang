@@ -42,7 +42,6 @@ add_subdirectory(dialect)
 add_library(liblang STATIC 
     src/parser.cpp
     src/ast.cpp
-    src/MLIRGen.cpp
     src/LangGen.cpp
     src/analyzer.cpp
     src/compiler.cpp

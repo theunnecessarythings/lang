@@ -21,15 +21,12 @@ static cl::opt<enum InputType>
                                      "load the input file as an MLIR file")));
 
 // namespace
-static cl::opt<enum Action> emit_action(
-    "emit", cl::desc("Select the kind of output desired"),
-    cl::values(clEnumValN(DumpAST, "ast", "output the AST dump")),
-    cl::values(clEnumValN(DumpJSON, "json", "output the AST dump")),
-    cl::values(clEnumValN(DumpMLIR, "mlir", "output the MLIR dump")),
-    cl::values(clEnumValN(DumpMLIRLang, "lang",
-                          "output the MLIR lang dialect dump")),
-    cl::values(clEnumValN(DumpMLIRAffine, "mlir-affine",
-                          "output the MLIR dump after affine lowering")));
+static cl::opt<enum Action>
+    emit_action("emit", cl::desc("Select the kind of output desired"),
+                cl::values(clEnumValN(DumpAST, "ast", "output the AST dump")),
+                cl::values(clEnumValN(DumpJSON, "json", "output the AST dump")),
+                cl::values(clEnumValN(DumpMLIRLang, "lang",
+                                      "output the MLIR lang dialect dump")));
 
 static cl::opt<bool> enable_opt("opt", cl::desc("Enable optimizations"));
 
@@ -39,18 +36,15 @@ int main(int argc, char **argv) {
   mlir::registerPassManagerCLOptions();
 
   cl::ParseCommandLineOptions(argc, argv, "lang compiler\n");
-
+  Compiler compiler;
+  compiler.init();
   switch (emit_action) {
   case Action::DumpAST:
-    return Compiler::dumpAST(input_type, input_filename);
+    return compiler.dumpAST(input_type, input_filename);
   case Action::DumpJSON:
-    return Compiler::dumpJSON(input_type, input_filename);
-  case Action::DumpMLIR:
-  case Action::DumpMLIRAffine:
-    return Compiler::dumpMLIR(input_type, input_filename, enable_opt,
-                              emit_action);
+    return compiler.dumpJSON(input_type, input_filename);
   case Action::DumpMLIRLang:
-    return Compiler::dumpMLIRLang(input_type, input_filename, enable_opt);
+    return compiler.dumpMLIRLang(input_type, input_filename, enable_opt);
   default:
     llvm::errs() << "No action specified (parsing only?), use -emit=<action>\n";
   }
