@@ -331,7 +331,7 @@ def ImplDeclOp : Lang_Op<"impl_decl", [SymbolTable]> {
   let regions = (region SizedRegion<1>:$region);
 
   let assemblyFormat = [{
-    `impl` attr-dict `:`  $region`}`
+    attr-dict `:`  $region`}`
   }];
 
   // let hasVerifier = 1;

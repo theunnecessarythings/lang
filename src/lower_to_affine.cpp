@@ -1,3 +1,4 @@
+#include "data_structures.hpp"
 #include "dialect/LangDialect.h"
 #include "dialect/LangOps.h"
 #include "mlir/Conversion/LLVMCommon/TypeConverter.h"
@@ -74,9 +75,11 @@ public:
     });
 
     addConversion([](mlir::lang::SliceType slice_type) {
-      return mlir::MemRefType::get({std::numeric_limits<int64_t>::min()},
+      return mlir::MemRefType::get({mlir::ShapedType::kDynamic},
                                    slice_type.getElementType());
     });
+
+    addConversion([](mlir::MemRefType memref_type) { return memref_type; });
 
     addConversion([](mlir::TensorType tensor_type) { return tensor_type; });
 
@@ -429,21 +432,23 @@ struct ArrayOpLowering : public mlir::OpConversionPattern<mlir::lang::ArrayOp> {
   mlir::LogicalResult
   matchAndRewrite(mlir::lang::ArrayOp op, OpAdaptor adaptor,
                   mlir::ConversionPatternRewriter &rewriter) const final {
-    auto converted_type = this->getTypeConverter()->convertType(op.getType());
-    if (!converted_type) {
-      return rewriter.notifyMatchFailure(op, "failed to convert type");
-    }
     mlir::MemRefType memref_type =
-        mlir::dyn_cast<mlir::MemRefType>(converted_type);
+        mlir::dyn_cast<mlir::MemRefType>(op.getType());
     if (!memref_type) {
       return rewriter.notifyMatchFailure(op, "converted type is not a memref");
     }
-    // Use memref alloca to allocate memory for the array
     auto alloca_op =
         rewriter.create<mlir::memref::AllocaOp>(op.getLoc(), memref_type);
-    // Store the array
-    rewriter.create<mlir::memref::StoreOp>(op.getLoc(), adaptor.getValues(),
-                                           alloca_op.getResult());
+    for (auto it : llvm::enumerate(adaptor.getOperands())) {
+      auto index = rewriter
+                       .create<mlir::arith::ConstantOp>(
+                           it.value().getLoc(), rewriter.getIndexType(),
+                           rewriter.getIndexAttr(it.index()))
+                       .getResult();
+      rewriter.create<mlir::memref::StoreOp>(it.value().getLoc(), it.value(),
+                                             alloca_op.getResult(),
+                                             mlir::ValueRange{index});
+    }
     rewriter.replaceOp(op, alloca_op);
     return mlir::success();
   }
@@ -835,13 +840,15 @@ struct VarDeclOpLowering
 
     // Check if the variable type is a MemRefType
     if (auto memref_type = mlir::dyn_cast<mlir::MemRefType>(var_type)) {
-      auto alloca_op =
-          rewriter.create<mlir::memref::AllocaOp>(op.getLoc(), memref_type);
-      if (adaptor.getInitValue()) {
-        rewriter.create<mlir::memref::StoreOp>(
-            op.getLoc(), adaptor.getInitValue(), alloca_op);
+      if (memref_type.getShape().size() == 0) {
+        auto alloca_op =
+            rewriter.create<mlir::memref::AllocaOp>(op.getLoc(), memref_type);
+        if (adaptor.getInitValue()) {
+          rewriter.create<mlir::memref::StoreOp>(
+              op.getLoc(), adaptor.getInitValue(), alloca_op);
+        }
+        init_value = alloca_op.getResult();
       }
-      init_value = alloca_op.getResult();
     }
 
     if (!adaptor.getInitValue() &&
@@ -855,11 +862,7 @@ struct VarDeclOpLowering
 
     if (op.getVarTypeValue() && init_value.getType() != var_type &&
         !mlir::isa<mlir::lang::LangType>(var_type)) {
-      // Casting is done through method call "init__<type>_<type>"
-      std::string fn_name = "";
-      llvm::raw_string_ostream stream(fn_name);
-      stream << "init__" << var_type << "_" << init_value.getType();
-      fn_name = stream.str();
+      auto fn_name = mangle("init", {var_type, init_value.getType()});
       auto cast_op = rewriter.create<mlir::lang::CallOp>(
           op.getLoc(), fn_name, var_type, mlir::ValueRange{init_value});
 
@@ -1053,6 +1056,16 @@ struct LangToAffineLoweringPass
 } // namespace
 
 void LangToAffineLoweringPass::runOnOperation() {
+  // Remove top level decls that are not functions, TODO: may be not the best
+  // idea
+  auto module = getOperation();
+  for (auto &op : llvm::make_early_inc_range(module.getOps())) {
+    if (!mlir::isa<mlir::lang::FuncOp>(op) &&
+        !mlir::isa<mlir::func::FuncOp>(op)) {
+      op.remove();
+    }
+  }
+
   mlir::ConversionTarget target(getContext());
   mlir::lang::LangToLLVMTypeConverter type_converter(&getContext());
 
@@ -1084,11 +1097,9 @@ void LangToAffineLoweringPass::runOnOperation() {
       &getContext());
 
   // Apply partial conversion.
-  if (failed(mlir::applyFullConversion(getOperation(), target,
-                                       std::move(patterns)))) {
-
+  if (failed(mlir::applyFullConversion(module, target, std::move(patterns)))) {
     llvm::errs() << "LangToAffineLoweringPass: Full conversion failed for\n";
-    getOperation().dump();
+    module.dump();
     signalPassFailure();
   }
 }

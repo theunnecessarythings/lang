@@ -195,6 +195,7 @@ int Compiler::dumpMLIRLang(InputType input_type, llvm::StringRef input_filename,
   context.getOrLoadDialect<mlir::lang::LangDialect>();
   context.getOrLoadDialect<mlir::tensor::TensorDialect>();
   context.getOrLoadDialect<mlir::index::IndexDialect>();
+  context.getOrLoadDialect<mlir::bufferization::BufferizationDialect>();
   // context.getOrLoadDialect<mlir::arith::ArithDialect>();
   // context.getOrLoadDialect<mlir::scf::SCFDialect>();
   //

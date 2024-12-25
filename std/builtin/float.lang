@@ -1,43 +1,43 @@
 impl f64 {
     fn init(self: Self, value: f32) Self {
-        return @mlir_op("arith.extf", [value], {}, ["f64"]);
+        return @mlir_op("arith.extf", [value], {}, [f64]);
     }
 
     fn add(self: Self, other: Self) Self {
-        return @mlir_op("arith.addf", [self, other], {}, ["f64"]);
+        return @mlir_op("arith.addf", [self, other], {}, [f64]);
     }
 
     fn sub(self: Self, other: Self) Self {
-        return @mlir_op("arith.subf", [self, other], {}, ["f64"]);
+        return @mlir_op("arith.subf", [self, other], {}, [f64]);
     }
 
     fn mul(self: Self, other: Self) Self {
-        return @mlir_op("arith.mulf", [self, other], {}, ["f64"]);
+        return @mlir_op("arith.mulf", [self, other], {}, [f64]);
     }
 
     fn div(self: Self, other: Self) Self {
-        return @mlir_op("arith.divf", [self, other], {}, ["f64"]);
+        return @mlir_op("arith.divf", [self, other], {}, [f64]);
     }
 
     fn less_equal(self: Self, other: Self) bool {
-        return @mlir_op("arith.cmpf", [self, other], {predicate: "2: i64"}, ["i1"]);
+        return @mlir_op("arith.cmpf", [self, other], {predicate: "2: i64"}, [i1]);
     }
 
     fn greater_than(self: Self, other: Self) bool {
-        return @mlir_op("arith.cmpf", [self, other], {predicate: "4: i64"}, ["i1"]);
+        return @mlir_op("arith.cmpf", [self, other], {predicate: "4: i64"}, [i1]);
     }
 
     fn equal(self: Self, other: Self) bool {
-        return @mlir_op("arith.cmpf", [self, other], {predicate: "0: i64"}, ["i1"]);
+        return @mlir_op("arith.cmpf", [self, other], {predicate: "0: i64"}, [i1]);
     }
 
     fn neg(self: Self) Self {
-        return @mlir_op("arith.mulf", [self, @mlir_attr("-1.0 : f64")], {}, ["f64"]);
+        return @mlir_op("arith.mulf", [self, @mlir_attr("-1.0 : f64")], {}, [f64]);
     }
 }
 
 impl f32 {
     fn init(self: Self, value: f64) Self {
-        return @mlir_op("arith.truncf", [value], {}, ["f32"]);
+        return @mlir_op("arith.truncf", [value], {}, [f32]);
     }
 }

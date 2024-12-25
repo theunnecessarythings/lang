@@ -394,7 +394,11 @@ void Analyzer::analyze(Expression *expr) {
   case AstNodeKind::MLIRAttribute:
     analyze(expr->as<MLIRAttribute>());
     break;
+  case AstNodeKind::MLIRType:
+    analyze(expr->as<MLIRType>());
+    break;
   default:
+    llvm::errs() << "kind: " << toString(expr->kind()) << "\n";
     assert(false && "not an expression or not implemented yet");
     break;
   }

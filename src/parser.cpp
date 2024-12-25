@@ -999,6 +999,7 @@ std::unique_ptr<Type> Parser::parseType() {
 std::unique_ptr<Type> Parser::parseMlirType(bool consume_at) {
   if (consume_at)
     consumeKind(TokenKind::At);
+  std::vector<std::unique_ptr<Expression>> parameters;
   auto mlir_type = consumeKind(TokenKind::Identifier);
   if (lexer->tokenToString(mlir_type) != "mlir_type") {
     context->reportError("Expected mlir_type found " +
@@ -1007,8 +1008,22 @@ std::unique_ptr<Type> Parser::parseMlirType(bool consume_at) {
   }
   consumeKind(TokenKind::LParen);
   auto type_str = consumeKind(TokenKind::StringLiteral);
+  if (isPeek(TokenKind::Comma)) {
+    consume();
+    // parse parameters -> [expr, ...]
+    consumeKind(TokenKind::LBracket);
+    while (!isPeek(TokenKind::RBracket)) {
+      auto expr = parseExpr(0);
+      parameters.emplace_back(std::move(expr));
+      if (isPeek(TokenKind::Comma)) {
+        consume();
+      }
+    }
+    consumeKind(TokenKind::RBracket);
+  }
   consumeKind(TokenKind::RParen);
-  return std::make_unique<MLIRType>(type_str, lexer->tokenToString(type_str));
+  return std::make_unique<MLIRType>(type_str, lexer->tokenToString(type_str),
+                                    std::move(parameters));
 }
 
 // mlir_attr = "@mlir_attr(" attr_str ")"
@@ -1039,7 +1054,7 @@ std::unique_ptr<MLIROp> Parser::parseMlirOp() {
   auto op_str = consumeKind(TokenKind::StringLiteral);
   std::vector<std::unique_ptr<Expression>> operands;
   std::unordered_map<std::string, std::string> attributes;
-  std::vector<std::string> result_types;
+  std::vector<std::unique_ptr<Type>> result_types;
 
   consumeKind(TokenKind::Comma);
   consumeKind(TokenKind::LBracket);
@@ -1066,8 +1081,8 @@ std::unique_ptr<MLIROp> Parser::parseMlirOp() {
   consumeKind(TokenKind::Comma);
   consumeKind(TokenKind::LBracket);
   while (!isPeek(TokenKind::RBracket)) {
-    auto str = consumeKind(TokenKind::StringLiteral);
-    result_types.emplace_back(std::move(lexer->tokenToString(str)));
+    auto type = parseType();
+    result_types.emplace_back(std::move(type));
     if (isPeek(TokenKind::Comma)) {
       consume();
     }

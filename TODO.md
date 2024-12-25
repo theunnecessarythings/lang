@@ -33,3 +33,6 @@
 - [ ] Bug: functions and variables can have the same name
 - [x] Bug: Tests are broken again (roundtrip fails because builtins are double imported)
 - [ ] String Interning
+
+- Lower arrays to memrefs with alloc, will be easier to handle, then after comptime
+  eval if the size is known, we can replace it with stack allocation

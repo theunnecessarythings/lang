@@ -8,17 +8,18 @@
 
 fn main() void {
     // Fixed-size array (type signature is superfluous).
-    const xs: [5]i64 = [1, 2, 3, 4, 5];
+    // const xs: [5]i64 = [1, 2, 3, 4, 5];
+    const xs: array(i64, 5) = [1, 2, 3, 4, 5];
+    // const ys: array(i64, 5) = [1, 2, 3, 4, 5];
 
     // All elements can be initialized to the same value.
     // const ys: [500]i32 = [0] ** 500;
-
     // Indexing starts at 0.
     print("First element of the array: %d", xs[0]);
     print("Second element of the array: %d", xs[1]);
 
     // `len` returns the count of elements in the array.
-    // print("Number of elements in array: {}", xs.len());
+    print("Number of elements in array: %d", xs.len());
 
     // Arrays are stack allocated.
     // print("Array occupies {} bytes", mem.size_of_val(xs));

@@ -883,9 +883,12 @@ struct MLIRAttribute : public ExpressionBase<MLIRAttribute> {
 
 struct MLIRType : public TypeBase<MLIRType> {
   std::string type;
+  std::vector<std::unique_ptr<Expression>> parameters;
 
-  MLIRType(Token token, std::string type)
-      : TypeBase<MLIRType>(std::move(token)), type(std::move(type)) {}
+  MLIRType(Token token, std::string type,
+           std::vector<std::unique_ptr<Expression>> parameters)
+      : TypeBase<MLIRType>(std::move(token)), type(std::move(type)),
+        parameters(std::move(parameters)) {}
 
   AstNodeKind kind() const override { return AstNodeKind::MLIRType; }
 };
@@ -894,12 +897,12 @@ struct MLIROp : public ExpressionBase<MLIROp> {
   std::string op;
   std::vector<std::unique_ptr<Expression>> operands;
   std::unordered_map<std::string, std::string> attributes;
-  std::vector<std::string> result_types;
+  std::vector<std::unique_ptr<Type>> result_types;
 
   MLIROp(Token token, std::string op,
          std::vector<std::unique_ptr<Expression>> operands,
          std::unordered_map<std::string, std::string> attributes,
-         std::vector<std::string> result_types)
+         std::vector<std::unique_ptr<Type>> result_types)
       : ExpressionBase<MLIROp>(std::move(token)), op(std::move(op)),
         operands(std::move(operands)), attributes(std::move(attributes)),
         result_types(std::move(result_types)) {}

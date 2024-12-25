@@ -1,13 +1,13 @@
 impl i1 {
     fn logical_and(self: Self, other: Self) Self {
-        return @mlir_op("arith.andi", [self, other], {}, ["i1"]);
+        return @mlir_op("arith.andi", [self, other], {}, [i1]);
     }
 
     fn logical_or(self: Self, other: Self) Self {
-        return @mlir_op("arith.ori", [self, other], {}, ["i1"]);
+        return @mlir_op("arith.ori", [self, other], {}, [i1]);
     }
 
     fn logical_not(self: Self) Self {
-        return @mlir_op("arith.xori", [self, true], {}, ["i1"]);
+        return @mlir_op("arith.xori", [self, true], {}, [i1]);
     }
 }

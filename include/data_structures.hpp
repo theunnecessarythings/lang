@@ -1,6 +1,8 @@
+#include "dialect/LangOps.h"
 #include "mlir/IR/Diagnostics.h"
 #include "mlir/Support/LLVM.h"
 #include "mlir/Support/LogicalResult.h"
+#include "llvm/Support/raw_ostream.h"
 #include <cassert>
 #include <optional>
 
@@ -80,3 +82,43 @@ template <typename T> Result<T> toResult(FailureOr<T> fo) {
 }
 
 } // namespace mlir
+
+inline std::string mangle(llvm::StringRef base,
+                          llvm::ArrayRef<mlir::Type> types) {
+  std::string mangled_name = base.str();
+  llvm::raw_string_ostream rso(mangled_name);
+  if (!types.empty()) {
+    rso << "_";
+  }
+  for (auto &type : types) {
+    rso << "_";
+    if (mlir::isa<mlir::lang::ArrayType>(type))
+      rso << "!array";
+    else if (mlir::isa<mlir::lang::SliceType>(type))
+      rso << "!slice";
+    else if (mlir::isa<mlir::TensorType>(type))
+      rso << "tensor";
+    else if (mlir::isa<mlir::TupleType>(type))
+      rso << "tuple";
+    // else if (mlir::isa<mlir::MemRefType>(type))
+    //   rso << "memref";
+    else if (mlir::isa<mlir::lang::StructType>(type))
+      rso << mlir::cast<mlir::lang::StructType>(type).getName();
+    else
+      rso << type;
+  }
+  return rso.str();
+}
+
+inline std::string attrToStr(mlir::Attribute attr) {
+  std::string str;
+  llvm::raw_string_ostream rso(str);
+  if (mlir::isa<mlir::IntegerAttr>(attr)) {
+    rso << mlir::cast<mlir::IntegerAttr>(attr).getInt();
+  } else if (mlir::isa<mlir::FloatAttr>(attr)) {
+    rso << mlir::cast<mlir::FloatAttr>(attr).getValueAsDouble();
+  } else {
+    llvm::errs() << "Unsupported attribute kind\n";
+  }
+  return rso.str();
+}
