@@ -680,30 +680,36 @@ TraitDecl::Method Parser::parseTraitMethod() {
 std::vector<std::unique_ptr<Parameter>> Parser::parseParams() {
   std::vector<std::unique_ptr<Parameter>> params;
   consumeKind(TokenKind::LParen);
+  int comptime_idx = -1;
   while (!isPeek(TokenKind::RParen)) {
-    auto param = parseParam();
-    params.emplace_back(std::move(param));
+    if (isPeek(TokenKind::Star)) {
+      consume();
+      if (comptime_idx != -1) {
+        context->reportError("Multiple comptime separator in function params",
+                             &current_token.value());
+      }
+      comptime_idx = params.size();
+    } else {
+      auto param = parseParam();
+      params.emplace_back(std::move(param));
+    }
     if (isPeek(TokenKind::Comma)) {
       consume();
     }
   }
   consumeKind(TokenKind::RParen);
+
+  // Set comptime flag for all parameters before comptime separator
+  for (int i = 0; i < comptime_idx; i++) {
+    params[i]->is_comptime = true;
+  }
   return params;
 }
 
 // param -> ("mut")? identifier ":" type
 std::unique_ptr<Parameter> Parser::parseParam() {
-  bool is_comptime = false;
   bool is_mut = false;
-  if (isPeek(TokenKind::KeywordComptime)) {
-    consume();
-    is_comptime = true;
-  }
   if (isPeek(TokenKind::KeywordMut)) {
-    if (is_comptime) {
-      context->reportError("Comptime parameter cannot be mutable",
-                           &current_token.value());
-    }
     consume();
     is_mut = true;
   }
@@ -729,13 +735,13 @@ std::unique_ptr<Parameter> Parser::parseParam() {
         }
         return std::make_unique<Parameter>(
             token.value(), std::move(pattern), std::move(type),
-            std::move(trait_bounds), is_mut, is_comptime);
+            std::move(trait_bounds), is_mut, false);
       }
     }
   }
   return std::make_unique<Parameter>(token.value(), std::move(pattern),
                                      std::move(type), std::move(trait_bounds),
-                                     is_mut, is_comptime);
+                                     is_mut, false);
 }
 
 // block_expr = '{' stmt* '}'
@@ -1500,16 +1506,26 @@ std::unique_ptr<CallExpr> Parser::parseCallExpr() {
   auto name = current_token.value();
   consumeKind(TokenKind::LParen);
   std::vector<std::unique_ptr<Expression>> args;
+  int comptime_index = -1;
   while (!isPeek(TokenKind::RParen)) {
-    auto arg = parseExpr(0);
-    args.emplace_back(std::move(arg));
+    if (isPeek(TokenKind::Star)) {
+      consume();
+      if (comptime_index != -1) {
+        context->reportError("Multiple comptime arguments are not allowed",
+                             &current_token.value());
+      }
+      comptime_index = args.size();
+    } else {
+      auto arg = parseExpr(0);
+      args.emplace_back(std::move(arg));
+    }
     if (isPeek(TokenKind::Comma)) {
       consume();
     }
   }
   consumeKind(TokenKind::RParen);
   auto call_expr = std::make_unique<CallExpr>(name, lexer->tokenToString(name),
-                                              std::move(args));
+                                              std::move(args), comptime_index);
   return call_expr;
 }
 

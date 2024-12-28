@@ -766,11 +766,13 @@ struct UnaryExpr : public ExpressionBase<UnaryExpr> {
 struct CallExpr : public ExpressionBase<CallExpr> {
   std::string callee;
   std::vector<std::unique_ptr<Expression>> arguments;
+  int comptime_index = -1;
 
   CallExpr(Token token, std::string callee,
-           std::vector<std::unique_ptr<Expression>> arguments)
+           std::vector<std::unique_ptr<Expression>> arguments,
+           int comptime_index)
       : ExpressionBase<CallExpr>(std::move(token)), callee(std::move(callee)),
-        arguments(std::move(arguments)) {}
+        arguments(std::move(arguments)), comptime_index(comptime_index) {}
 
   AstNodeKind kind() const override { return AstNodeKind::CallExpr; }
 };

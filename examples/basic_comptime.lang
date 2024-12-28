@@ -1,33 +1,31 @@
-fn Identity(comptime T: type, comptime mod: T, value: T) T {
-    return value / mod;
-}
-
-fn Type(comptime T: type) type {
+fn Type(T: type, *) type {
     return T;
 }
 
-pub fn main() void {
-    const int_id = Identity(i64, 100, 5);
-    const float_id = Identity(f64, 100.0, 3.14);
-    const float_id_2 = Identity(f64, 100.0, 3.22);
-    print("int_id: %d", int_id);
-    print("float_id: %f", float_id);
-    print("float_id2: %f", float_id_2);
-
-    const d_f32: Type(f32) = 3.14 + 3.14;
-    const d_f64: f64 = d_f32;
-    // print("d_f32: %f", d_f32);
-    print("d_f64: %f", d_f64);
+fn Identity(T: type, mod: T, *, value: T) T {
+    return value / mod;
 }
 
-// fn add_N(comptime N: i64, a: i64, b: i64) i64 {
-//     return a + b + N + 3;
-// }
-//
-// pub fn main() void {
-//     const some_value = add_N(5, 10, 20);
-//     const some_other_value = add_N(10, 20, 30);
-//
-//     print("some_value: %d", some_value);
-//     print("some_other_value: %d", some_other_value);
-// }
+fn add_N(N: i64, *, a: i64, b: i64) i64 {
+    return a + b + N + 3;
+}
+
+pub fn main() void {
+    // const int_id = Identity(i64, 100, *, 5);
+    // const float_id = Identity(f64, 100.0, *, 3.14);
+    // const float_id_2 = Identity(f64, 100.0, *, 3.22);
+    // print("int_id: %d", int_id);
+    // print("float_id: %f", float_id);
+    // print("float_id2: %f", float_id_2);
+    //
+    // const d_f32: Type(f32, *) = 3.14 + 3.14;
+    // const d_f64: f64 = d_f32;
+    // // print("d_f32: %f", d_f32);
+    // print("d_f64: %f", d_f64);
+
+    const some_value = add_N(5, *, 10, 20);
+    const some_other_value = add_N(10, *, 20, 30);
+
+    print("some_value: %d", some_value);
+    print("some_other_value: %d", some_other_value);
+}

@@ -18,21 +18,20 @@
 #include "llvm/ADT/StringRef.h"
 #include <cassert>
 #include <memory>
-#include <ranges>
 #include <vector>
 
 using llvm::StringRef;
 using PatternBindings = std::vector<std::pair<llvm::StringRef, Type *>>;
 
-#define NEW_SCOPE()                                                            \
-  llvm::ScopedHashTableScope<StringRef, mlir::Value> var_scope(symbol_table);  \
+#define NEW_SCOPE(scope_name)                                                  \
   llvm::ScopedHashTableScope<StringRef, mlir::Type> type_scope(type_table);    \
   llvm::ScopedHashTableScope<StringRef, StructDecl *> struct_scope(            \
       struct_table);                                                           \
   llvm::ScopedHashTableScope<mlir::lang::StructType, StringRef>                \
       struct_name_scope(struct_name_table);                                    \
   llvm::ScopedHashTableScope<StringRef, Type *> vardecl_scope(                 \
-      compiler_context.var_table);
+      compiler_context.var_table);                                             \
+  ScopeGuard scope_guard(this, (scope_name));
 
 class AnnotatingListener : public mlir::OpBuilder::Listener {
 public:
@@ -60,12 +59,15 @@ public:
   mlir::lang::FuncOp *current_function = nullptr;
 
   LangGenImpl(mlir::MLIRContext &context, Context &ctx)
-      : compiler_context(ctx), builder(&context) {}
+      : compiler_context(ctx), builder(&context),
+        global_scope(std::make_shared<SymbolTable>()),
+        current_scope(global_scope) {}
 
   llvm::LogicalResult declare(llvm::StringRef var, mlir::Value value) {
-    if (symbol_table.count(var))
+    if (current_scope->lookup(var)) {
       return mlir::failure();
-    symbol_table.insert(var, value);
+    }
+    current_scope->addSymbol(std::make_shared<Symbol>(var, value));
     return mlir::success();
   }
 
@@ -77,7 +79,7 @@ public:
   }
 
   mlir::ModuleOp langGen(Program *program) {
-    NEW_SCOPE()
+    NEW_SCOPE("global")
     the_module = mlir::ModuleOp::create(builder.getUnknownLoc());
     declarePrimitiveTypes();
     for (auto &f : program->items) {
@@ -97,14 +99,35 @@ private:
   Context &compiler_context;
   mlir::ModuleOp the_module;
   mlir::OpBuilder builder;
-  llvm::ScopedHashTable<StringRef, mlir::Value> symbol_table;
   llvm::ScopedHashTable<StringRef, mlir::Type> type_table;
   llvm::ScopedHashTable<StringRef, StructDecl *> struct_table;
   llvm::ScopedHashTable<mlir::lang::StructType, StringRef> struct_name_table;
-  llvm::StringMap<mlir::lang::FuncOp> function_map;
   llvm::StringMap<Function *> function_table;
   llvm::SmallVector<mlir::Value, 16> type_values;
   AstDumper dumper;
+  std::shared_ptr<SymbolTable> global_scope;  // Root symbol table
+  std::shared_ptr<SymbolTable> current_scope; // Current scope
+
+  std::shared_ptr<SymbolTable> getGlobalScope() const { return global_scope; }
+
+  void enterScope(const llvm::StringRef &scope_name) {
+    current_scope = current_scope->createChildScope(scope_name);
+  }
+
+  void exitScope() {
+    if (current_scope->parent) {
+      current_scope = current_scope->parent;
+    }
+  }
+
+  struct ScopeGuard {
+    LangGenImpl *lang_gen;
+    ScopeGuard(LangGenImpl *lang_gen, const std::string &scope_name)
+        : lang_gen(lang_gen) {
+      lang_gen->enterScope(scope_name);
+    }
+    ~ScopeGuard() { lang_gen->exitScope(); }
+  };
 
   mlir::Location loc(const TokenSpan &loc) {
     return mlir::FileLineColLoc::get(
@@ -163,16 +186,40 @@ private:
     return the_module.emitError("unsupported top-level item");
   }
 
-  mlir::Result<mlir::lang::FuncOp> langGen(Function *func,
-                                           bool is_generic = false) {
+  mlir::Result<mlir::lang::FuncOp>
+  langGen(Function *func, bool is_generic = false, bool is_instance = false) {
     if (is_generic) {
-      function_table[str(func->decl->name)] = func;
+      auto param_types = langGen(func->decl->parameters);
+      if (failed(param_types)) {
+        return mlir::failure();
+      }
+      auto symbol = current_scope->addSymbol(std::make_shared<Symbol>(
+          llvm::SmallString<64>(func->decl->name), param_types.value(),
+          Symbol::SymbolKind::GenericFunction,
+          current_scope->parent->getScopeName()));
+      if (!symbol)
+        return mlir::failure();
+      symbol->setGenericFunction(func);
       return mlir::success();
     }
-    NEW_SCOPE()
+    NEW_SCOPE(func->decl->name)
+
     auto param_types = langGen(func->decl->parameters);
     if (failed(param_types)) {
       return mlir::failure();
+    }
+    for (auto &type : param_types.value()) {
+      if (mlir::isa<mlir::lang::GenericType>(type)) {
+        auto type_param =
+            mlir::cast<mlir::lang::GenericType>(type).getTypeParam();
+        auto new_type = type_table.lookup(type_param);
+        if (!new_type) {
+          return mlir::emitError(loc(func->token.span),
+                                 "type parameter not found: " +
+                                     type_param.str());
+        }
+        type = new_type;
+      }
     }
     mlir::TypeRange return_types =
         func->decl->return_type->kind() == AstNodeKind::PrimitiveType &&
@@ -180,6 +227,17 @@ private:
                     PrimitiveType::PrimitiveTypeKind::Void
             ? mlir::TypeRange()
             : mlir::TypeRange(getType(func->decl->return_type.get()).value());
+
+    auto func_symbol = std::make_shared<Symbol>(
+        llvm::SmallString<64>(func->decl->name), param_types.value(),
+        Symbol::SymbolKind::Function, current_scope->parent->getScopeName());
+
+    if (!current_scope->parent->addSymbol(func_symbol)) {
+      auto func_op = current_scope->lookup(func_symbol->getMangledName());
+      if (is_instance && func_op->kind == Symbol::SymbolKind::Function) {
+        return mlir::Result<mlir::lang::FuncOp>::success(func_op->getFuncOp());
+      }
+    }
 
     // if function return type is a StructType, then add it as a function
     // parameter and remove the return type
@@ -191,9 +249,7 @@ private:
           mlir::lang::PointerType::get(builder.getContext()));
       return_types = mlir::TypeRange();
     }
-    auto func_name = func->decl->extra.is_generic
-                         ? str(func->decl->name)
-                         : str(mangle(func->decl->name, param_types.value()));
+
     bool is_inline = func->attrs.count(Attribute::Inline);
     mlir::NamedAttrList attrs;
     if (is_inline) {
@@ -201,16 +257,17 @@ private:
           builder.getNamedAttr("force_inline", builder.getBoolAttr(is_inline));
       attrs.push_back(std::move(inline_attr));
     }
+
     auto func_type = builder.getFunctionType(param_types.value(), return_types);
     auto func_op = builder.create<mlir::lang::FuncOp>(
-        loc(func->token.span), func_name, func_type, attrs);
+        loc(func->token.span), func_symbol->getMangledName(), func_type, attrs);
     current_function = &func_op;
-    for (const auto &it : llvm::enumerate(func->decl->parameters)) {
-      if (it.value()->is_comptime) {
-        func_op.setArgAttr(it.index(), "lang.comptime",
-                           builder.getBoolAttr(true));
-      }
-    }
+    // for (const auto &it : llvm::enumerate(func->decl->parameters)) {
+    //   if (it.value()->is_comptime) {
+    //     func_op.setArgAttr(it.index(), "lang.comptime",
+    //                        builder.getBoolAttr(true));
+    //   }
+    // }
     auto entry_block = func_op.addEntryBlock();
     builder.setInsertionPointToStart(entry_block);
 
@@ -220,6 +277,8 @@ private:
       func_op.erase();
       return mlir::failure();
     }
+
+    func_symbol->setFunction(func_op);
 
     // Generate function body.
     if (func->decl->extra.is_method && func->decl->name == "init") {
@@ -238,15 +297,17 @@ private:
         }
         // update func_name
         param_types->insert(param_types->begin(), self_type);
-        func_name = str(mangle(func->decl->name, param_types.value()));
-        func_op.setName(func_name);
+        func_symbol = std::make_shared<Symbol>(
+            llvm::SmallString<64>(func->decl->name), param_types.value(),
+            Symbol::SymbolKind::Function,
+            current_scope->parent->getScopeName());
+        func_op.setName(func_symbol->getMangledName());
       };
       if (failed(langGen(func->body.get(), create_self))) {
         func_op.erase();
         return mlir::failure();
       }
     } else {
-
       if (failed(langGen(func->body.get()))) {
         func_op.erase();
         return mlir::failure();
@@ -271,9 +332,6 @@ private:
       return_op->erase();
       builder.create<mlir::lang::ReturnOp>(loc(func->token.span));
     }
-
-    function_map[func_name] = func_op;
-    function_table[func_name] = func;
     current_function = nullptr;
     return func_op;
   }
@@ -298,20 +356,49 @@ private:
 
   llvm::FailureOr<llvm::SmallVector<mlir::Type, 4>>
   langGen(std::vector<std::unique_ptr<Parameter>> &params) {
+    llvm::StringMap<mlir::lang::GenericType> bindings;
     llvm::SmallVector<mlir::Type, 4> arg_types;
     for (auto &param : params) {
-      auto type = getType(param->type.get());
-      if (failed(type)) {
-        return mlir::failure();
-      }
-      arg_types.push_back(std::move(*type));
-      auto bindings =
-          destructurePattern(param->pattern.get(), param->type.get());
-      if (failed(bindings)) {
-        return mlir::failure();
-      }
-      for (auto [name, t] : bindings.value()) {
-        compiler_context.declareVar(name, t);
+      // Comptime Type
+      if (param->is_comptime &&
+          param->type->kind() == AstNodeKind::PrimitiveType &&
+          param->type->as<PrimitiveType>()->type_kind ==
+              PrimitiveType::PrimitiveTypeKind::type) {
+        auto type = getType(param->type.get());
+        if (failed(type)) {
+          return mlir::failure();
+        }
+        arg_types.push_back(std::move(*type));
+        // Only identifier pattern is supported for comptime types
+        if (param->pattern->kind() != AstNodeKind::IdentifierPattern) {
+          return mlir::emitError(loc(param->token.span),
+                                 "unsupported pattern for comptime type");
+        }
+        auto var_name = str(param->pattern->as<IdentifierPattern>()->name);
+        // compiler_context.declareVar(var_name, param->type.get());
+        bindings[var_name] = mlir::lang::GenericType::get(
+            builder.getContext(),
+            mlir::StringAttr::get(builder.getContext(), var_name));
+      } else {
+        if (param->type->kind() == AstNodeKind::IdentifierType &&
+            bindings.count(param->type->as<IdentifierType>()->name)) {
+          auto type = bindings[param->type->as<IdentifierType>()->name];
+          arg_types.push_back(type);
+        } else {
+          auto type = getType(param->type.get());
+          if (failed(type)) {
+            return mlir::failure();
+          }
+          arg_types.push_back(std::move(*type));
+        }
+        auto bindings =
+            destructurePattern(param->pattern.get(), param->type.get());
+        if (failed(bindings)) {
+          return mlir::failure();
+        }
+        // for (auto [name, t] : bindings.value()) {
+        //   compiler_context.declareVar(name, t);
+        // }
       }
     }
     return arg_types;
@@ -385,7 +472,7 @@ private:
   mlir::LogicalResult langGen(ImplDecl *impl_decl) {
     static AstDumper dumper(false, true);
     auto type = dumper.dump<Type>(impl_decl->type.get());
-    NEW_SCOPE()
+    NEW_SCOPE("")
     mlir::OpBuilder::InsertionGuard guard(builder);
     builder.setInsertionPointToEnd(the_module.getBody());
     auto parent_type = type_table.lookup(type);
@@ -415,6 +502,14 @@ private:
         return mlir::failure();
       }
     }
+    // Duplicate impl decl symbols to parent scope
+    for (auto &symbol : current_scope->table) {
+      if (!current_scope->parent->addSymbol(symbol.second)) {
+        return mlir::emitError(loc(impl_decl->token.span),
+                               "redeclaration of symbol " +
+                                   symbol.second->getName());
+      }
+    }
     // yield
     builder.create<mlir::lang::YieldOp>(loc(impl_decl->token.span));
     return mlir::success();
@@ -422,7 +517,7 @@ private:
 
   mlir::LogicalResult langGen(BlockExpression *block,
                               std::function<void()> callback = nullptr) {
-    NEW_SCOPE()
+    NEW_SCOPE("")
     if (callback) {
       callback();
     }
@@ -466,9 +561,9 @@ private:
     if (llvm::failed(bindings)) {
       return mlir::failure();
     }
-    for (auto [name, t] : bindings.value()) {
-      compiler_context.declareVar(name, t);
-    }
+    // for (auto [name, t] : bindings.value()) {
+    // compiler_context.declareVar(name, t);
+    // }
 
     mlir::Value var_type_value = nullptr;
     if (var_decl->type.has_value()) {
@@ -496,7 +591,7 @@ private:
 
     // assume the name is identifier pattern for now
     auto &var_name = var_decl->pattern->as<IdentifierPattern>()->name;
-    if (symbol_table.count(var_name)) {
+    if (current_scope->lookup(var_name)) {
       return mlir::emitError(loc(var_decl->token.span),
                              "a variable with name " + var_name +
                                  " already exists");
@@ -513,7 +608,6 @@ private:
       init_value = builder.create<mlir::lang::UndefOp>(
           loc(var_decl->token.span), var_type_value.getType());
     }
-
     if (mlir::isa<mlir::lang::TypeValueType>(init_value->getType())) {
       type_table.insert(var_name, init_value->getType());
     }
@@ -524,6 +618,8 @@ private:
     if (failed(declare(var_name, op.getResult()))) {
       return mlir::failure();
     }
+    current_scope->addSymbol(std::make_shared<Symbol>(
+        llvm::SmallString<64>(var_name), op.getResult()));
     return mlir::success();
   }
 
@@ -592,7 +688,8 @@ private:
       auto parsed_type =
           mlir::parseType(type_name_ref.trim('"'), builder.getContext());
       if (!parsed_type) {
-        return mlir::emitError(loc(mlir_type->token.span), "unknown type");
+        return mlir::emitError(loc(mlir_type->token.span),
+                               "MLIR type parsing error");
       }
       return parsed_type;
     } else if (type->kind() == AstNodeKind::IdentifierType) {
@@ -607,12 +704,14 @@ private:
       }
       // search in struct table
       auto type = type_table.lookup(type_name);
-      if (type)
+      if (type) {
         return type;
+      }
       auto vartype = compiler_context.var_table.lookup(type_name);
       if (vartype)
         return getType(vartype);
-      return mlir::emitError(loc(identifier_type->token.span), "unknown type");
+      return mlir::emitError(loc(identifier_type->token.span),
+                             "unknown identifier type, " + type_name);
     } else if (type->kind() == AstNodeKind::SliceType) {
       auto slice_type = type->as<SliceType>();
       auto base_type = getType(slice_type->base.get());
@@ -655,11 +754,6 @@ private:
     return mlir::emitError(loc(type->token.span),
                            "unsupported type " + toString(type->kind()));
   }
-
-  // mlir::FailureOr<mlir::Type> langGen(MLIRType *type) {
-  //   auto type_name = type->type;
-  //   return mlir::parseType(type_name, builder.getContext());
-  // }
 
   mlir::FailureOr<mlir::Value> langGen(Expression *expr) {
     switch (expr->kind()) {
@@ -723,88 +817,6 @@ private:
         .create<mlir::lang::ArrayOp>(loc(expr->token.span), memref_type, values)
         .getResult();
   }
-
-  // mlir::FailureOr<mlir::Value> langGen(ArrayExpr *expr) {
-  //   // if const expr, then create a constant array
-  //   if (expr->extra.is_const) {
-  //     mlir::DenseElementsAttr attr;
-  //     auto base_type = expr->elements[0]->as<LiteralExpr>()->type;
-  //     auto values = expr->elements | std::views::transform([](auto &e) {
-  //                     return e->template as<LiteralExpr>()->value;
-  //                   });
-  //
-  //     switch (base_type) {
-  //     case LiteralExpr::LiteralType::Int: {
-  //       auto int_range = values | std::views::transform([](auto v) {
-  //                          return mlir::APInt(64, std::get<int>(v));
-  //                        });
-  //       std::vector<mlir::APInt> int_values(int_range.begin(),
-  //       int_range.end()); auto shape = mlir::RankedTensorType::get(
-  //           {static_cast<long>(values.size())}, builder.getI64Type());
-  //       attr = mlir::DenseElementsAttr::get(shape, int_values);
-  //       break;
-  //     }
-  //     case LiteralExpr::LiteralType::Float: {
-  //       auto float_range = values | std::views::transform([](auto v) {
-  //                            return mlir::APFloat(std::get<double>(v));
-  //                          });
-  //       std::vector<mlir::APFloat> float_values(float_range.begin(),
-  //                                               float_range.end());
-  //       auto shape = mlir::RankedTensorType::get(
-  //           {static_cast<long>(values.size())}, builder.getF64Type());
-  //       attr = mlir::DenseElementsAttr::get(shape, float_values);
-  //       break;
-  //     }
-  //       // case LiteralExpr::LiteralType::Bool: {
-  //       //   auto bool_range = values | std::views::transform([](auto v) {
-  //       //                       return std::get<bool>(v);
-  //       //                     });
-  //       //   std::vector<bool> bool_values(bool_range.begin(),
-  //       //   bool_range.end()); auto shape = mlir::RankedTensorType::get(
-  //       //       {static_cast<long>(values.size())}, builder.getI1Type());
-  //       //   auto attr = mlir::DenseElementsAttr::get<bool>(shape,
-  //       // bool_values);
-  //       //   break;
-  //       // }
-  //
-  //     case LiteralExpr::LiteralType::Char: {
-  //       auto char_range = values | std::views::transform([](auto v) {
-  //                           return std::get<char>(v);
-  //                         });
-  //       std::vector<char> char_values(char_range.begin(),
-  //       char_range.end()); auto shape = mlir::RankedTensorType::get(
-  //           {static_cast<long>(values.size())}, builder.getI8Type());
-  //       attr = mlir::DenseElementsAttr::get<char>(shape, char_values);
-  //       break;
-  //     }
-  //     default:
-  //       return mlir::emitError(loc(expr->token.span),
-  //                              "unsupported array element type");
-  //     }
-  //     return builder
-  //         .create<mlir::lang::ConstantOp>(loc(expr->token.span),
-  //         attr.getType(),
-  //                                         attr)
-  //         .getResult();
-  //   }
-  //
-  //   llvm::SmallVector<mlir::Value, 4> values;
-  //   for (auto &e : expr->elements) {
-  //     auto value = langGen(e.get());
-  //     if (failed(value)) {
-  //       return mlir::failure();
-  //     }
-  //     values.push_back(std::move(*value));
-  //   }
-  //   auto base_type = values[0].getType();
-  //   auto array_type = mlir::lang::ArrayType::get(
-  //       builder.getContext(), base_type,
-  //       builder.getI64IntegerAttr(values.size()),
-  //       builder.getBoolAttr(false));
-  //   return builder
-  //       .create<mlir::lang::ArrayOp>(loc(expr->token.span), array_type,
-  //       values) .getResult();
-  // }
 
   mlir::FailureOr<mlir::Value> langGen(ComptimeExpr *expr) {
     AnnotatingListener listener(builder, builder.getStringAttr("comptime"),
@@ -1144,7 +1156,10 @@ private:
                    llvm::ArrayRef<mlir::Type> arg_types) {
 
     auto fn_name = mangle(method_name, arg_types);
-    if (!function_map.count(fn_name)) {
+    auto symbol_name =
+        Symbol(method_name, llvm::to_vector(arg_types)).getMangledName();
+    auto func = current_scope->lookup(symbol_name);
+    if (!func) {
       auto err = mlir::emitError(loc)
                  << "operation `" << method_name << "` not implemented for ";
       for (auto &arg_type : arg_types) {
@@ -1154,10 +1169,10 @@ private:
         else
           err << "\n";
       }
-      err << "Function not found in function table: " << fn_name;
+      err << "Function not found in function table: " << symbol_name;
       return err;
     }
-    return function_map[fn_name];
+    return func->getFuncOp();
   }
 
   mlir::FailureOr<mlir::Value> langGen(AssignStatement *expr) {
@@ -1189,8 +1204,9 @@ private:
 
   mlir::FailureOr<mlir::Value> langGen(IdentifierExpr *expr,
                                        bool get_value = true) {
-    auto var = symbol_table.lookup(expr->name);
-    if (var) {
+    auto var_symbol = current_scope->lookup(expr->name);
+    if (var_symbol) {
+      auto var = var_symbol->getValue();
       // for mutable values and structs, by default return the value
       // (automatic deref)
       if (get_value && mlir::isa<mlir::MemRefType>(var.getType())) {
@@ -1238,7 +1254,7 @@ private:
       args.push_back(self.value());
       arg_types.push_back(self.value().getType());
     }
-    bool is_generic = false;
+    bool is_generic = expr->comptime_index != -1;
     for (auto &arg : expr->arguments) {
       auto arg_value = langGen(arg.get());
       if (failed(arg_value)) {
@@ -1246,16 +1262,47 @@ private:
       }
       args.push_back(std::move(*arg_value));
       arg_types.emplace_back(arg_value->getType());
-      is_generic |= mlir::isa<mlir::lang::TypeValueType>(arg_types.back());
     }
 
-    auto func_name =
-        is_generic ? str(expr->callee) : str(mangle(expr->callee, arg_types));
+    if (expr->callee == "print")
+      return printCall(args, expr);
 
+    auto candidates = current_scope->lookupScopedOverloads(expr->callee);
+    auto best_candidate = resolveFunction(candidates, arg_types);
+    if (failed(best_candidate)) {
+      return mlir::failure();
+    }
+    auto func_symbol = best_candidate.value();
+
+    mlir::lang::FuncOp func = nullptr;
+    if (func_symbol->kind == Symbol::SymbolKind::Function)
+      func = func_symbol->getFuncOp();
+    if (!func && is_generic) {
+      auto func_decl = func_symbol->getGenericFunction();
+      mlir::OpBuilder::InsertionGuard guard(builder);
+      builder.setInsertionPointAfter(
+          builder.getInsertionBlock()->getParentOp());
+      auto new_func = instantiateGenericFunction(func_decl, args);
+      if (failed(new_func)) {
+        return mlir::emitError(loc(expr->token.span),
+                               "failed to instantiate generic function");
+      }
+      auto symbol_name = Symbol(llvm::SmallString<64>(expr->callee),
+                                llvm::to_vector(new_func->getArgumentTypes()))
+                             .getMangledName();
+      new_func->setName(symbol_name);
+      new_func->getOperation()->setAttr("generic", builder.getBoolAttr(true));
+      func = new_func.value();
+    }
+    if (!func) {
+      return mlir::emitError(loc(expr->token.span),
+                             "function not found in function table " +
+                                 expr->callee);
+    }
     // if return type is a struct type, then create a struct instance
     // and pass it as an argument
-    if (function_map.lookup(func_name)) {
-      auto func_type = function_map[func_name].getFunctionType();
+    if (func_symbol) {
+      auto func_type = func.getFunctionType();
       mlir::Type return_type = nullptr;
       if (func_type && func_type.getNumResults() == 1) {
         return_type = func_type.getResult(0);
@@ -1268,38 +1315,6 @@ private:
       }
     }
 
-    if (expr->callee == "print")
-      return printCall(args, expr);
-
-    if (is_generic) {
-      auto func_decl = function_table.lookup(func_name);
-      if (!func_decl) {
-        return mlir::emitError(loc(expr->token.span),
-                               "function not found in function table " +
-                                   func_name);
-      }
-      mlir::OpBuilder::InsertionGuard guard(builder);
-      builder.setInsertionPointAfter(
-          builder.getInsertionBlock()->getParentOp());
-      auto new_func = instantiateGenericFunction(func_decl, args);
-      if (failed(new_func)) {
-        return mlir::emitError(loc(expr->token.span),
-                               "failed to instantiate generic function");
-      }
-      func_name = str(mangle(func_name, new_func->getArgumentTypes()));
-      if (function_map.count(func_name)) {
-        // function already exists, erase the new function
-        // (TODO: need to do this withouth creating the function)
-        new_func->erase();
-      } else {
-        new_func->setName(func_name);
-        function_map[func_name] = new_func.value();
-      }
-    }
-    if (!function_map.count(func_name))
-      return mlir::emitError(loc(expr->token.span),
-                             "function " + func_name + " not found");
-    auto func = function_map[func_name];
     // call function
     auto call_op = builder.create<mlir::lang::CallOp>(
         loc(expr->token.span), func, mlir::ValueRange(args));
@@ -1331,6 +1346,10 @@ private:
   mlir::FailureOr<mlir::lang::FuncOp>
   instantiateGenericFunction(Function *func,
                              llvm::SmallVector<mlir::Value, 4> &args) {
+    auto prev_scope = current_scope;
+    current_scope = current_scope->parent->parent; // One for function, one for
+                                                   // block
+    llvm::SmallVector<mlir::Value, 4> value_args;
     // Step 1. Identify the generic parameters and their types
     for (const auto &it : llvm::enumerate(args)) {
       if (mlir::isa<mlir::lang::TypeValueType>(it.value().getType())) {
@@ -1347,28 +1366,33 @@ private:
         // assume pattern is an identifier for now
         auto pattern_name = str(pattern->as<IdentifierPattern>()->name);
         // update symbol table
-        symbol_table.insert(pattern_name, value);
+        if (!mlir::isa<mlir::lang::ConstantOp>(value.getDefiningOp())) {
+          current_scope = prev_scope;
+          return mlir::emitError(
+              loc(func->decl->token.span),
+              "comptime value argument must be a constant literal");
+        }
+        auto constant_op = value.getDefiningOp<mlir::lang::ConstantOp>();
+        auto new_value = builder.create<mlir::lang::ConstantOp>(
+            loc(func->decl->token.span), constant_op.getType(),
+            constant_op.getValue());
+        current_scope->addSymbol(
+            std::make_shared<Symbol>(pattern_name, new_value.getResult()),
+            true);
+        value_args.push_back(new_value.getResult());
       }
     }
-    auto func_op = langGen(func);
+    auto func_op = langGen(func, false, true);
     if (llvm::failed(func_op)) {
+      current_scope = prev_scope;
       return mlir::failure();
     }
-    // auto inputs_type =
-    //     llvm::to_vector<4>(func_op->getFunctionType().getInputs());
-    // auto r_args = llvm::reverse(args);
-    // remove generic args from the func_op
-    // for (const auto [idx, arg] : llvm::enumerate(r_args)) {
-    //   if (mlir::isa<mlir::lang::TypeValueType>(arg.getType())) {
-    //     func_op->getCallableRegion()->eraseArgument(args.size() - idx - 1);
-    //     args.erase(args.end() - idx - 1);
-    //     inputs_type.erase(inputs_type.end() - idx - 1);
-    //   }
-    // }
-    // auto function_type =
-    //     mlir::FunctionType::get(builder.getContext(), inputs_type,
-    //                             func_op->getFunctionType().getResults());
-    // func_op->setType(function_type);
+
+    // Step 2. Move the value args to the function
+    for (auto &arg : value_args) {
+      arg.getDefiningOp()->moveBefore(&*func_op->getOps().begin());
+    }
+    current_scope = prev_scope;
     return *func_op;
   }
 
@@ -1382,9 +1406,11 @@ private:
     if (std::holds_alternative<std::unique_ptr<CallExpr>>(expr->field)) {
       // function/method call
       auto call_expr = std::get<std::unique_ptr<CallExpr>>(expr->field).get();
-      auto func_name = str(mangle(call_expr->callee, {base_type}));
-      llvm::errs() << "Func Name : " << func_name << "\n";
-      if (!function_map.count(func_name)) {
+      auto symbol_name =
+          Symbol(llvm::SmallString<64>(call_expr->callee), {base_type})
+              .getMangledName();
+      auto func = current_scope->lookup(symbol_name);
+      if (!func) {
         return mlir::emitError(loc(expr->token.span),
                                "function not found in function table");
       }
@@ -1817,6 +1843,132 @@ private:
     //   }
     // }
     return nullptr;
+  }
+
+  std::vector<std::shared_ptr<Symbol>> filterCandidates(
+      const llvm::SmallVector<std::shared_ptr<Symbol>, 4> &candidates,
+      const llvm::SmallVector<mlir::Type, 4> &arguments) {
+
+    std::vector<std::shared_ptr<Symbol>> valid_candidates;
+
+    for (const auto &candidate : candidates) {
+      if (candidate->param_types.size() == arguments.size()) {
+        valid_candidates.push_back(candidate);
+      }
+    }
+    return valid_candidates;
+  }
+
+  bool
+  inferGenerics(std::shared_ptr<Symbol> &candidate,
+                const llvm::SmallVector<mlir::Type, 4> &arguments,
+                llvm::DenseMap<mlir::Type, mlir::Type> &inferred_generics) {
+
+    for (size_t i = 0; i < candidate->param_types.size(); ++i) {
+      auto param_type = candidate->param_types[i];
+      auto arg_type = arguments[i];
+      if (mlir::isa<mlir::lang::TypeValueType>(arg_type)) {
+        arg_type = mlir::lang::LangType::get(builder.getContext());
+      }
+
+      if (param_type == arg_type) {
+        continue; // Exact match
+      } else if (mlir::isa<mlir::lang::GenericType>(param_type)) {
+        // Infer generic type
+        inferred_generics[param_type] = arg_type;
+      } else {
+        return false; // Type mismatch
+      }
+    }
+
+    // // Validate inferred generics against constraints
+    // for (const auto &[genericType, constraint] :
+    // candidate.genericConstraints) {
+    //   if (inferredGenerics.find(genericType) == inferredGenerics.end()) {
+    //     return false; // Missing inference
+    //   }
+    //
+    //   auto inferredType = inferredGenerics[genericType];
+    //   if (!validateTypeConstraint(inferredType, constraint)) {
+    //     return false; // Constraint violated
+    //   }
+    // }
+
+    return true;
+  }
+
+  int calculateSpecificity(
+      const std::shared_ptr<Symbol> &candidate,
+      const llvm::SmallVector<mlir::Type, 4> &arguments,
+      const llvm::DenseMap<mlir::Type, mlir::Type> &inferred_generics) {
+    int score = 0;
+
+    for (size_t i = 0; i < candidate->param_types.size(); ++i) {
+      auto param_type = candidate->param_types[i];
+      auto arg_type = arguments[i];
+      if (param_type == arg_type) {
+        score += 10; // Exact match
+      } else if (mlir::isa<mlir::lang::GenericType>(param_type)) {
+        score += 5; // Generic match
+      } else if (isTypeConvertible(param_type, arg_type)) {
+        score += 3; // Type promotion
+      }
+    }
+
+    return score;
+  }
+
+  bool isTypeConvertible(const mlir::Type &from, const mlir::Type &to) {
+    // TODO: Implement logic for type conversion/promotion
+    return false; // Placeholder
+  }
+
+  bool validateTypeConstraint(const mlir::Type &type,
+                              const mlir::Type &constraint) {
+    // TODO: Implement constraint checking based on your type system
+    // return type == constraint || isSubtypeOf(type, constraint);
+    return true; // Placeholder
+  }
+
+  llvm::FailureOr<std::shared_ptr<Symbol>>
+  resolveFunction(llvm::SmallVector<std::shared_ptr<Symbol>, 4> &candidates,
+                  const llvm::SmallVector<mlir::Type, 4> &arguments) {
+
+    // Filter candidates based on argument count
+    auto filtered_candidates = filterCandidates(candidates, arguments);
+
+    std::shared_ptr<Symbol> best_candidate;
+    int best_score = -1;
+
+    for (auto &candidate : filtered_candidates) {
+      llvm::DenseMap<mlir::Type, mlir::Type> inferred_generics;
+      // Determine if the candidate is generic
+      bool is_generic = candidate->kind == Symbol::SymbolKind::GenericFunction;
+
+      // Generic type inference if applicable
+      if (is_generic &&
+          !inferGenerics(candidate, arguments, inferred_generics)) {
+        continue; // Skip if generic inference failed
+      }
+
+      // Calculate specificity score for both generic and non-generic candidates
+      int score = calculateSpecificity(candidate, arguments, inferred_generics);
+
+      // Update the best candidate
+      if (score > best_score) {
+        best_candidate = candidate;
+        best_score = score;
+      } else if (score == best_score) {
+        return mlir::emitError(builder.getUnknownLoc(),
+                               "Ambiguous function resolution");
+      }
+    }
+
+    if (best_score == -1) {
+      return emitError(builder.getUnknownLoc(), "No matching function found");
+    }
+
+    return best_candidate;
   }
 };
 

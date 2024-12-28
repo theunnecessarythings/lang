@@ -178,10 +178,12 @@ struct CallOpLowering : public mlir::OpConversionPattern<mlir::lang::CallOp> {
       auto args_size = args.size();
       for (const auto [idx, arg] : llvm::enumerate(r_args)) {
         if (mlir::isa<mlir::lang::TypeValueType>(arg.getType())) {
-          func_op.getCallableRegion()->eraseArgument(args_size - idx - 1);
+          if (func_op.getFunctionType().getNumInputs() == args.size()) {
+            func_op.getCallableRegion()->eraseArgument(args_size - idx - 1);
+            inputs_type.erase(inputs_type.end() - idx - 1);
+          }
           // args.erase(args.end() - idx - 1);
           call.getArgOperandsMutable().erase(args_size - idx - 1);
-          inputs_type.erase(inputs_type.end() - idx - 1);
         }
       }
       // update the function type
@@ -862,7 +864,9 @@ struct VarDeclOpLowering
 
     if (op.getVarTypeValue() && init_value.getType() != var_type &&
         !mlir::isa<mlir::lang::LangType>(var_type)) {
-      auto fn_name = mangle("init", {var_type, init_value.getType()});
+      auto fn_name = Symbol(llvm::SmallString<64>("init"),
+                            {var_type, init_value.getType()})
+                         .getMangledName();
       auto cast_op = rewriter.create<mlir::lang::CallOp>(
           op.getLoc(), fn_name, var_type, mlir::ValueRange{init_value});
 
@@ -1064,6 +1068,20 @@ void LangToAffineLoweringPass::runOnOperation() {
         !mlir::isa<mlir::func::FuncOp>(op)) {
       op.remove();
     }
+
+    // // if any of operands or return types are LangType, remove the op
+    // if (auto func_op = mlir::dyn_cast<mlir::lang::FuncOp>(op)) {
+    //   if (llvm::any_of(func_op.getFunctionType().getInputs(),
+    //                    [](mlir::Type type) {
+    //                      return mlir::isa<mlir::lang::LangType>(type);
+    //                    }) ||
+    //       llvm::any_of(func_op.getFunctionType().getResults(), [](mlir::Type
+    //       type) {
+    //         return mlir::isa<mlir::lang::LangType>(type);
+    //       })) {
+    //     func_op.erase();
+    //   }
+    // }
   }
 
   mlir::ConversionTarget target(getContext());

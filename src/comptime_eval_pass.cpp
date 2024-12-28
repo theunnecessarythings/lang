@@ -903,17 +903,17 @@ void ComptimeEvalPass::runOnOperation() {
   // Inline function that returns a type
   inlineTypeConstFuncs(module);
 
-  // Step 2: Instantiate generic functions
-  module.walk([&](mlir::lang::CallOp op) {
-    // Check whether the callee is a generic function that returns a type
-    auto callee_func = isCalleeGenericFunc(&op, module);
-    if (!callee_func) {
-      return;
-    }
-    // Step 2: Instantiate the generic type
-    instantiateGenericType(callee_func, op, module, solver);
-  });
-
+  // // Step 2: Instantiate generic functions
+  // module.walk([&](mlir::lang::CallOp op) {
+  //   // Check whether the callee is a generic function that returns a type
+  //   auto callee_func = isCalleeGenericFunc(&op, module);
+  //   if (!callee_func) {
+  //     return;
+  //   }
+  //   // Step 2: Instantiate the generic type
+  //   instantiateGenericType(callee_func, op, module, solver);
+  // });
+  //
   // Remove all generic functions
   module.walk([&](mlir::lang::FuncOp op) {
     if (isGenericFunc(op)) {

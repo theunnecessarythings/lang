@@ -5,15 +5,10 @@
 #include <llvm/ADT/ScopedHashTable.h>
 #include <memory>
 
-using DependencyGraph = llvm::MapVector<Expression *, mlir::DenseSet<Node *>>;
-
 struct Analyzer {
-
   std::shared_ptr<Context> context;
-  llvm::SmallVector<ExprType *, 4> expr_types;
-  DependencyGraph dependency_graph;
-
   Analyzer(std::shared_ptr<Context> context) : context(context) {}
+  AstDumper dumper;
 
   void analyze(Program *);
   void analyze(TopLevelDecl *);

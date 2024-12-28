@@ -43,153 +43,142 @@ void testAnalyzer(const std::string &path) {
 
 TEST_CASE("expr", "[analyzer]") { testAnalyzer("../examples/expr.lang"); }
 
-// TEST_CASE("hello", "[analyzer]") { test_analyzer("../examples/hello.lang"); }
-//
-// TEST_CASE("primitives", "[analyzer]") {
-//   test_analyzer("../examples/primitives.lang");
-// }
-//
-// TEST_CASE("literals", "[analyzer]") {
-//   test_analyzer("../examples/literals.lang");
-// }
-//
-// TEST_CASE("tuple structs", "[analyzer]") {
-//   test_analyzer("../examples/tuple structs.lang");
-// }
-//
-// TEST_CASE("import", "[analyzer]") { test_analyzer("../examples/import.lang");
-// }
-//
-// TEST_CASE("arrays, slices", "[analyzer]") {
-//   test_analyzer("../examples/arrays, slices.lang");
-// }
-//
-// TEST_CASE("structs", "[analyzer]") {
-//   test_analyzer("../examples/structs.lang");
-// }
-//
-// TEST_CASE("enums", "[analyzer]") { test_analyzer("../examples/enums.lang"); }
-//
-// TEST_CASE("c-like enums", "[analyzer]") {
-//   test_analyzer("../examples/c-like enums.lang");
-// }
-//
-// TEST_CASE("variable bindings", "[analyzer]") {
-//   test_analyzer("../examples/variable bindings.lang");
-// }
-//
-// TEST_CASE("mutability", "[analyzer]") {
-//   test_analyzer("../examples/mutability.lang");
-// }
-//
-// TEST_CASE("scope", "[analyzer]") { test_analyzer("../examples/scope.lang"); }
-//
-// TEST_CASE("declare first", "[analyzer]") {
-//   test_analyzer("../examples/declare first.lang");
-// }
-//
-// TEST_CASE("casting", "[analyzer]") {
-//   test_analyzer("../examples/casting.lang");
-// }
-//
-// TEST_CASE("literals 2", "[analyzer]") {
-//   test_analyzer("../examples/literals 2.lang");
-// }
-//
-// TEST_CASE("aliasing", "[analyzer]") {
-//   test_analyzer("../examples/aliasing.lang");
-// }
-//
-// TEST_CASE("type casting", "[analyzer]") {
-//   test_analyzer("../examples/type casting.lang");
-// }
-//
-// TEST_CASE("formatter", "[analyzer]") {
-//   test_analyzer("../examples/formatter.lang");
-// }
-//
-// TEST_CASE("block expressions", "[analyzer]") {
-//   test_analyzer("../examples/block expressions.lang");
-// }
-//
-// TEST_CASE("if else", "[analyzer]") {
-//   test_analyzer("../examples/if else.lang");
-// }
-//
-// TEST_CASE("loops", "[analyzer]") { test_analyzer("../examples/loops.lang"); }
-//
-// TEST_CASE("returning from loops", "[analyzer]") {
-//   test_analyzer("../examples/returning from loops.lang");
-// }
-//
-// TEST_CASE("for in", "[analyzer]") { test_analyzer("../examples/for in.lang");
-// }
-//
-// TEST_CASE("for each", "[analyzer]") {
-//   test_analyzer("../examples/for each.lang");
-// }
-//
-// TEST_CASE("for each mut", "[analyzer]") {
-//   test_analyzer("../examples/for each mut.lang");
-// }
-//
-// TEST_CASE("match", "[analyzer]") { test_analyzer("../examples/match.lang"); }
-//
-// TEST_CASE("match destructuring", "[analyzer]") {
-//   test_analyzer("../examples/match destructuring.lang");
-// }
-//
-// TEST_CASE("match enums", "[analyzer]") {
-//   test_analyzer("../examples/match enums.lang");
-// }
-//
-// TEST_CASE("match struct pattern", "[analyzer]") {
-//   test_analyzer("../examples/match struct pattern.lang");
-// }
-//
-// TEST_CASE("functions", "[analyzer]") {
-//   test_analyzer("../examples/functions.lang");
-// }
-//
-// TEST_CASE("methods", "[analyzer]") {
-//   test_analyzer("../examples/methods.lang");
-// }
-//
-// TEST_CASE("method 2", "[analyzer]") {
-//   test_analyzer("../examples/method 2.lang");
-// }
-//
-// TEST_CASE("higher order functions", "[analyzer]") {
-//   test_analyzer("../examples/higher order functions.lang");
-// }
-//
-// TEST_CASE("no return, hof", "[analyzer]") {
-//   test_analyzer("../examples/no return, hof.lang");
-// }
-//
-// TEST_CASE("traits", "[analyzer]") { test_analyzer("../examples/traits.lang");
-// }
-//
-// TEST_CASE("supertraits", "[analyzer]") {
-//   test_analyzer("../examples/super_traits.lang");
-// }
-//
-// TEST_CASE("basic comptime", "[analyzer]") {
-//   test_analyzer("../examples/basic_comptime.lang");
-// }
-//
-// TEST_CASE("comptime trait", "[analyzer]") {
-//   test_analyzer("../examples/comptime_trait.lang");
-// }
-//
-// TEST_CASE("multiple trait constraints", "[analyzer]") {
-//   test_analyzer("../examples/multiple_trait_constraint.lang");
-// }
-//
-// TEST_CASE("generic struct", "[analyzer]") {
-//   test_analyzer("../examples/generic_struct.lang");
-// }
-//
-// TEST_CASE("nested comptime", "[analyzer]") {
-//   test_analyzer("../examples/nested_comptime.lang");
-// }
+TEST_CASE("hello", "[analyzer]") { testAnalyzer("../examples/hello.lang"); }
+
+TEST_CASE("primitives", "[analyzer]") {
+  testAnalyzer("../examples/primitives.lang");
+}
+
+TEST_CASE("literals", "[analyzer]") {
+  testAnalyzer("../examples/literals.lang");
+}
+
+TEST_CASE("tuple structs", "[analyzer]") {
+  testAnalyzer("../examples/tuple structs.lang");
+}
+
+TEST_CASE("import", "[analyzer]") { testAnalyzer("../examples/import.lang"); }
+
+TEST_CASE("arrays, slices", "[analyzer]") {
+  testAnalyzer("../examples/arrays, slices.lang");
+}
+
+TEST_CASE("structs", "[analyzer]") { testAnalyzer("../examples/structs.lang"); }
+
+TEST_CASE("enums", "[analyzer]") { testAnalyzer("../examples/enums.lang"); }
+
+TEST_CASE("c-like enums", "[analyzer]") {
+  testAnalyzer("../examples/c-like enums.lang");
+}
+
+TEST_CASE("variable bindings", "[analyzer]") {
+  testAnalyzer("../examples/variable bindings.lang");
+}
+
+TEST_CASE("mutability", "[analyzer]") {
+  testAnalyzer("../examples/mutability.lang");
+}
+
+TEST_CASE("scope", "[analyzer]") { testAnalyzer("../examples/scope.lang"); }
+
+TEST_CASE("declare first", "[analyzer]") {
+  testAnalyzer("../examples/declare first.lang");
+}
+
+TEST_CASE("casting", "[analyzer]") { testAnalyzer("../examples/casting.lang"); }
+
+TEST_CASE("literals 2", "[analyzer]") {
+  testAnalyzer("../examples/literals 2.lang");
+}
+
+TEST_CASE("aliasing", "[analyzer]") {
+  testAnalyzer("../examples/aliasing.lang");
+}
+
+TEST_CASE("type casting", "[analyzer]") {
+  testAnalyzer("../examples/type casting.lang");
+}
+
+TEST_CASE("formatter", "[analyzer]") {
+  testAnalyzer("../examples/formatter.lang");
+}
+
+TEST_CASE("block expressions", "[analyzer]") {
+  testAnalyzer("../examples/block expressions.lang");
+}
+
+TEST_CASE("if else", "[analyzer]") { testAnalyzer("../examples/if else.lang"); }
+
+TEST_CASE("loops", "[analyzer]") { testAnalyzer("../examples/loops.lang"); }
+
+TEST_CASE("returning from loops", "[analyzer]") {
+  testAnalyzer("../examples/returning from loops.lang");
+}
+
+TEST_CASE("for in", "[analyzer]") { testAnalyzer("../examples/for in.lang"); }
+
+TEST_CASE("for each", "[analyzer]") {
+  testAnalyzer("../examples/for each.lang");
+}
+
+TEST_CASE("for each mut", "[analyzer]") {
+  testAnalyzer("../examples/for each mut.lang");
+}
+
+TEST_CASE("match", "[analyzer]") { testAnalyzer("../examples/match.lang"); }
+
+TEST_CASE("match destructuring", "[analyzer]") {
+  testAnalyzer("../examples/match destructuring.lang");
+}
+
+TEST_CASE("match enums", "[analyzer]") {
+  testAnalyzer("../examples/match enums.lang");
+}
+
+TEST_CASE("match struct pattern", "[analyzer]") {
+  testAnalyzer("../examples/match struct pattern.lang");
+}
+
+TEST_CASE("functions", "[analyzer]") {
+  testAnalyzer("../examples/functions.lang");
+}
+
+TEST_CASE("methods", "[analyzer]") { testAnalyzer("../examples/methods.lang"); }
+
+TEST_CASE("method 2", "[analyzer]") {
+  testAnalyzer("../examples/method 2.lang");
+}
+
+TEST_CASE("higher order functions", "[analyzer]") {
+  testAnalyzer("../examples/higher order functions.lang");
+}
+
+TEST_CASE("no return, hof", "[analyzer]") {
+  testAnalyzer("../examples/no return, hof.lang");
+}
+
+TEST_CASE("traits", "[analyzer]") { testAnalyzer("../examples/traits.lang"); }
+
+TEST_CASE("supertraits", "[analyzer]") {
+  testAnalyzer("../examples/super_traits.lang");
+}
+
+TEST_CASE("basic comptime", "[analyzer]") {
+  testAnalyzer("../examples/basic_comptime.lang");
+}
+
+TEST_CASE("comptime trait", "[analyzer]") {
+  testAnalyzer("../examples/comptime_trait.lang");
+}
+
+TEST_CASE("multiple trait constraints", "[analyzer]") {
+  testAnalyzer("../examples/multiple_trait_constraint.lang");
+}
+
+TEST_CASE("generic struct", "[analyzer]") {
+  testAnalyzer("../examples/generic_struct.lang");
+}
+
+TEST_CASE("nested comptime", "[analyzer]") {
+  testAnalyzer("../examples/nested_comptime.lang");
+}

@@ -107,6 +107,15 @@ def ArrayType : Lang_Type<"Array", "array"> {
     let assemblyFormat = "`<` $element_type `,` $size `,` $is_comptime_expr `>`";
 }
 
+def GenericType : Lang_Type<"Generic", "generic"> {
+    let summary = "Generic type";
+    let description = [{
+        This type represents a generic type.
+    }];
+    let parameters = (ins "StringAttr":$type_param);
+    let assemblyFormat = "`<` $type_param `>`";
+}
+
 // def TypeValue: DialectType<Lang_Dialect, CPred<"isa<TypeValueType>($_self)">,
 //                                     "Lang typevalue type">;
 

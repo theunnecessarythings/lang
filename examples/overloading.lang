@@ -1,0 +1,24 @@
+// Example of function overloading
+
+fn add1(a: i64, b: i64) i64 {
+    return a + b;
+}
+
+fn add1(a: f64, b: f64) f64 {
+    return a + b;
+}
+
+fn add1(T: type, *, a: T, b: T) T {
+    return a + b;
+}
+
+fn main() void {
+    const a = 10;
+    const b = 20;
+    const c = 10.0;
+    const d = 20.0;
+
+    print("a + b = %d", add1(a, b));
+    print("c + d = %f", add1(c, d));
+    print("a + b = %d", add1(i64, *, a, b));
+}

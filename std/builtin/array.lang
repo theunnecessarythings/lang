@@ -1,14 +1,14 @@
-fn array(comptime T: type, comptime N: i64) type {
-    const Impl = @mlir_type("memref<{}x{}>", [N, T]);
-    impl Impl {
-        fn index(self: Self, idx: i64) T {
-            const i = @mlir_op("index.castu", [idx], {}, [@mlir_type("index")]);
-            return @mlir_op("memref.load", [self, i], {}, [T]);
-        }
-
-        fn len(self: Self) i64 {
-            return 1;
-        }
-    }
-    return Impl;
-}
+// fn array(comptime T: type, comptime N: i64) type {
+//     const Impl = @mlir_type("memref<{}x{}>", [N, T]);
+//     impl Impl {
+//         fn index(self: Self, idx: i64) T {
+//             const i = @mlir_op("index.castu", [idx], {}, [@mlir_type("index")]);
+//             return @mlir_op("memref.load", [self, i], {}, [T]);
+//         }
+//
+//         fn len(self: Self) i64 {
+//             return 1;
+//         }
+//     }
+//     return Impl;
+// }

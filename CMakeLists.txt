@@ -45,6 +45,7 @@ add_library(liblang STATIC
     src/LangGen.cpp
     src/analyzer.cpp
     src/compiler.cpp
+    src/data_structures.cpp
     src/lower_to_llvm.cpp
     src/lower_to_affine.cpp
     src/literal_cast_pass.cpp
@@ -98,6 +99,7 @@ add_executable(tests
     tests/test_lexer.cpp 
     tests/test_parser.cpp 
     tests/test_analyzer.cpp
-    tests/test_behaviour.cpp)
+    tests/test_behaviour.cpp
+    tests/test_mangler.cpp)
 target_include_directories(tests PRIVATE include/)
 target_link_libraries(tests PRIVATE Catch2::Catch2WithMain liblang)

@@ -88,7 +88,6 @@ void Analyzer::analyze(FunctionDecl *decl) {
 void Analyzer::analyze(Parameter *param) {
   analyze(param->pattern.get());
   analyze(param->type.get());
-
   if (!param->trait_bound.empty()) {
     for (auto &trait : param->trait_bound) {
       analyze(trait.get());
@@ -630,10 +629,7 @@ void Analyzer::analyze(EnumType *type) {}
 
 void Analyzer::analyze(UnionType *type) {}
 
-void Analyzer::analyze(ExprType *type) {
-  expr_types.push_back(type);
-  analyze(type->expr.get());
-}
+void Analyzer::analyze(ExprType *type) { analyze(type->expr.get()); }
 
 void Analyzer::analyze(MLIRType *type) {}
 

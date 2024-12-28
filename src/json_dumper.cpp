@@ -989,6 +989,7 @@ void JsonDumper::dump(CallExpr *node) {
 
   indent();
   output_stream << "\"callee\": \"" << node->callee << "\",\n";
+  output_stream << "\"comptime_index\": " << node->comptime_index << ",\n";
 
   indent();
   output_stream << "\"arguments\": [\n";
@@ -2426,7 +2427,7 @@ void JsonDumper::dump(MLIROp *op) {
   cur_indent++;
   for (size_t i = 0; i < op->result_types.size(); ++i) {
     indent();
-    output_stream << (op->result_types[i]);
+    dump(op->result_types[i].get());
     if (i + 1 != op->result_types.size())
       output_stream << ",";
     output_stream << "\n";

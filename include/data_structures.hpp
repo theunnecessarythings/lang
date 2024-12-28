@@ -1,7 +1,11 @@
+#pragma once
+
+#include "ast.hpp"
 #include "dialect/LangOps.h"
 #include "mlir/IR/Diagnostics.h"
 #include "mlir/Support/LLVM.h"
 #include "mlir/Support/LogicalResult.h"
+#include "llvm/ADT/SmallString.h"
 #include "llvm/Support/raw_ostream.h"
 #include <cassert>
 #include <optional>
@@ -122,3 +126,156 @@ inline std::string attrToStr(mlir::Attribute attr) {
   }
   return rso.str();
 }
+
+static std::string sep = ":";
+struct Symbol {
+  enum class SymbolKind {
+    Variable,
+    Function,
+    Struct,
+    Enum,
+    GenericFunction,
+  };
+  llvm::SmallString<64> name;  // Name of the symbol (unmangled)
+  SymbolKind kind;             // Type of the symbol (e.g., Variable, Function)
+  llvm::SmallString<64> scope; // Fully qualified scope (e.g., "app::math")
+  llvm::SmallVector<mlir::Type, 4>
+      param_types; // Parameter types for functions (empty for variables)
+  llvm::SmallString<64> mangled_name; // Mangled name of the symbol
+
+  union {
+    mlir::Value value;                  // Value for variables
+    mlir::lang::StructType struct_type; // Type for structs
+    mlir::lang::FuncOp func_op;         // Function for functions
+    Function *generic_func;
+  };
+
+  // Constructor for variables
+  Symbol(const llvm::SmallString<64> &name, mlir::Value value,
+         SymbolKind kind = SymbolKind::Variable,
+         const llvm::SmallString<64> &scope = llvm::SmallString<64>())
+      : name(name), kind(kind), scope(scope), value(value) {
+    mangle();
+  }
+
+  // Constructor for functions
+  Symbol(const llvm::SmallString<64> &name,
+         const llvm::SmallVector<mlir::Type, 4> param_types,
+         SymbolKind kind = SymbolKind::Function,
+         const llvm::SmallString<64> &scope = llvm::SmallString<64>())
+      : name(name), kind(kind), scope(scope), param_types(param_types) {
+    mangle();
+  }
+
+  void setStructType(mlir::lang::StructType struct_type) {
+    assert(kind == SymbolKind::Struct && "Symbol is not a struct");
+    this->struct_type = struct_type;
+  }
+
+  void setFunction(mlir::lang::FuncOp function) {
+    assert(kind == SymbolKind::Function && "Symbol is not a function");
+    this->func_op = function;
+  }
+
+  void setValue(mlir::Value value) {
+    assert(kind == SymbolKind::Variable && "Symbol is not a variable");
+    this->value = value;
+  }
+
+  void setGenericFunction(Function *generic_func) {
+    assert(kind == SymbolKind::GenericFunction &&
+           "Symbol is not a generic function");
+    this->generic_func = generic_func;
+  }
+
+  mlir::Value getValue() const {
+    assert(kind == SymbolKind::Variable && "Symbol is not a variable");
+    return value;
+  }
+
+  mlir::lang::StructType getStructType() const {
+    assert(kind == SymbolKind::Struct && "Symbol is not a struct");
+    return struct_type;
+  }
+
+  mlir::lang::FuncOp getFuncOp() const {
+    assert(kind == SymbolKind::Function && "Symbol is not a function");
+    return func_op;
+  }
+
+  Function *getGenericFunction() const {
+    assert(kind == SymbolKind::GenericFunction &&
+           "Symbol is not a generic function");
+    return generic_func;
+  }
+
+  // Accessors
+  const llvm::SmallString<64> &getName() const { return name; }
+  const llvm::SmallString<64> &getScope() const { return scope; }
+  const llvm::SmallVector<mlir::Type, 4> &getParamTypes() const {
+    return param_types;
+  }
+  const llvm::SmallString<64> &getMangledName() const { return mangled_name; }
+
+  void mangle();
+  std::string encodeType(const std::string &type) const;
+};
+
+struct OverloadTable {
+  llvm::StringMap<std::vector<std::shared_ptr<Symbol>>> overload_table;
+
+  void addOverload(std::shared_ptr<Symbol> symbol) {
+    if (symbol->kind == Symbol::SymbolKind::Function ||
+        symbol->kind == Symbol::SymbolKind::GenericFunction) {
+      overload_table[symbol->getName()].push_back(symbol);
+    }
+  }
+
+  std::vector<std::shared_ptr<Symbol>>
+  getOverloads(const llvm::StringRef &name) const {
+    auto it = overload_table.find(name);
+    if (it != overload_table.end()) {
+      return it->second;
+    }
+    return {};
+  }
+
+  void dump(int depth = 0) const {
+    for (const auto &entry : overload_table) {
+      llvm::errs() << std::string(depth * 2, ' ') << entry.first() << "\n";
+    }
+  }
+};
+
+struct SymbolTable : public std::enable_shared_from_this<SymbolTable> {
+  llvm::StringMap<std::shared_ptr<Symbol>> table; // Current scope symbol table
+  OverloadTable overload_table;                   // Overload table
+  std::shared_ptr<SymbolTable> parent; // Parent scope for nested lookups
+  llvm::SmallVector<std::shared_ptr<SymbolTable>, 4> children; // Child scopes
+  int scope_id = 0; // Unique scope ID
+  llvm::SmallString<64> scope_name =
+      llvm::SmallString<64>(""); // Name of the current scope
+
+  // Constructor
+  SymbolTable(std::shared_ptr<SymbolTable> parent = nullptr) : parent(parent) {}
+
+  // Add a symbol to the table
+  std::shared_ptr<Symbol> addSymbol(std::shared_ptr<Symbol> symbol,
+                                    bool overwrite = false);
+
+  // Lookup a symbol by its mangled name with optional specific scope
+  std::shared_ptr<Symbol> lookup(const llvm::StringRef &name) const;
+
+  // Lookup overloads by unmangled name across scoped hierarchy
+  llvm::SmallVector<std::shared_ptr<Symbol>, 4>
+  lookupScopedOverloads(const llvm::StringRef &name) const;
+
+  // Create a new child scope
+  std::shared_ptr<SymbolTable>
+  createChildScope(const llvm::StringRef &scope_name);
+
+  // Helper to get the current scope name
+  llvm::SmallString<64> getScopeName() const;
+
+  void dump(int depth = 0) const;
+};
