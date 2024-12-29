@@ -279,3 +279,11 @@ struct SymbolTable : public std::enable_shared_from_this<SymbolTable> {
 
   void dump(int depth = 0) const;
 };
+
+class Defer {
+  std::function<void()> func;
+
+public:
+  explicit Defer(std::function<void()> f) : func(std::move(f)) {}
+  ~Defer() { func(); }
+};

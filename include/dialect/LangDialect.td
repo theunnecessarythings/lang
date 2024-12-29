@@ -116,6 +116,15 @@ def GenericType : Lang_Type<"Generic", "generic"> {
     let assemblyFormat = "`<` $type_param `>`";
 }
 
+def ComptimeType: Lang_Type<"Comptime", "comptime"> {
+    let summary = "Comptime type";
+    let description = [{
+        This type represents a comptime type.
+    }];
+    let parameters = (ins "TypedAttr":$value);
+    let assemblyFormat = "`<` $value `>`";
+}
+
 // def TypeValue: DialectType<Lang_Dialect, CPred<"isa<TypeValueType>($_self)">,
 //                                     "Lang typevalue type">;
 

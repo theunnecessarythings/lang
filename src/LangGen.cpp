@@ -1287,11 +1287,6 @@ private:
         return mlir::emitError(loc(expr->token.span),
                                "failed to instantiate generic function");
       }
-      auto symbol_name = Symbol(llvm::SmallString<64>(expr->callee),
-                                llvm::to_vector(new_func->getArgumentTypes()))
-                             .getMangledName();
-      new_func->setName(symbol_name);
-      new_func->getOperation()->setAttr("generic", builder.getBoolAttr(true));
       func = new_func.value();
     }
     if (!func) {
@@ -1350,6 +1345,7 @@ private:
     current_scope = current_scope->parent->parent; // One for function, one for
                                                    // block
     llvm::SmallVector<mlir::Value, 4> value_args;
+    llvm::SmallVector<mlir::Type, 4> comptime_arg_types;
     // Step 1. Identify the generic parameters and their types
     for (const auto &it : llvm::enumerate(args)) {
       if (mlir::isa<mlir::lang::TypeValueType>(it.value().getType())) {
@@ -1360,6 +1356,7 @@ private:
         auto pattern_name = str(pattern->as<IdentifierPattern>()->name);
         // update type table
         type_table.insert(pattern_name, type);
+        comptime_arg_types.push_back(type);
       } else if (func->decl->parameters[it.index()]->is_comptime) {
         auto value = it.value();
         auto pattern = func->decl->parameters[it.index()]->pattern.get();
@@ -1380,6 +1377,8 @@ private:
             std::make_shared<Symbol>(pattern_name, new_value.getResult()),
             true);
         value_args.push_back(new_value.getResult());
+        comptime_arg_types.emplace_back(mlir::lang::ComptimeType::get(
+            builder.getContext(), constant_op.getValueAttr()));
       }
     }
     auto func_op = langGen(func, false, true);
@@ -1393,6 +1392,14 @@ private:
       arg.getDefiningOp()->moveBefore(&*func_op->getOps().begin());
     }
     current_scope = prev_scope;
+
+    auto arg_types = llvm::to_vector<4>(func_op->getFunctionType().getInputs());
+    std::copy(comptime_arg_types.begin(), comptime_arg_types.end(),
+              arg_types.begin());
+    auto symbol = Symbol(llvm::SmallString<64>(func->decl->name), arg_types);
+    func_op->setName(symbol.getMangledName());
+    func_op->getOperation()->setAttr("generic", builder.getBoolAttr(true));
+
     return *func_op;
   }
 
