@@ -1065,7 +1065,8 @@ void LangToAffineLoweringPass::runOnOperation() {
   auto module = getOperation();
   for (auto &op : llvm::make_early_inc_range(module.getOps())) {
     if (!mlir::isa<mlir::lang::FuncOp>(op) &&
-        !mlir::isa<mlir::func::FuncOp>(op)) {
+        !mlir::isa<mlir::func::FuncOp>(op) &&
+        !mlir::isa<mlir::memref::GlobalOp>(op)) {
       op.remove();
     }
 
