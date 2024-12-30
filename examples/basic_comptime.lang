@@ -2,6 +2,12 @@ fn Type(T: type, *) type {
     return T;
 }
 
+fn AnotherType() type {
+    // If a function returns type, it must be comptime
+    // Therefore whatever we have here must be side-effect free
+    return f64;
+}
+
 fn Identity(T: type, mod: T, *, value: T) T {
     return value / mod;
 }

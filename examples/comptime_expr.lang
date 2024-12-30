@@ -60,9 +60,9 @@ pub fn main() void {
     print("chain_result -> %d", chain_result);
 
     const fib6 = comptime fib(6);
-    const fib10 = comptime fib(fib6);
+    const fib8 = comptime fib(fib6);
     print("fib(6) -> %d", fib6);
-    print("fib(10) -> %d", fib10);
+    print("fib(8) -> %d", fib8);
 }
 
 // pub fn main() void {

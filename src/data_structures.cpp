@@ -17,6 +17,27 @@ void Symbol::mangle() {
   mangled_name = mangler.str();
 }
 
+void Symbol::demangle() {
+  std::string out;
+  llvm::raw_string_ostream demangler(out);
+
+  // Add name
+  demangler << name;
+
+  // Add function signature if applicable
+  if (kind == SymbolKind::Function || kind == SymbolKind::GenericFunction) {
+    demangler << "(";
+    for (size_t i = 0; i < param_types.size(); i++) {
+      demangler << param_types[i];
+      if (i < param_types.size() - 1)
+        demangler << ", ";
+    }
+    demangler << ")";
+  }
+
+  demangled_name = demangler.str();
+}
+
 // Add a symbol to the table
 std::shared_ptr<Symbol> SymbolTable::addSymbol(std::shared_ptr<Symbol> symbol,
                                                bool overwrite) {

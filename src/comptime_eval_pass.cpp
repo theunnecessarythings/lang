@@ -901,7 +901,7 @@ void ComptimeEvalPass::runOnOperation() {
   }
 
   // Inline function that returns a type
-  inlineTypeConstFuncs(module);
+  // inlineTypeConstFuncs(module);
 
   // // Step 2: Instantiate generic functions
   // module.walk([&](mlir::lang::CallOp op) {

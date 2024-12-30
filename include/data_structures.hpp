@@ -127,6 +127,8 @@ inline std::string attrToStr(mlir::Attribute attr) {
   return rso.str();
 }
 
+struct SymbolTable;
+
 static std::string sep = ":";
 struct Symbol {
   enum class SymbolKind {
@@ -141,7 +143,10 @@ struct Symbol {
   llvm::SmallString<64> scope; // Fully qualified scope (e.g., "app::math")
   llvm::SmallVector<mlir::Type, 4>
       param_types; // Parameter types for functions (empty for variables)
-  llvm::SmallString<64> mangled_name; // Mangled name of the symbol
+  llvm::SmallString<64> mangled_name;   // Mangled name of the symbol
+  llvm::SmallString<64> demangled_name; // Demangled name of the symbol
+  mlir::OpBuilder::InsertPoint generic_insertion_point;
+  std::shared_ptr<SymbolTable> generic_scope;
 
   union {
     mlir::Value value;                  // Value for variables
@@ -156,6 +161,7 @@ struct Symbol {
          const llvm::SmallString<64> &scope = llvm::SmallString<64>())
       : name(name), kind(kind), scope(scope), value(value) {
     mangle();
+    demangle();
   }
 
   // Constructor for functions
@@ -165,6 +171,7 @@ struct Symbol {
          const llvm::SmallString<64> &scope = llvm::SmallString<64>())
       : name(name), kind(kind), scope(scope), param_types(param_types) {
     mangle();
+    demangle();
   }
 
   void setStructType(mlir::lang::StructType struct_type) {
@@ -182,10 +189,14 @@ struct Symbol {
     this->value = value;
   }
 
-  void setGenericFunction(Function *generic_func) {
+  void setGenericFunction(Function *generic_func,
+                          mlir::OpBuilder::InsertPoint insertion_point,
+                          std::shared_ptr<SymbolTable> scope) {
     assert(kind == SymbolKind::GenericFunction &&
            "Symbol is not a generic function");
     this->generic_func = generic_func;
+    this->generic_insertion_point = insertion_point;
+    this->generic_scope = scope;
   }
 
   mlir::Value getValue() const {
@@ -209,6 +220,18 @@ struct Symbol {
     return generic_func;
   }
 
+  mlir::OpBuilder::InsertPoint getGenericInsertionPoint() const {
+    assert(kind == SymbolKind::GenericFunction &&
+           "Symbol is not a generic function");
+    return generic_insertion_point;
+  }
+
+  std::shared_ptr<SymbolTable> getGenericScope() const {
+    assert(kind == SymbolKind::GenericFunction &&
+           "Symbol is not a generic function");
+    return generic_scope;
+  }
+
   // Accessors
   const llvm::SmallString<64> &getName() const { return name; }
   const llvm::SmallString<64> &getScope() const { return scope; }
@@ -216,8 +239,12 @@ struct Symbol {
     return param_types;
   }
   const llvm::SmallString<64> &getMangledName() const { return mangled_name; }
+  const llvm::SmallString<64> &getDemangledName() const {
+    return demangled_name;
+  }
 
   void mangle();
+  void demangle();
   std::string encodeType(const std::string &type) const;
 };
 

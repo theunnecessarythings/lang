@@ -63,3 +63,30 @@ TEST_CASE("tuple structs", "[behaviour]") {
                 "Just an integer: 5\n"
                 "Matrix: 1.100000, 1.200000, 2.100000, 2.200000\n");
 }
+
+TEST_CASE("overloading", "[behaviour]") {
+  testBehaviour("../examples/overloading.lang", "a + b = 30\n"
+                                                "c + d = 30.000000\n"
+                                                "a + b = 30\n");
+}
+
+TEST_CASE("basic comptime", "[behaviour]") {
+  testBehaviour("../examples/basic_comptime.lang", "int_id: 0\n"
+                                                   "float_id: 0.031400\n"
+                                                   "float_id2: 0.032200\n"
+                                                   "d_f64: 6.280000\n"
+                                                   "some_value: 38\n"
+                                                   "some_other_value: 63\n");
+}
+
+TEST_CASE("comptime expr", "[behaviour]") {
+  testBehaviour("../examples/comptime_expr.lang",
+                "factorial(5) -> 120\n"
+                "custom_sequence(5) -> 8\n"
+                "factorial(custom_sequence(5)) -> 40320\n"
+                "complex_result -> 196562\n"
+                "nested_result -> 0\n"
+                "chain_result -> 6\n"
+                "fib(6) -> 8\n"
+                "fib(8) -> 21\n");
+}

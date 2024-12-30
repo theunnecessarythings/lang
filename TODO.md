@@ -14,7 +14,7 @@
 - [ ] Remote Trait Implementation/ Implicit trait conformance (Mojo duck typing)
 - [ ] Multiple results from any regions/blocks
 - [ ] String literals are not parsed (unescaped)
-- [ ] Function overloading
+- [x] Function overloading
 - [ ] Implement RAII and similar to mojo
 - [ ] Pointers
 - [ ] Bug: All structs are returned as values, not pointers
@@ -33,6 +33,8 @@
 - [ ] Bug: functions and variables can have the same name
 - [x] Bug: Tests are broken again (roundtrip fails because builtins are double imported)
 - [ ] String Interning
-
-- Lower arrays to memrefs with alloc, will be easier to handle, then after comptime
-  eval if the size is known, we can replace it with stack allocation
+- [ ] Use EmitC for codegen to C/C++
+- [ ] Explore StableHLO
+- [ ] Lower arrays to memrefs with alloc, will be easier to handle, then after comptime
+      eval if the size is known, we can replace it with stack allocation
+- [ ] Bug: Right now when generics are instantiated, the first original copy is still kept around before renaming, could pose issues.

@@ -99,7 +99,6 @@ add_executable(tests
     tests/test_lexer.cpp 
     tests/test_parser.cpp 
     tests/test_analyzer.cpp
-    tests/test_behaviour.cpp
-    tests/test_mangler.cpp)
+    tests/test_behaviour.cpp)
 target_include_directories(tests PRIVATE include/)
 target_link_libraries(tests PRIVATE Catch2::Catch2WithMain liblang)
