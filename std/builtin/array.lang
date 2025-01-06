@@ -1,5 +1,7 @@
 fn array(T: type, N: i64, *) type {
     const Impl = @mlir_type("memref<{}x{}>", [N, T]);
+    const DynamicMemref = @mlir_type("memref<?x{}>", [T]);
+
     impl Impl {
         fn index(self: Self, idx: i64) T {
             const i = @mlir_op("index.castu", [idx], {}, [@mlir_type("index")]);
@@ -8,6 +10,29 @@ fn array(T: type, N: i64, *) type {
 
         fn len(self: Self) i64 {
             return N;
+        }
+
+        // fn init(other: Self) DynamicMemref {
+        //     return @mlir_op("memref.cast", [other], {}, [DynamicMemref]);
+        // }
+    }
+    return Impl;
+}
+
+fn array(T: type, *) type {
+    const Impl = @mlir_type("memref<?x{}>", [T]);
+    impl Impl {
+
+        fn index(self: Self, idx: i64) T {
+            const i = @mlir_op("index.castu", [idx], {}, [@mlir_type("index")]);
+            return @mlir_op("memref.load", [self, i], {}, [T]);
+        }
+
+        fn len(self: Self) i64 {
+            const i = @mlir_op("index.castu", [0], {}, [@mlir_type("index")]);
+            const length = @mlir_op("memref.dim", [self, i], {}, [@mlir_type("index")]);
+            const length_casted = @mlir_op("index.castu", [length], {}, [i64]);
+            return length_casted;
         }
     }
     return Impl;

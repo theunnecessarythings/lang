@@ -149,6 +149,13 @@ private:
     ~ScopeGuard() { lang_gen->exitScope(); }
   };
 
+  struct FunctionOptions {
+    bool is_generic = false;
+    bool instance = false;
+    llvm::SmallVector<std::shared_ptr<Symbol>, 4> instance_symbols = {};
+    mlir::Type method_parent = nullptr;
+  };
+
   mlir::Location loc(const TokenSpan &loc) {
     return mlir::FileLineColLoc::get(
         builder.getContext(),
@@ -192,7 +199,9 @@ private:
   mlir::LogicalResult langGen(TopLevelDecl *decl) {
     if (decl->kind() == AstNodeKind::Function) {
       auto func = decl->as<Function>();
-      return langGen(func, isGenericFunction(func));
+      FunctionOptions opts;
+      opts.is_generic = isGenericFunction(func);
+      return langGen(func, opts);
     } else if (decl->kind() == AstNodeKind::TupleStructDecl) {
       return langGen(decl->as<TupleStructDecl>());
     } else if (decl->kind() == AstNodeKind::StructDecl) {
@@ -208,10 +217,9 @@ private:
     return the_module.emitError("unsupported top-level item");
   }
 
-  mlir::Result<mlir::lang::FuncOp>
-  langGen(Function *func, bool is_generic = false, bool instance = false,
-          llvm::SmallVector<std::shared_ptr<Symbol>, 4> instance_symbols = {}) {
-    if (is_generic) {
+  mlir::Result<mlir::lang::FuncOp> langGen(Function *func,
+                                           FunctionOptions &opts) {
+    if (opts.is_generic) {
       auto param_types = langGen(func->decl->parameters);
       if (failed(param_types)) {
         return mlir::failure();
@@ -255,10 +263,14 @@ private:
     auto func_symbol = std::make_shared<Symbol>(
         llvm::SmallString<64>(func->decl->name), param_types.value(),
         Symbol::SymbolKind::Function, current_scope->parent->getScopeName());
+    if (opts.method_parent) {
+      func_symbol->setParentType(opts.method_parent);
+      func_symbol->mangle();
+    }
 
     if (!current_scope->parent->addSymbol(func_symbol)) {
       auto func_op = lookup(func_symbol->getMangledName());
-      if (instance && func_op->kind == Symbol::SymbolKind::Function) {
+      if (opts.instance && func_op->kind == Symbol::SymbolKind::Function) {
         return mlir::Result<mlir::lang::FuncOp>::success(func_op->getFuncOp());
       }
     }
@@ -307,8 +319,8 @@ private:
     auto addSymbols = [&]() {
       // If instance is true and instance_symbols is not empty, then add it to
       // the scope
-      if (instance && !instance_symbols.empty()) {
-        for (auto &symbol : instance_symbols) {
+      if (opts.instance && !opts.instance_symbols.empty()) {
+        for (auto &symbol : opts.instance_symbols) {
           if (!current_scope->addSymbol(symbol)) {
             return;
           }
@@ -332,39 +344,9 @@ private:
       }
     };
 
-    // Generate function body.
-    if (func->decl->extra.is_method && func->decl->name == "init") {
-      auto create_self = [&]() {
-        addSymbols();
-        // Create a new struct instance
-        auto self_type = type_table.lookup("Self");
-        if (!self_type) {
-          emitError(loc(func->token.span), "Self not found");
-          return;
-        }
-        auto struct_val = builder.create<mlir::lang::UndefOp>(
-            loc(func->token.span), self_type);
-        if (failed(declare("self", struct_val))) {
-          emitError(loc(func->token.span), "redeclaration of self");
-          return;
-        }
-        // update func_name
-        param_types->insert(param_types->begin(), self_type);
-        func_symbol = std::make_shared<Symbol>(
-            llvm::SmallString<64>(func->decl->name), param_types.value(),
-            Symbol::SymbolKind::Function,
-            current_scope->parent->getScopeName());
-        func_op.setName(func_symbol->getMangledName());
-      };
-      if (failed(langGen(func->body.get(), create_self))) {
-        func_op.erase();
-        return mlir::failure();
-      }
-    } else {
-      if (failed(langGen(func->body.get(), addSymbols))) {
-        func_op.erase();
-        return mlir::failure();
-      }
+    if (failed(langGen(func->body.get(), addSymbols))) {
+      func_op.erase();
+      return mlir::failure();
     }
 
     if (func_op.getBody().back().getOperations().empty() ||
@@ -530,7 +512,7 @@ private:
     current_scope = global_scope;
     Defer scope([&] { current_scope = prev_scope; });
 
-    NEW_SCOPE("")
+    NEW_SCOPE(type)
     mlir::OpBuilder::InsertionGuard guard(builder);
     builder.setInsertionPointToEnd(the_module.getBody());
     auto parent_type = type_table.lookup(type);
@@ -553,9 +535,11 @@ private:
     auto decl = builder.create<mlir::lang::ImplDeclOp>(
         loc(impl_decl->token.span), parent_type);
     builder.setInsertionPointToStart(&decl.getRegion().emplaceBlock());
+    FunctionOptions opts;
+    opts.method_parent = parent_type;
     for (auto &method : impl_decl->functions) {
       mlir::OpBuilder::InsertionGuard guard(builder);
-      auto func = langGen(method.get());
+      auto func = langGen(method.get(), opts);
       if (failed(func)) {
         return mlir::failure();
       }
@@ -783,6 +767,7 @@ private:
     } else if (type->kind() == AstNodeKind::ArrayType) {
       auto array_type = type->as<ArrayType>();
       auto base_type = getType(array_type->base.get());
+      // NOTE: Syntactic sugar for array(type, size)
       if (failed(base_type)) {
         return mlir::failure();
       }
@@ -1215,6 +1200,8 @@ private:
 
     auto fn_name = mangle(method_name, arg_types);
     auto symbol = Symbol(method_name, llvm::to_vector(arg_types));
+    symbol.parent_type = arg_types[0];
+    symbol.mangle();
     auto func = lookup(symbol.getMangledName());
     if (!func) {
       auto err = mlir::emitError(loc)
@@ -1477,7 +1464,10 @@ private:
       return res->getFuncOp();
     }
 
-    auto func_op = langGen(func, false, true, instance_symbols);
+    FunctionOptions options;
+    options.instance = true;
+    options.instance_symbols = instance_symbols;
+    auto func_op = langGen(func, options);
     if (llvm::failed(func_op)) {
       return mlir::failure();
     }
@@ -1508,8 +1498,11 @@ private:
       auto call_expr = std::get<std::unique_ptr<CallExpr>>(expr->field).get();
       auto symbol =
           Symbol(llvm::SmallString<64>(call_expr->callee), {base_type});
+      symbol.setParentType(base_type);
+      symbol.mangle();
       auto func = lookup(symbol.getMangledName());
       if (!func) {
+        llvm::errs() << "Lookup failed for " << symbol.getMangledName() << "\n";
         return mlir::emitError(loc(expr->token.span),
                                "Function not declared: `" +
                                    symbol.getDemangledName() + "`");

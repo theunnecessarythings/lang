@@ -9,6 +9,8 @@ void Symbol::mangle() {
 
   // Add function signature if applicable
   if (kind == SymbolKind::Function || kind == SymbolKind::GenericFunction) {
+    if (parent_type)
+      mangler << ":" << parent_type;
     for (const auto &param : param_types) {
       mangler << sep << param;
     }

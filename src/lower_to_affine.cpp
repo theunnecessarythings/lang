@@ -864,9 +864,11 @@ struct VarDeclOpLowering
 
     if (op.getVarTypeValue() && init_value.getType() != var_type &&
         !mlir::isa<mlir::lang::LangType>(var_type)) {
-      auto fn_name = Symbol(llvm::SmallString<64>("init"),
-                            {var_type, init_value.getType()})
-                         .getMangledName();
+      auto fn_symbol =
+          Symbol(llvm::SmallString<64>("init"), {init_value.getType()});
+      fn_symbol.parent_type = var_type;
+      fn_symbol.mangle();
+      auto fn_name = fn_symbol.getMangledName();
       auto cast_op = rewriter.create<mlir::lang::CallOp>(
           op.getLoc(), fn_name, var_type, mlir::ValueRange{init_value});
 

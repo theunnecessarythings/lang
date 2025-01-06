@@ -1,5 +1,5 @@
 impl f64 {
-    fn init(self: Self, value: f32) Self {
+    fn init(value: f32) Self {
         return @mlir_op("arith.extf", [value], {}, [f64]);
     }
 
@@ -37,7 +37,7 @@ impl f64 {
 }
 
 impl f32 {
-    fn init(self: Self, value: f64) Self {
+    fn init(value: f64) Self {
         return @mlir_op("arith.truncf", [value], {}, [f32]);
     }
 }

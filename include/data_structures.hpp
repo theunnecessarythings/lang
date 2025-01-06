@@ -147,6 +147,7 @@ struct Symbol {
   llvm::SmallString<64> demangled_name; // Demangled name of the symbol
   mlir::OpBuilder::InsertPoint generic_insertion_point;
   std::shared_ptr<SymbolTable> generic_scope;
+  mlir::Type parent_type = nullptr;
 
   union {
     mlir::Value value;                  // Value for variables
@@ -187,6 +188,10 @@ struct Symbol {
   void setValue(mlir::Value value) {
     assert(kind == SymbolKind::Variable && "Symbol is not a variable");
     this->value = value;
+  }
+
+  void setParentType(const mlir::Type &parent_type) {
+    this->parent_type = parent_type;
   }
 
   void setGenericFunction(Function *generic_func,

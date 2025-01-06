@@ -115,31 +115,31 @@ void Analyzer::analyze(ImplDecl *impl) {
       func->decl->extra.parent_kind = AstNodeKind::UnionDecl;
     }
 
-    if (func->decl->name == "init") {
-      // constructor so check the first parameter type is Self or parent_name
-      // delete that parameter
-      if (func->decl->parameters.size() == 0) {
-        context->reportError(
-            "constructor must have at least one parameter, self",
-            &func->decl->token);
-      } else {
-        auto &param = func->decl->parameters[0];
-        if (param->type->kind() == AstNodeKind::IdentifierType) {
-          auto id_type = param->type->as<IdentifierType>();
-          if (id_type->name == "Self" || id_type->name == type) {
-            func->decl->parameters.erase(func->decl->parameters.begin());
-          } else {
-            context->reportError(
-                "first parameter of constructor must be of type Self",
-                &param->token);
-          }
-        } else {
-          context->reportError(
-              "first parameter of constructor must be of type Self",
-              &param->token);
-        }
-      }
-    }
+    // if (func->decl->name == "init") {
+    //   // constructor so check the first parameter type is Self or parent_name
+    //   // delete that parameter
+    //   if (func->decl->parameters.size() == 0) {
+    //     context->reportError(
+    //         "constructor must have at least one parameter, self",
+    //         &func->decl->token);
+    //   } else {
+    //     auto &param = func->decl->parameters[0];
+    //     if (param->type->kind() == AstNodeKind::IdentifierType) {
+    //       auto id_type = param->type->as<IdentifierType>();
+    //       if (id_type->name == "Self" || id_type->name == type) {
+    //         func->decl->parameters.erase(func->decl->parameters.begin());
+    //       } else {
+    //         context->reportError(
+    //             "first parameter of constructor must be of type Self",
+    //             &param->token);
+    //       }
+    //     } else {
+    //       context->reportError(
+    //           "first parameter of constructor must be of type Self",
+    //           &param->token);
+    //     }
+    //   }
+    // }
     analyze(func.get());
   }
 }

@@ -12,8 +12,11 @@ fn main() void {
     const xs: array(i64, 5, *) = [1, 2, 3, 4, 5];
     const ys: array(i64, 5, *) = [12, 13, 14, 15, 16];
 
+    // const zs: array(i64, *) = [1, 2, 3, 4, 5];
+
     // All elements can be initialized to the same value.
     // const zs: [500]i32 = [0] ** 500;
+
     // Indexing starts at 0.
     print("First element of the array: %d", xs[0]);
     print("Second element of the array: %d", xs[1]);
